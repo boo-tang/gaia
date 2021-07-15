@@ -13,9 +13,14 @@ contract Gaia_Loc {
      * lat: 0 -> 18,000
      * long: 0 -> 36,000
      */
-    struct Location {
+    struct MintedLocation {
+        uint16 lat;
+        uint16 long;
         bytes locId;
         uint64 dateMinted;
+    }
+
+    struct Loc {
         uint16 lat;
         uint16 long;
     }
@@ -29,11 +34,6 @@ contract Gaia_Loc {
         address indexed from,
         address indexed to
     );
-
-    /**
-     * @dev list holding all minted locations
-     */
-    Location[] locations;
 
     /**
      * @dev Tracks the amount of locations each land owner has
@@ -56,8 +56,7 @@ contract Gaia_Loc {
     mapping(address => uint256) private ownerToNFTokenCount;
 
     function mintLoc(uint16 lat, uint16 long) public returns (bytes memory) {
-        require(lat < maxLat, "Invalid latitude");
-        require(long < maxLong, "Invalid longtitue");
+        require(isValidLoc(lat, long), "Invalid coordinates");
         bytes memory locId = getLocHash(lat, long);
         require(ownerToLocId[locId] == address(0), "Location has owner");
 
@@ -79,6 +78,10 @@ contract Gaia_Loc {
         emit LocationClaimed(locId, msg.sender);
 
         return locId;
+    }
+
+    function isValidLoc(uint16 lat, uint16 long) public view returns (bool) {
+        return lat < maxLat && long < maxLong;
     }
 
     function getAllOwners() public view returns (address[] memory) {
@@ -118,6 +121,31 @@ contract Gaia_Loc {
         returns (bytes memory)
     {
         return abi.encodePacked(lat, long);
+    }
+
+    function areAdjacent(Loc memory loc1, Loc memory loc2)
+        public
+        view
+        returns (bool)
+    {
+        // checks for right-left / up-down adjacency (not diagonal)
+        // for 2 locs to be adjacent they need:
+        // 1) same lat / long
+        // 2) the other one (lat / long) to have a diff of 1
+        require(isValidLoc(loc1.lat, loc1.long));
+        require(isValidLoc(loc2.lat, loc2.long));
+        if (loc1.lat == loc2.lat) {
+            uint16 diff = loc1.long > loc2.long
+                ? loc1.long - loc2.long
+                : loc2.long - loc1.long;
+            return diff == 1;
+        } else if (loc1.long == loc2.long) {
+            uint16 diff = loc1.lat > loc2.lat
+                ? loc1.lat - loc2.lat
+                : loc2.lat - loc1.lat;
+            return diff == 1;
+        }
+        return false;
     }
 
     // function uintToString(uint256 v) public pure returns (bytes5) {
