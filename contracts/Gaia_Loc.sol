@@ -1,4 +1,4 @@
-// contracts/Gaia_Bit.sol
+// contracts/Gaia_Loc.sol
 // SPDX-License-Identifier: MIT
 
 pragma solidity ^0.8.0;
@@ -49,11 +49,6 @@ contract Gaia_Loc {
      * @dev A list of unique owners.
      */
     address[] public landOwners;
-
-    /**
-     * @dev Mapping from owner address to count of their tokens.
-     */
-    mapping(address => uint256) private ownerToNFTokenCount;
 
     function mintLoc(uint16 lat, uint16 long) public returns (bytes memory) {
         require(isValidLoc(lat, long), "Invalid coordinates");
