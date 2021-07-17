@@ -2,11 +2,11 @@ App = {
   web3Provider: null,
   contracts: {},
 
-  init: async function () {
+  init: async () => {
     return await App.initWeb3()
   },
 
-  initWeb3: async function () {
+  initWeb3: async () => {
     // Modern dapp browsers...
     if (window.ethereum) {
       App.web3Provider = window.ethereum
@@ -34,18 +34,24 @@ App = {
     return App.initContract()
   },
 
-  initContract: function () {
+  initContract: () => {
     $.getJSON('Gaia_Loc.json', function (data) {
       console.log('data', data)
       //  Get the necessary contract artifact file and instantiate it with @truffle/contract
       var GaiaLocArtifact = data
-      App.contracts.Gaia_Bit = TruffleContract(GaiaLocArtifact)
+      App.contracts.Gaia_Loc = TruffleContract(GaiaLocArtifact)
       // Set the provider for our contract
-      App.contracts.Gaia_Bit.setProvider(App.web3Provider)
+      App.contracts.Gaia_Loc.setProvider(App.web3Provider)
       // Use our contract to retrieve and mark the purchased bits
       return App.markPurchased()
     })
 
     return App.bindEvents()
+  },
+
+  getPurchased: () => {},
+
+  bindEvents: () => {
+    $(document).on('click', '#purchase-button', App.handlePurhcase)
   },
 }
