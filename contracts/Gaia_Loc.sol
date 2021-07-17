@@ -4,8 +4,10 @@
 pragma solidity ^0.8.0;
 
 // import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "./Integers.sol";
 
 contract Gaia_Loc {
+    using Integers for uint16;
     /**
      * Lat can have values from -90.00 -> 90.00
      * Long can have values from -180.00 -> 180.00
@@ -50,6 +52,11 @@ contract Gaia_Loc {
      */
     address[] public landOwners;
 
+    /**
+     * @dev list of minted locations
+     */
+    bytes[] public mintedLocations;
+
     function mintLoc(uint16 lat, uint16 long) public returns (bytes memory) {
         require(isValidLoc(lat, long), "Invalid coordinates");
         bytes memory locId = getLocHash(lat, long);
@@ -69,6 +76,7 @@ contract Gaia_Loc {
 
         ownerToLocId[locId] = msg.sender;
         balanceOf[msg.sender]++;
+        mintedLocations.push(locId);
 
         emit LocationClaimed(locId, msg.sender);
 
@@ -115,7 +123,27 @@ contract Gaia_Loc {
         pure
         returns (bytes memory)
     {
-        return abi.encodePacked(lat, long);
+        string memory _lat = lat.toString();
+        string memory _long = long.toString();
+        string memory separator = "-";
+        return abi.encodePacked(_lat, separator, _long);
+    }
+
+    function hasOwner(uint16 lat, uint16 long) public view returns (bool) {
+        bytes memory locId = getLocHash(lat, long);
+        return !(ownerToLocId[locId] == address(0));
+    }
+
+    function getLocFromId(bytes memory locId)
+        public
+        pure
+        returns (string memory)
+    {
+        return string(locId);
+    }
+
+    function getLatString(uint16 lat) public pure returns (string memory) {
+        return lat.toString();
     }
 
     function areAdjacent(Loc memory loc1, Loc memory loc2)
@@ -142,33 +170,4 @@ contract Gaia_Loc {
         }
         return false;
     }
-
-    // function uintToString(uint256 v) public pure returns (bytes5) {
-    //     uint256 maxLength = 5;
-    //     bytes memory reversed = new bytes(maxLength);
-    //     uint256 i = 0;
-    //     while (v != 0) {
-    //         uint256 remainder = v % 10;
-    //         v = v / 10;
-    //         reversed[i++] = bytes1(uint8(48 + remainder));
-    //     }
-    //     bytes memory s = new bytes(i); // i + 1 is inefficient
-    //     for (uint256 j = 0; j < i; j++) {
-    //         s[j] = reversed[i - j - 1]; // to avoid the off-by-one error
-    //     }
-    //     // string memory str = string(s); // memory isn't implicitly convertible to storage
-    //     return s;
-    // }
-
-    // function purchaseOne(uint16 x, uint16 y) public returns (bool) {
-    //     require(x < _height && y < _width);
-
-    //     landBits[y][x] = msg.sender;
-
-    //     return true;
-    // }
-
-    // function getBits() public view returns (address[10][10] memory) {
-    //     return landBits;
-    // }
 }
