@@ -40,12 +40,12 @@ contract Gaia_Loc {
     /**
      * @dev Tracks the amount of locations each land owner has
      */
-    mapping(address => uint256) public balanceOf; //number of locations owned by a given address
+    mapping(address => uint32) public balanceOf; //number of locations owned by a given address
 
     /**
      * @dev A mapping from NFT ID to the address that owns it.
      */
-    mapping(bytes => address) internal ownerToLocId;
+    mapping(bytes => address) internal locIdToOwner;
 
     /**
      * @dev A list of unique owners.
@@ -57,10 +57,15 @@ contract Gaia_Loc {
      */
     bytes[] public mintedLocations;
 
+    /**
+     * @dev list of minted locations
+     */
+    uint32 mintedSupply = maxLat * maxLong;
+
     function mintLoc(uint16 lat, uint16 long) public returns (bytes memory) {
         require(isValidLoc(lat, long), "Invalid coordinates");
         bytes memory locId = getLocHash(lat, long);
-        require(ownerToLocId[locId] == address(0), "Location has owner");
+        require(locIdToOwner[locId] == address(0), "Location has owner");
 
         // Location memory loc = Location({
         //     lat: lat,
@@ -74,9 +79,10 @@ contract Gaia_Loc {
             landOwners.push(msg.sender);
         }
 
-        ownerToLocId[locId] = msg.sender;
+        locIdToOwner[locId] = msg.sender;
         balanceOf[msg.sender]++;
         mintedLocations.push(locId);
+        mintedSupply++;
 
         emit LocationClaimed(locId, msg.sender);
 
@@ -91,22 +97,34 @@ contract Gaia_Loc {
         return landOwners;
     }
 
-    // function claim(uint16 lat, uint16 long) public returns (bytes10) {
-    //     require(lat < maxLat, "Invalid latitude");
-    //     require(long < maxLong, "Invalid longtitue");
+    function ownerOf(bytes memory locId) public view returns (address) {
+        return locIdToOwner[locId];
+    }
 
-    // }
+    function ownedLocations(address owner)
+        public
+        view
+        returns (bytes[] memory)
+    {
+        uint32 ownerBalance = balanceOf[owner];
+        if (ownerBalance == 0) {
+            return new bytes[](0);
+        }
+
+        // TODO: iterate through locIdToOwner to find their owned addresses
+        // until we find all of `ownerBalance`
+    }
 
     /**
      * @dev Transfers location ownership
      */
     function transfer(bytes memory locId, address to) public {
         require(
-            ownerToLocId[locId] == msg.sender,
+            locIdToOwner[locId] == msg.sender,
             "sender does not own the land"
         );
 
-        ownerToLocId[locId] = msg.sender;
+        locIdToOwner[locId] = msg.sender;
         balanceOf[msg.sender]--;
         balanceOf[to]++;
 
@@ -131,7 +149,7 @@ contract Gaia_Loc {
 
     function hasOwner(uint16 lat, uint16 long) public view returns (bool) {
         bytes memory locId = getLocHash(lat, long);
-        return !(ownerToLocId[locId] == address(0));
+        return !(locIdToOwner[locId] == address(0));
     }
 
     function getLocFromId(bytes memory locId)
@@ -142,9 +160,9 @@ contract Gaia_Loc {
         return string(locId);
     }
 
-    function getLatString(uint16 lat) public pure returns (string memory) {
-        return lat.toString();
-    }
+    // function removeLocFromOwner(bytes memory locId, address locOnwer) private {
+    //   require(ownerToLocIds[locOwner])
+    // }
 
     function areAdjacent(Loc memory loc1, Loc memory loc2)
         public
