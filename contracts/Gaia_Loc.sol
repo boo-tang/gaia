@@ -30,7 +30,8 @@ contract Gaia_Loc {
     uint16 maxLat = 18000;
     uint16 maxLong = 36000;
 
-    event LocationClaimed(bytes indexed landId, address indexed by);
+    event LocationClaimed(bytes indexed locId, address indexed by);
+    event LocationClaimed(bytes[] indexed locIds, address indexed by);
     event LocationTransfer(
         bytes indexed landId,
         address indexed from,
@@ -40,12 +41,12 @@ contract Gaia_Loc {
     /**
      * @dev Tracks the amount of locations each land owner has
      */
-    mapping(address => uint32) public balanceOf; //number of locations owned by a given address
+    mapping(address => uint256) public balanceOf; //number of locations owned by a given address
 
     /**
      * @dev A mapping from NFT ID to the address that owns it.
      */
-    mapping(bytes => address) internal locIdToOwner;
+    mapping(bytes => address) public locIdToOwner;
 
     /**
      * @dev A list of unique owners.
@@ -57,12 +58,16 @@ contract Gaia_Loc {
      */
     bytes[] public mintedLocations;
 
-    /**
-     * @dev list of minted locations
-     */
-    uint32 mintedSupply = maxLat * maxLong;
+    uint256 public remainingLocations;
 
-    function mintLoc(uint16 lat, uint16 long) public returns (bytes memory) {
+    constructor() {
+        remainingLocations = uint256(maxLong) * uint256(maxLat);
+    }
+
+    function mintSingleLocation(uint16 lat, uint16 long)
+        public
+        returns (bytes memory)
+    {
         require(isValidLoc(lat, long), "Invalid coordinates");
         bytes memory locId = getLocHash(lat, long);
         require(locIdToOwner[locId] == address(0), "Location has owner");
@@ -82,11 +87,81 @@ contract Gaia_Loc {
         locIdToOwner[locId] = msg.sender;
         balanceOf[msg.sender]++;
         mintedLocations.push(locId);
-        mintedSupply++;
+        remainingLocations--;
 
         emit LocationClaimed(locId, msg.sender);
 
         return locId;
+    }
+
+    /**
+     * @dev method to mint multiple locations. list of locations must be sorted by lat -> long
+     */
+    function mintMultipleLocations(Loc[] memory locs)
+        public
+        returns (bytes[] memory)
+    {
+        // loop through all locs to confirm validity & hash them
+        bytes[] memory locHashes = new bytes[](locs.length);
+
+        // e.g. valid location list;
+        // [{lat: 1, long: 1}, {lat: 1, long: 2}, {lat: 1, long: 3}, {lat:2, long: 3}]
+        for (uint256 i = 0; i < locs.length; i++) {
+            Loc memory location = locs[i];
+            // check location is valid
+            require(isValidLoc(location.lat, location.long));
+            bytes memory locId = getLocHash(location.lat, location.long);
+            require(
+                locIdToOwner[locId] == address(0),
+                "Included location has owner"
+            );
+
+            if (i == 0) {
+                mintedLocations.push(locId);
+                locHashes[i] = locId;
+                locIdToOwner[locId] = msg.sender;
+            } else {
+                Loc memory prevLocation = locs[i - 1];
+                // 1st: check if we're on same lat
+                if (location.lat == prevLocation.lat) {
+                    // if on same lat, long must be adjacent.
+                    // locations must be sorted so long should be 1 higher
+                    require(location.long == prevLocation.long + 1);
+                } else {
+                    // 2nd: if different lat, check that it's adjacent to previous one
+                    require(location.lat == prevLocation.lat + 1);
+
+                    // 3rd: long must also have an adjacent location in previous lat
+                    // check locations backwards, until we reach different lat
+                    Loc memory locationToCheck = prevLocation;
+                    // uint16 prevLat = prevLocation.lat;
+                    uint256 j = i;
+                    bool hasAdjacent = false;
+                    while (locationToCheck.lat == location.lat - 1 && j > 0) {
+                        hasAdjacent = locationToCheck.long == location.long;
+                        if (hasAdjacent) {
+                            break;
+                        }
+                        j--;
+                        locationToCheck = locs[j];
+                    }
+                    require(hasAdjacent);
+                }
+
+                mintedLocations.push(locId);
+                locHashes[i] = locId;
+                locIdToOwner[locId] = msg.sender;
+            }
+        }
+        // add owner to list if new
+        if (balanceOf[msg.sender] == 0) {
+            landOwners.push(msg.sender);
+        }
+
+        balanceOf[msg.sender] += locs.length;
+        remainingLocations -= locs.length;
+
+        return locHashes;
     }
 
     function isValidLoc(uint16 lat, uint16 long) public view returns (bool) {
@@ -101,19 +176,20 @@ contract Gaia_Loc {
         return locIdToOwner[locId];
     }
 
-    function ownedLocations(address owner)
-        public
-        view
-        returns (bytes[] memory)
-    {
-        uint32 ownerBalance = balanceOf[owner];
-        if (ownerBalance == 0) {
-            return new bytes[](0);
-        }
+    // TODO
+    // function ownedLocations(address owner)
+    //     public
+    //     view
+    //     returns (bytes[] memory)
+    // {
+    //     uint256 ownerBalance = balanceOf[owner];
+    //     if (ownerBalance == 0) {
+    //         return new bytes[](0);
+    //     }
 
-        // TODO: iterate through locIdToOwner to find their owned addresses
-        // until we find all of `ownerBalance`
-    }
+    //     // TODO: iterate through locIdToOwner to find their owned addresses
+    //     // until we find all of `ownerBalance`
+    // }
 
     /**
      * @dev Transfers location ownership
