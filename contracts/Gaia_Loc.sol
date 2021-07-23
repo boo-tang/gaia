@@ -38,6 +38,10 @@ contract Gaia_Loc {
         address indexed to
     );
 
+    string public name = "GAIA";
+    string public symbol = "U+1F30D"; // unicode for `earth globe europe-africa`
+    uint8 public decimals = 0;
+
     /**
      * @dev Tracks the amount of locations each land owner has
      */
@@ -60,8 +64,12 @@ contract Gaia_Loc {
 
     uint256 public remainingLocations;
 
+    uint256 private totalSupply;
+
     constructor() {
-        remainingLocations = uint256(maxLong) * uint256(maxLat);
+        uint256 supply = uint256(maxLong) * uint256(maxLat);
+        totalSupply = supply;
+        remainingLocations = supply;
     }
 
     function mintSingleLocation(uint16 lat, uint16 long)
