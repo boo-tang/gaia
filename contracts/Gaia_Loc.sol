@@ -4,10 +4,15 @@
 pragma solidity ^0.8.0;
 
 // import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/utils/Counters.sol";
 import "./Integers.sol";
 
 contract Gaia_Loc {
     using Integers for uint16;
+
+    using Counters for Counters.Counter;
+    Counters.Counter private _tokenIdTracker;
+
     /**
      * Lat can have values from -90.00 -> 90.00
      * Long can have values from -180.00 -> 180.00
@@ -27,8 +32,8 @@ contract Gaia_Loc {
         uint16 long;
     }
 
-    uint16 maxLat = 18000;
-    uint16 maxLong = 36000;
+    uint16 constant maxLat = 18000;
+    uint16 constant maxLong = 36000;
 
     event LocationClaimed(bytes indexed locId, address indexed by);
     event LocationClaimed(bytes[] indexed locIds, address indexed by);
@@ -62,6 +67,12 @@ contract Gaia_Loc {
      */
     bytes[] public mintedLocations;
 
+    /**
+     * @dev usable locationId to ERC721 tokenID & vice versa
+     */
+    mapping(bytes => uint256) public _locIDToTokenID;
+    mapping(uint256 => bytes) public _tokenIDToLocID;
+
     uint256 public remainingLocations;
 
     uint256 private totalSupply;
@@ -76,7 +87,6 @@ contract Gaia_Loc {
 
     function mintSingleLocation(uint16 lat, uint16 long)
         public
-        onlyLandOwner(lat, long)
         returns (bytes memory)
     {
         require(isValidLoc(lat, long), "Invalid coordinates");
@@ -94,7 +104,13 @@ contract Gaia_Loc {
             landOwners.push(msg.sender);
         }
 
-        // locIdToOwner[locId] = msg.sender;
+        // get ERC721 ID
+        uint256 tokenIdToAssign = _tokenIdTracker.current();
+        _tokenIdTracker.increment();
+
+        _tokenIDToLocID[tokenIdToAssign] = locId;
+        _locIDToTokenID[locId] = tokenIdToAssign;
+
         locationMap[lat][long] = msg.sender;
         balanceOf[msg.sender]++;
         mintedLocations.push(locId);
@@ -105,13 +121,144 @@ contract Gaia_Loc {
         return locId;
     }
 
+    function mintMultipleLocations_4(Loc[] memory locs) public returns (bool) {
+        // returns (bytes[] memory)
+        if (locs.length == 0) {
+            // return new bytes[](0);
+            return true;
+        }
+
+        // keep track of which lattitude we're iterating through
+        uint16 currentLat;
+        // keep track of how many lattitude we've iterated through
+        uint16 locationIndex = 0;
+        Loc memory location = locs[locationIndex];
+        // flag for current lattitude for adjacency
+        bool latHasAdjacent = false;
+
+        // keep track of previous lat's min & max longitudes for adjacency check
+        uint16 prevLongitudeRangeStart = location.long;
+        uint16 prevLongitudeRangeEnd = 0;
+
+        while (locationIndex < locs.length) {
+            ///////////////////////////////////////////////////////////////////////
+            ////////   GET LOCATION AND PERFORM OWNERSHIP/VALIDITY TESTS   ////////
+            require(
+                isValidLoc(location.lat, location.long),
+                "gap between latitudes detected"
+            );
+            bytes memory locId = getLocHash(location.lat, location.long);
+            require(
+                // locIdToOwner[locId] == address(0),
+                locationMap[location.lat][location.long] == address(0),
+                "Included location has owner"
+            );
+            ///////////////////////////////////////////////////////////////////////
+            ///////////////////////////////////////////////////////////////////////
+
+            currentLat = location.lat;
+
+            // keep track of current lat's min & max longitudes for adjacency check
+            uint16 longitudeRangeStart = location.long;
+            // uint16 longitudeRangeEnd = 0;
+
+            // extra location variable to save the last location of the lattitude
+            Loc memory lastLocation;
+            // iterate through current latitude locations
+            while (location.lat == currentLat) {
+                // if this is the first lattitude we're iterating through,
+                // no need to check for lat adjacency
+                if (locationIndex == 0) {
+                    latHasAdjacent = true;
+                } else {
+                    // otherwise we check for adjacency by checking if it's withing previous lat's range
+                    latHasAdjacent =
+                        location.long >= prevLongitudeRangeStart &&
+                        location.long <= prevLongitudeRangeEnd;
+                }
+                locationIndex++;
+                lastLocation = location;
+                location = locs[locationIndex];
+            }
+            // longitudeRangeEnd = lastLocation.long;
+
+            // assign values for next lat to check
+            prevLongitudeRangeEnd = lastLocation.long;
+            prevLongitudeRangeStart = longitudeRangeStart;
+
+            // `location` variable is now the FIRST of the next lattitude
+            // the new lattitude MUST be prevLattitude + 1
+            require(
+                location.lat == currentLat + 1,
+                "found disconnected lattitudes"
+            );
+
+            // check if we found an adjacent longitude in this lat
+            require(latHasAdjacent, "found disconnected longitudes");
+        }
+
+        return true;
+    }
+
     function mintMultipleLocations_3(Loc[] memory locs)
         public
-        returns (bytes[] memory)
+        returns (bytes[] memory locHashes)
     {
+        locHashes = new bytes[](locs.length);
         if (locs.length == 0) {
             return new bytes[](0);
         }
+        // 1st pass: create 2d array that will hold all
+        uint16 latCounter = 0;
+        uint16 longCounter = 0;
+        // largest numger of longitutes in a latitude
+        // uint16 maxLong = 0;
+        uint16 currentLat = locs[0].lat;
+        uint16 i = 0;
+        while (i < locs.length) {
+            Loc memory location = locs[i];
+            require(
+                isValidLoc(location.lat, location.long),
+                "gap between latitudes detected"
+            );
+
+            if (currentLat != location.lat) {
+                // at this point we can check if latitudes are valid.
+                // since locations are sorted by lat,
+                // next lat HAS to be currentLat + 1 (otherwise there's a gap)
+                require(location.lat == currentLat + 1);
+                currentLat = location.lat;
+                // if (longCounter > maxLong) {
+                //     maxLong = longCounter;
+                // }
+                longCounter = 0;
+                latCounter++;
+            }
+            longCounter++;
+            i++;
+        }
+
+        // 2nd pass to map all locations in 2d array
+        Loc[maxLong][] memory locationArray = new Loc[maxLong][](latCounter);
+        // reset lat counter helper
+        currentLat = locs[0].lat;
+        uint16 locationIndex = 0;
+        for (uint16 latIndex = 0; latIndex < latCounter; i++) {
+            uint16 longIndex = 0;
+            Loc memory location = locs[locationIndex];
+            while (location.lat == currentLat) {
+                locationArray[currentLat][longIndex] = location;
+                longIndex++;
+                locationIndex++;
+                location = locs[locationIndex];
+            }
+            longIndex = 0;
+            currentLat = location.lat;
+            // locationIndex++;
+        }
+
+        // 3rd pass through 2d array to check adjacency
+        // for (uint)
     }
 
     // function mintMultipleLocations_3(Loc[] memory locs)
@@ -121,173 +268,25 @@ contract Gaia_Loc {
     //     if (locs.length == 0) {
     //         return new bytes[](0);
     //     }
-    //     // 1st pass: create 2d array that will hold all
-    //     uint16 latCounter = 0;
-    //     uint16 longcounter = 0;
-    //     // largest numger of longitutes in a latitude
-    //     uint16 maxLong = 0;
-    //     uint16 currentLat = locs[0].lat;
-    //     uint16 i = 0;
-    //     while (i < locs.length) {
-    //         Loc memory location = locs[i];
-    //         require(
-    //             isValidLoc(location.lat, location.long),
-    //             "gap between latitudes detected"
-    //         );
-
-    //         if (currentLat != location.lat) {
-    //             // at this point we can check if latitudes are valid.
-    //             // since locations are sorted by lat,
-    //             // next lat HAS to be currentLat + 1 (otherwise there's a gap)
-    //             require(location.lat == currentLat + 1);
-    //             currentLat = location.lat;
-    //             if (longCounter > maxLong) {
-    //               maxLong = longCounter;
-    //             }
-    //             longCounter = 0;
-    //             latCounter++;
-    //         }
-    //         longCounter++;
-    //         i++;
-    //     }
-
-    //     // 2nd pass to map all locations in 2d array
-    //     uint16[latcounter][maxLong] locationArray;
-    //     // reset lat counter helper
-    //     currentLat = locs[0].lat;
-    //     uint16 locationIndex = 0;
-    //     for (uint16 latIndex = 0; latIndex < latCounter; i++) {
-    //         uint16 longIndex = 0;
-    //         while(location.lat == currentLat) {
-    //           locationArray[currentLat][longIndex] = location;
-    //           longIndex++;
-    //           locationIndex++;
-    //           location = locs[locationIndex];
-    //         }
-    //         longIndex = 0;
-    //         currentLat = location.lat;
-    //         locationIndex++;
-    //     }
-
-    //     // 3rd pass through 2d array to check adjacency
-
-    // }
-
-    // function mintMultipleLocations_2(Loc[] memory locs)
-    //     public
-    //     returns (bytes[] memory)
-    // {
-    //     // handle empty
-    //     if (locs.length == 0) {
-    //         return new bytes[](0);
-    //     }
-    //     // loop through all locs to confirm validity & hash them
     //     bytes[] memory locHashes = new bytes[](locs.length);
 
-    //     // e.g. valid location list;
-    //     // [{lat: 1, long: 1}, {lat: 1, long: 2}, {lat: 1, long: 3}, {lat:2, long: 3}]
-    //     uint256 index = 0;
-    //     uint16 latIndex = 0;
+    //     uint16 currentLat;
+    //     uint16[] curre
 
-    //     // prevLongList will store all longitudes for checking during next loop
-    //     uint16[] memory prevLongList = new uint16[](locs.length);
-    //     while (index < locs.length) {
-    //         Loc memory location = locs[index];
-    //         //////////////////////////////////
-    //         //   standard location checks   //
+    //     for (uint256 i = 0; i < locs.length; i++) {
+    //         Loc memory location = locs[i];
+
     //         require(isValidLoc(location.lat, location.long));
+    //         // get bytes ID
     //         bytes memory locId = getLocHash(location.lat, location.long);
-    //         // require(
-    //         //     locIdToOwner[locId] == address(0),
-    //         //     "Included location has owner"
-    //         // );
+
+    //         // check location has no owner yet
     //         require(
     //             locationMap[location.lat][location.long] == address(0),
     //             "Included location has owner"
     //         );
-    //         //////////////////////////////////
 
-    //         locHashes[index] = locId;
-    //         // locIdToOwner[locId] = msg.sender;
-    //         locationMap[location.lat][location.long] = msg.sender;
-    //         mintedLocations.push(locId);
-
-    //         uint16 currentLat = location.lat;
-    //         // longList keep track of current latitude longitudes
-    //         uint16[] memory longList = new uint16[](locs.length);
-
-    //         longList[0] = location.long;
-    //         // flag to keep track if this lat has an adjacent loc to previous lat
-    //         bool hasAdjacent = false;
-
-    //         // check if first location of this lat has adjacent
-    //         if (latIndex > 0) {
-    //             // check previous longtitudes for an adjacent
-    //             for (uint16 i = 0; i < prevLongList.length; i++) {
-    //                 if (prevLongList[i] == location.long) {
-    //                     hasAdjacent = true;
-    //                 }
-    //             }
-    //         } else {
-    //             // 1st lat we check, no need to look for adjacent
-    //             hasAdjacent = true;
-    //         }
-
-    //         // go through longitudes of this lat
-    //         while (location.lat == currentLat && index < locs.length) {
-    //             uint16 j = 0;
-    //             Loc memory prevLocation = location;
-
-    //             index++;
-    //             location = locs[index];
-
-    //             //////////////////////////////////
-    //             //   standard location checks   //
-    //             require(isValidLoc(location.lat, location.long));
-    //             bytes memory locId2 = getLocHash(location.lat, location.long);
-    //             require(
-    //                 locIdToOwner[locId2] == address(0),
-    //                 "Included location has owner"
-    //             );
-    //             //////////////////////////////////
-
-    //             // locations of same lat must be adjacent
-    //             require(location.long == prevLocation.long + 1);
-
-    //             locHashes[index] = locId;
-    //             locIdToOwner[locId] = msg.sender;
-    //             mintedLocations.push(locId);
-
-    //             longList[j] = location.long;
-    //             j++;
-
-    //             if (latIndex > 0 && !hasAdjacent) {
-    //                 // check previous longtitudes for an adjacent
-    //                 for (uint16 i = 0; i < prevLongList.length; i++) {
-    //                     if (prevLongList[i] == location.long) {
-    //                         hasAdjacent = true;
-    //                     }
-    //                 }
-    //             } else {
-    //                 // 1st lat we check, no need to look for adjacent
-    //                 hasAdjacent = true;
-    //             }
-    //         }
-
-    //         require(hasAdjacent, "no adjacent pieces for longitude");
-
-    //         prevLongList = longList;
-    //         latIndex++;
     //     }
-    //     // add owner to list if new
-    //     if (balanceOf[msg.sender] == 0) {
-    //         landOwners.push(msg.sender);
-    //     }
-
-    //     balanceOf[msg.sender] += locHashes.length;
-    //     remainingLocations -= locHashes.length;
-
-    //     return locHashes;
     // }
 
     /**
@@ -329,9 +328,7 @@ contract Gaia_Loc {
                     // 2nd: if different lat, check that it's adjacent to previous one
                     require(location.lat == prevLocation.lat + 1);
 
-                    // // 3rd: long must also have an adjacent location in previous lat
-                    // one of the points on this latitude must have an adjacent on previous lattitude
-                    // check locations backwards, until we reach different lat
+                    // // 3rd: at least one long in this lat must have an adjacent location in previous lat
                     Loc memory locationToCheck = prevLocation;
                     // uint16 prevLat = prevLocation.lat;
                     uint256 j = i;
@@ -415,7 +412,7 @@ contract Gaia_Loc {
     function transfer(
         uint16 lat,
         uint16 long,
-        addres to
+        address to
     ) public {
         //  require()
     }
