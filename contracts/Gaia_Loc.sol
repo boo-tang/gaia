@@ -270,6 +270,7 @@ contract Gaia_Loc {
             require(latHasAdjacent, "lats are adjacent but not longitudes");
         }
 
+        balanceOf[msg.sender] += tokenIds.length;
         return tokenIds;
     }
 
