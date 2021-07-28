@@ -37,10 +37,12 @@ contract Gaia_Loc {
 
     event LocationClaimed(bytes indexed locId, address indexed by);
     event LocationClaimed(bytes[] indexed locIds, address indexed by);
-    event LocationTransfer(
-        bytes indexed landId,
-        address indexed from,
-        address indexed to
+
+    // event Transfer(uint256 tokenId, address indexed from, address indexed to);
+    event Transfer(
+        address indexed _from,
+        address indexed _to,
+        uint256 indexed _tokenId
     );
 
     string public name = "GAIA";
@@ -78,6 +80,8 @@ contract Gaia_Loc {
     uint256 private totalSupply;
 
     mapping(uint16 => mapping(uint16 => address)) public locationMap;
+
+    mapping(uint256 => address) public tokenIdToOwner;
 
     constructor() {
         uint256 supply = uint256(maxLong) * uint256(maxLat);
@@ -121,12 +125,17 @@ contract Gaia_Loc {
         return locId;
     }
 
-    function mintMultipleLocations(Loc[] memory locs) public returns (bool) {
+    function mintMultipleLocations(Loc[] memory locs)
+        public
+        returns (uint256[] memory tokenIds)
+    {
         // returns (bytes[] memory)
         if (locs.length == 0) {
-            // return new bytes[](0);
-            return true;
+            return new uint256[](0);
         }
+
+        // array where we'll store location IDs
+        tokenIds = new uint256[](locs.length);
 
         // keep track of which lattitude we're iterating through
         uint16 currentLat;
@@ -145,6 +154,15 @@ contract Gaia_Loc {
         uint16 prevLongitudeRangeStart = location.long;
         uint16 prevLongitudeRangeEnd = 0;
 
+        // flag to help figure out convexity
+        // once the direction is flipped,
+        // you can't have a longRangeStart that is smaller than previous one
+        bool leftDirectionFlipped = false;
+        // opposite goes for rangeEnd
+        // once the direction is flipped,
+        // you can't have a longRangeEnd that is larger than previous one
+        bool rightDirectionFlipped = false;
+
         while (locationIndex < locs.length) {
             if (latIndex != 0) {
                 // `location` variable is now the FIRST of the next lattitude
@@ -158,6 +176,18 @@ contract Gaia_Loc {
 
             // keep track of current lat's min & max longitudes for adjacency check
             uint16 longitudeRangeStart = locs[locationIndex].long;
+
+            // if rangeStart is bigger than before, and direction not flipped already,
+            // flip it now
+            if (
+                longitudeRangeStart > prevLongitudeRangeStart &&
+                !leftDirectionFlipped
+            ) {
+                leftDirectionFlipped = true;
+                // if direction has already flipped, then check new rangeStart is not smaller
+            } else if (leftDirectionFlipped) {
+                require(longitudeRangeStart >= prevLongitudeRangeStart);
+            }
 
             // iterate through current latitude locations
             uint16 longCounter = 0;
@@ -176,7 +206,7 @@ contract Gaia_Loc {
                     isValidLoc(location.lat, location.long),
                     "gap between latitudes detected"
                 );
-                bytes memory locId = getLocHash(location.lat, location.long);
+                // bytes memory locId = getLocHash(location.lat, location.long);
                 require(
                     locationMap[location.lat][location.long] == address(0),
                     "Included location has owner"
@@ -203,11 +233,34 @@ contract Gaia_Loc {
                         location.long >= prevLongitudeRangeStart &&
                         location.long <= prevLongitudeRangeEnd;
                 }
+
+                // generate tokenId & increment
+                uint256 tokenId = _tokenIdTracker.current();
+                _tokenIdTracker.increment();
+                tokenIdToOwner[tokenId] = msg.sender;
+                tokenIds[locationIndex] = tokenId;
+                // add to locationMap for ownership checks
+                locationMap[location.lat][location.long] = msg.sender;
+
                 prevLocation = location;
+
                 locationIndex++;
             }
             latIndex++;
-            // longitudeRangeEnd = prevLocation.long;
+
+            uint16 longitudeRangeEnd = prevLocation.long;
+
+            // if rangeEnd is smaller than before, and direction not flipped already,
+            // flip it now
+            if (
+                longitudeRangeEnd < prevLongitudeRangeEnd &&
+                !rightDirectionFlipped
+            ) {
+                rightDirectionFlipped = true;
+                // if direction has already flipped, then check new rangeStart is not smaller
+            } else if (rightDirectionFlipped) {
+                require(longitudeRangeEnd <= prevLongitudeRangeEnd);
+            }
 
             // assign values for next lat to check
             prevLongitudeRangeEnd = prevLocation.long;
@@ -217,10 +270,10 @@ contract Gaia_Loc {
             require(latHasAdjacent, "lats are adjacent but not longitudes");
         }
 
-        return true;
+        return tokenIds;
     }
 
-    function isValidLoc(uint16 lat, uint16 long) public view returns (bool) {
+    function isValidLoc(uint16 lat, uint16 long) public pure returns (bool) {
         return lat < maxLat && long < maxLong;
     }
 
@@ -233,8 +286,12 @@ contract Gaia_Loc {
 
     // }
 
-    function ownerOf(uint16 lat, uint16 long) public view returns (address) {
+    function ownerOfLoc(uint16 lat, uint16 long) public view returns (address) {
         return locationMap[lat][long];
+    }
+
+    function ownerOf(uint256 _tokenId) external view returns (address) {
+        return tokenIdToOwner[_tokenId];
     }
 
     // TODO
@@ -255,18 +312,18 @@ contract Gaia_Loc {
     /**
      * @dev Transfers location ownership
      */
-    // function transfer(bytes memory locId, address to) public {
-    //     require(
-    //         locIdToOwner[locId] == msg.sender,
-    //         "sender does not own the land"
-    //     );
+    function transferFrom(
+        address _from,
+        address _to,
+        uint256 _tokenId
+    ) external payable {
+        require(tokenIdToOwner[_tokenId] == msg.sender);
+        require(tokenIdToOwner[_tokenId] == _from);
+        require(_from == msg.sender);
 
-    //     locIdToOwner[locId] = msg.sender;
-    //     balanceOf[msg.sender]--;
-    //     balanceOf[to]++;
-
-    //     emit LocationTransfer(locId, msg.sender, to);
-    // }
+        tokenIdToOwner[_tokenId] = _to;
+        // bytes locId = _tokenIDToLocID[_tokenIDToLocID];
+    }
 
     function transfer(
         uint16 lat,

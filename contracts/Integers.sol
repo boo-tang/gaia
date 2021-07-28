@@ -37,4 +37,30 @@ library Integers {
         }
         return string(_real);
     }
+
+    /**
+     * Parse Int
+     *
+     * Converts an ASCII string value into an uint as long as the string
+     * its self is a valid unsigned integer
+     *
+     * @param _value The ASCII string to be converted to an unsigned integer
+     * @return _ret uint The unsigned value of the ASCII string
+     */
+    function parseInt(string memory _value) public pure returns (uint256 _ret) {
+        bytes memory _bytesValue = bytes(_value);
+        uint256 j = 1;
+        for (
+            uint256 i = _bytesValue.length - 1;
+            i >= 0 && i < _bytesValue.length;
+            i--
+        ) {
+            require(
+                uint8(_bytesValue[i]) >= 48 && uint8(_bytesValue[i]) <= 57,
+                "error in assertion"
+            );
+            _ret += (uint8(_bytesValue[i]) - 48) * j;
+            j *= 10;
+        }
+    }
 }
