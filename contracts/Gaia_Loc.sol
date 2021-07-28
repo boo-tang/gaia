@@ -45,7 +45,7 @@ contract Gaia_Loc {
         uint256 indexed _tokenId
     );
 
-    string public name = "GAIA";
+    string public name = "GAIA"; // or ErTH?? no spyro shut up that's silly
     string public symbol = "U+1F30D"; // unicode for `earth globe europe-africa`
     uint8 public decimals = 0;
 
@@ -75,8 +75,6 @@ contract Gaia_Loc {
     mapping(bytes => uint256) public _locIDToTokenID;
     mapping(uint256 => bytes) public _tokenIDToLocID;
 
-    uint256 public remainingLocations;
-
     uint256 private totalSupply;
 
     mapping(uint16 => mapping(uint16 => address)) public locationMap;
@@ -86,7 +84,6 @@ contract Gaia_Loc {
     constructor() {
         uint256 supply = uint256(maxLong) * uint256(maxLat);
         totalSupply = supply;
-        remainingLocations = supply;
     }
 
     function mintSingleLocation(uint16 lat, uint16 long)
@@ -118,7 +115,6 @@ contract Gaia_Loc {
         locationMap[lat][long] = msg.sender;
         balanceOf[msg.sender]++;
         mintedLocations.push(locId);
-        remainingLocations--;
 
         emit LocationClaimed(locId, msg.sender);
 
@@ -186,7 +182,10 @@ contract Gaia_Loc {
                 leftDirectionFlipped = true;
                 // if direction has already flipped, then check new rangeStart is not smaller
             } else if (leftDirectionFlipped) {
-                require(longitudeRangeStart >= prevLongitudeRangeStart);
+                require(
+                    longitudeRangeStart >= prevLongitudeRangeStart,
+                    "Convexity broken on rangeStart"
+                );
             }
 
             // iterate through current latitude locations
@@ -259,7 +258,10 @@ contract Gaia_Loc {
                 rightDirectionFlipped = true;
                 // if direction has already flipped, then check new rangeStart is not smaller
             } else if (rightDirectionFlipped) {
-                require(longitudeRangeEnd <= prevLongitudeRangeEnd);
+                require(
+                    longitudeRangeEnd <= prevLongitudeRangeEnd,
+                    "Convexity broken on rangeEnd"
+                );
             }
 
             // assign values for next lat to check
@@ -373,7 +375,7 @@ contract Gaia_Loc {
 
     function areAdjacent(Loc memory loc1, Loc memory loc2)
         public
-        view
+        pure
         returns (bool)
     {
         // checks for right-left / up-down adjacency (not diagonal)
