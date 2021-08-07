@@ -1,4 +1,4 @@
-// contracts/Gaia_Loc.sol
+// contracts/Gaia_Location.sol
 // SPDX-License-Identifier: MIT
 
 pragma solidity ^0.8.0;
@@ -7,7 +7,7 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "./Integers.sol";
 
-contract Gaia_Loc {
+contract Gaia_Location {
     using Integers for uint16;
 
     using Counters for Counters.Counter;

@@ -34,13 +34,13 @@ App = {
   },
 
   initContract: () => {
-    $.getJSON('Gaia_Loc.json', function (data) {
+    $.getJSON('Gaia_Location.json', function (data) {
       console.log('data', data)
       //  Get the necessary contract artifact file and instantiate it with @truffle/contract
       var GaiaLocArtifact = data
-      App.contracts.Gaia_Loc = TruffleContract(GaiaLocArtifact)
+      App.contracts.Gaia_Location = TruffleContract(GaiaLocArtifact)
       // Set the provider for our contract
-      App.contracts.Gaia_Loc.setProvider(App.web3Provider)
+      App.contracts.Gaia_Location.setProvider(App.web3Provider)
       // Use our contract to retrieve and mark the purchased bits
       return App.markPurchased()
     })
