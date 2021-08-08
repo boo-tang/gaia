@@ -13,6 +13,18 @@ contract Gaia_Location {
     using Counters for Counters.Counter;
     Counters.Counter private _tokenIdTracker;
 
+    // struct MintedLocation {
+    //     uint16 lat;
+    //     uint16 long;
+    //     uint256 locId;
+    //     uint64 dateMinted;
+    // }
+
+    struct Loc {
+        uint16 lat;
+        uint16 long;
+    }
+
     /**
      * Lat can have values from -90.00 -> 90.00
      * Long can have values from -180.00 -> 180.00
@@ -20,23 +32,14 @@ contract Gaia_Location {
      * lat: 0 -> 18,000
      * long: 0 -> 36,000
      */
-    struct MintedLocation {
-        uint16 lat;
-        uint16 long;
-        bytes locId;
-        uint64 dateMinted;
-    }
-
-    struct Loc {
-        uint16 lat;
-        uint16 long;
-    }
-
     uint16 constant maxLat = 18000;
     uint16 constant maxLong = 36000;
 
-    event LocationClaimed(bytes indexed locId, address indexed by);
-    event LocationClaimed(bytes[] indexed locIds, address indexed by);
+    // event LocationClaimed(bytes indexed locId, address indexed by);
+    // event LocationsClaimed(bytes[] indexed locIds, address indexed by);
+    event LocationClaimed(address to, uint16 lat, uint16 long);
+    event LocationsClaimed(address to, Loc[] locs);
+    // event LocationClaimed(address to, uint16 lat, uint16 long);
 
     // event Transfer(uint256 tokenId, address indexed from, address indexed to);
     event Transfer(
@@ -55,9 +58,10 @@ contract Gaia_Location {
     mapping(address => uint256) public balanceOf; //number of locations owned by a given address
 
     /**
-     * @dev A mapping from NFT ID to the address that owns it.
+     * @dev DEPRECATED
+     * A mapping from NFT ID to the address that owns it.
      */
-    // mapping(bytes => address) public locIdToOwner;
+    mapping(bytes => address) public locIdToOwner;
 
     /**
      * @dev A list of unique owners.
@@ -65,21 +69,22 @@ contract Gaia_Location {
     address[] public landOwners;
 
     /**
-     * @dev list of minted locations
+     * @dev DEPRECATED
+     * usable locationId to ERC721 tokenID & vice versa
      */
-    bytes[] public mintedLocations;
+    // mapping(bytes => uint256) public _locIDToTokenID;
+    // mapping(uint256 => bytes) public _tokenIDToLocID;
 
     /**
-     * @dev usable locationId to ERC721 tokenID & vice versa
+     * @dev total number of locations
      */
-    mapping(bytes => uint256) public _locIDToTokenID;
-    mapping(uint256 => bytes) public _tokenIDToLocID;
-
     uint256 private totalSupply;
 
     mapping(uint16 => mapping(uint16 => address)) public locationMap;
 
     mapping(uint256 => address) public tokenIdToOwner;
+
+    // bytes[] public locationIds;
 
     constructor() {
         uint256 supply = uint256(maxLong) * uint256(maxLat);
@@ -88,17 +93,10 @@ contract Gaia_Location {
 
     function mintSingleLocation(uint16 lat, uint16 long)
         public
-        returns (bytes memory)
+        returns (uint256)
     {
         require(isValidLoc(lat, long), "Invalid coordinates");
-        bytes memory locId = getLocHash(lat, long);
-
-        // Location memory loc = Location({
-        //     lat: lat,
-        //     long: long,
-        //     dateMinted: uint64(block.timestamp),
-        //     locId: locId
-        // });
+        // bytes memory locId = getLocHash(lat, long);
 
         // add owner to list if new
         if (balanceOf[msg.sender] == 0) {
@@ -106,19 +104,20 @@ contract Gaia_Location {
         }
 
         // get ERC721 ID
-        uint256 tokenIdToAssign = _tokenIdTracker.current();
+        uint256 tokenId = _tokenIdTracker.current();
         _tokenIdTracker.increment();
+        tokenIdToOwner[tokenId] = msg.sender;
 
-        _tokenIDToLocID[tokenIdToAssign] = locId;
-        _locIDToTokenID[locId] = tokenIdToAssign;
+        // _tokenIDToLocID[tokenIdToAssign] = locId;
+        // _locIDToTokenID[locId] = tokenIdToAssign;
 
         locationMap[lat][long] = msg.sender;
         balanceOf[msg.sender]++;
-        mintedLocations.push(locId);
+        // mintedLocations.push(locId);
 
-        emit LocationClaimed(locId, msg.sender);
+        emit LocationClaimed(msg.sender, lat, long);
 
-        return locId;
+        return tokenId;
     }
 
     function mintMultipleLocations(Loc[] memory locs)
@@ -227,7 +226,7 @@ contract Gaia_Location {
                 if (latIndex == 0) {
                     latHasAdjacent = true;
                 } else if (latHasAdjacent != true) {
-                    // otherwise we check for adjacency by checking if it's withing previous lat's range
+                    // otherwise we check for adjacency by checking if it's within previous lat's range
                     latHasAdjacent =
                         location.long >= prevLongitudeRangeStart &&
                         location.long <= prevLongitudeRangeEnd;
@@ -272,7 +271,14 @@ contract Gaia_Location {
             require(latHasAdjacent, "lats are adjacent but not longitudes");
         }
 
+        // add owner to list if new
+        if (balanceOf[msg.sender] == 0) {
+            landOwners.push(msg.sender);
+        }
         balanceOf[msg.sender] += tokenIds.length;
+        // emit LocationsClaimed(locId, msg.sender);
+        emit LocationsClaimed(msg.sender, locs);
+
         return tokenIds;
     }
 
@@ -283,11 +289,6 @@ contract Gaia_Location {
     function getAllOwners() public view returns (address[] memory) {
         return landOwners;
     }
-
-    // function ownerOf(bytes memory locId) public view returns (address) {
-    //     return locIdToOwner[locId];
-
-    // }
 
     function ownerOfLoc(uint16 lat, uint16 long) public view returns (address) {
         return locationMap[lat][long];
@@ -319,7 +320,7 @@ contract Gaia_Location {
         address _from,
         address _to,
         uint256 _tokenId
-    ) external payable {
+    ) external payable onlyOwner(_tokenId) {
         require(tokenIdToOwner[_tokenId] == msg.sender);
         require(tokenIdToOwner[_tokenId] == _from);
         require(_from == msg.sender);
@@ -341,17 +342,6 @@ contract Gaia_Location {
     //     // which coordinates are considered valid
     // }
 
-    function getLocHash(uint16 lat, uint16 long)
-        public
-        pure
-        returns (bytes memory)
-    {
-        string memory _lat = lat.toString();
-        string memory _long = long.toString();
-        string memory separator = "-";
-        return abi.encodePacked(_lat, separator, _long);
-    }
-
     // function hasOwner(uint16 lat, uint16 long) public view returns (bool) {
     //     bytes memory locId = getLocHash(lat, long);
     //     return !(locIdToOwner[locId] == address(0));
@@ -359,14 +349,6 @@ contract Gaia_Location {
 
     function hasOwner(uint16 lat, uint16 long) public view returns (bool) {
         return !(locationMap[lat][long] == address(0));
-    }
-
-    function getLocFromId(bytes memory locId)
-        public
-        pure
-        returns (string memory)
-    {
-        return string(locId);
     }
 
     // function removeLocFromOwner(bytes memory locId, address locOnwer) private {
@@ -401,5 +383,41 @@ contract Gaia_Location {
     modifier onlyLandOwner(uint16 lat, uint16 long) {
         require(locationMap[lat][long] == msg.sender);
         _;
+    }
+
+    modifier onlyOwner(uint256 tokenId) {
+        require(tokenIdToOwner[tokenId] == msg.sender);
+        _;
+    }
+
+    modifier validID(uint256 id) {
+        require(id < totalSupply);
+        // require(!plots[id].disabled);
+        _;
+    }
+
+    /**
+     * @dev DEPRECATED
+     */
+    function getLocHash(uint16 lat, uint16 long)
+        public
+        pure
+        returns (bytes memory)
+    {
+        string memory _lat = lat.toString();
+        string memory _long = long.toString();
+        string memory separator = "-";
+        return abi.encodePacked(_lat, separator, _long);
+    }
+
+    /**
+     * @dev DEPRECATED
+     */
+    function getLocFromId(bytes memory locId)
+        public
+        pure
+        returns (string memory)
+    {
+        return string(locId);
     }
 }
