@@ -1,33 +1,34 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { MapContainer, TileLayer } from 'react-leaflet'
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
+import { sortBy } from 'lodash'
 
 import './App.css'
-import MyGridRectangle, { TILE_WIDTH } from './components/MyGridRectangle'
-
-const TILES = 16
-const TILES_2 = TILES / 2
-
-function MyGridLayer() {
-  const rects = []
-
-  for (let y = -TILES_2; y < TILES_2; y++) {
-    for (let x = -TILES_2; x < TILES_2; x++) {
-      const offsetPoint = new L.Point(x * TILE_WIDTH, y * TILE_WIDTH)
-
-      rects.push(<MyGridRectangle offsetPoint={offsetPoint} />)
-    }
-  }
-
-  return <>{rects}</>
-}
+import RectGrid from './components/RectGrid'
 
 function App() {
+  const [selectedLocations, updateSelectedLocations] = useState([])
+  const toggleLocation = loc => {
+    const filteredLocs = selectedLocations.filter(
+      selectedLoc =>
+        !(selectedLoc.lat === loc.lat && selectedLoc.lng === loc.lng),
+    )
+    if (filteredLocs.length !== selectedLocations.length) {
+      // if length changed, then we removed existing item, update locs
+      updateSelectedLocations(filteredLocs)
+    } else {
+      // if length is same, location is new so add and update
+      const updatedLocs = selectedLocations.concat(loc)
+      updateSelectedLocations(sortBy(updatedLocs, ['lat', 'lng']))
+    }
+  }
+  console.log('selectedLocations', selectedLocations)
   return (
     <div className="App">
+      {/* <div className="Header">
+
+      </div> */}
       <MapContainer
-        center={[51.505, -0.09]}
+        center={[38, 23.74]}
         zoom={13}
         scrollWheelZoom={true}
         className="MapContainer"
@@ -36,7 +37,7 @@ function App() {
           attribution='&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <MyGridLayer />
+        <RectGrid toggleLocation={toggleLocation} />
       </MapContainer>
     </div>
   )
