@@ -21,8 +21,6 @@ export const Rect = ({ loc, toggleLocation }) => {
   const rectRef = useRef()
   const eventHandlers = {
     mouseover: () => {
-      // console.log(rectRef)
-      console.log(isSelected)
       rectRef.current.setStyle({
         ...pathOptions(isSelected),
         opacity: 1,

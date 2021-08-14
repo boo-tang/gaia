@@ -1,4 +1,5 @@
-import React from 'react'
+import React, { useState } from 'react'
+import { useMapEvents } from 'react-leaflet'
 
 import { Rect } from './Rect'
 
@@ -10,7 +11,22 @@ const TEMP_LNG_START = 23.6
 
 const roundLoc = num => Math.round((num + Number.EPSILON) * 100) / 100
 
-const RectGrid = ({ toggleLocation }) => {
+const RectGrid = ({ toggleLocation, ...props }) => {
+  const [showGrid, changeShowGrid] = useState(true)
+  const map = useMapEvents({
+    zoomend: () => {
+      if (map.getZoom() < 12) {
+        changeShowGrid(false)
+      } else if (!showGrid) {
+        changeShowGrid(true)
+      }
+    },
+  })
+
+  if (!showGrid) {
+    return false
+  }
+
   const locs = []
   let lng = TEMP_LNG_START
   for (let i = 0; i < TEMP_GRID_HEIGHT; i++) {

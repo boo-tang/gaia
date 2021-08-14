@@ -1,4 +1,12 @@
 import React, { useState } from 'react'
+import {
+  Box,
+  Button,
+  ChakraProvider,
+  Flex,
+  Heading,
+  Spacer,
+} from '@chakra-ui/react'
 import { MapContainer, TileLayer } from 'react-leaflet'
 import { sortBy } from 'lodash'
 
@@ -21,25 +29,35 @@ function App() {
       updateSelectedLocations(sortBy(updatedLocs, ['lat', 'lng']))
     }
   }
-  console.log('selectedLocations', selectedLocations)
   return (
-    <div className="App">
-      {/* <div className="Header">
-
-      </div> */}
-      <MapContainer
-        center={[38, 23.74]}
-        zoom={13}
-        scrollWheelZoom={true}
-        className="MapContainer"
-      >
-        <TileLayer
-          attribution='&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        <RectGrid toggleLocation={toggleLocation} />
-      </MapContainer>
-    </div>
+    <ChakraProvider>
+      <div className="App">
+        <Flex className="Header">
+          <Box p="3">
+            <Heading size="md">GAIA</Heading>
+          </Box>
+          <Spacer />
+          <Box>
+            <Button colorScheme="teal" m="1">
+              Connect
+            </Button>
+          </Box>
+        </Flex>
+        <MapContainer
+          center={[38, 23.74]}
+          zoom={13}
+          scrollWheelZoom={true}
+          className="MapContainer"
+        >
+          <TileLayer
+            attribution='&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            // url="http://{s}.tiles.wmflabs.org/osm-no-labels/{z}/{x}/{y}.png"
+          />
+          <RectGrid toggleLocation={toggleLocation} />
+        </MapContainer>
+      </div>
+    </ChakraProvider>
   )
 }
 
