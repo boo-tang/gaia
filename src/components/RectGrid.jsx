@@ -15,7 +15,7 @@ const RectGrid = ({ toggleLocation, ...props }) => {
   const [showGrid, changeShowGrid] = useState(true)
   const map = useMapEvents({
     zoomend: () => {
-      if (map.getZoom() < 12) {
+      if (map.getZoom() < 11) {
         changeShowGrid(false)
       } else if (!showGrid) {
         changeShowGrid(true)

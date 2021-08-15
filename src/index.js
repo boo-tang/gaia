@@ -1,12 +1,19 @@
 import React from 'react'
 import ReactDOM from 'react-dom'
+import reportWebVitals from './reportWebVitals'
+import { DAppProvider } from '@usedapp/core'
+import { ChakraProvider } from '@chakra-ui/react'
+
 import './index.css'
 import App from './App'
-import reportWebVitals from './reportWebVitals'
 
 ReactDOM.render(
   <React.StrictMode>
-    <App />
+    <DAppProvider config={{}}>
+      <ChakraProvider>
+        <App />
+      </ChakraProvider>
+    </DAppProvider>
   </React.StrictMode>,
   document.getElementById('root'),
 )
