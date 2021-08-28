@@ -1,19 +1,23 @@
 import React from 'react'
 import ReactDOM from 'react-dom'
 import reportWebVitals from './reportWebVitals'
-import { DAppProvider } from '@usedapp/core'
 import { ChakraProvider } from '@chakra-ui/react'
+import { Web3ReactProvider } from '@web3-react/core'
 
 import './index.css'
 import App from './App'
+import getLibrary from './utils/getLibrary'
+import Web3ProviderNetwork from './components/Web3ProviderNetwork'
 
 ReactDOM.render(
   <React.StrictMode>
-    <DAppProvider config={{}}>
-      <ChakraProvider>
-        <App />
-      </ChakraProvider>
-    </DAppProvider>
+    <Web3ReactProvider getLibrary={getLibrary}>
+      <Web3ProviderNetwork getLibrary={getLibrary}>
+        <ChakraProvider>
+          <App />
+        </ChakraProvider>
+      </Web3ProviderNetwork>
+    </Web3ReactProvider>
   </React.StrictMode>,
   document.getElementById('root'),
 )
