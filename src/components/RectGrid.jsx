@@ -11,7 +11,13 @@ const TEMP_LNG_START = 23.6
 
 const roundLoc = num => Math.round((num + Number.EPSILON) * 100) / 100
 
-const RectGrid = ({ toggleLocation, ...props }) => {
+const isLocOwned = (ownedLocations, loc) =>
+  ownedLocations.some(([lat, lng]) => {
+    // debugger
+    return lat === loc.lat * 100 && lng === loc.lng * 100
+  })
+
+const RectGrid = ({ ownedLocations = [], toggleLocation, ...props }) => {
   const [showGrid, changeShowGrid] = useState(true)
   const map = useMapEvents({
     zoomend: () => {
@@ -37,11 +43,16 @@ const RectGrid = ({ toggleLocation, ...props }) => {
         lng: roundLoc(lng),
       }
 
+      if (isLocOwned(ownedLocations, loc)) {
+        loc.isOwned = true
+      }
+
       locs.push(loc)
       lat += TILE_WIDTH
     }
     lng += TILE_WIDTH
   }
+
   return (
     <>
       {locs.map(loc => (

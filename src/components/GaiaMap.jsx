@@ -1,19 +1,22 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { MapContainer, TileLayer } from 'react-leaflet'
 import { sortBy } from 'lodash'
-import { Button, Input } from '@chakra-ui/react'
-import { Contract } from '@ethersproject/contracts'
+import { Button, ButtonGroup, Input } from '@chakra-ui/react'
 import { BigNumber } from '@ethersproject/bignumber'
 
-import RectGrid from './RectGrid'
 import useActiveWeb3React from '../hooks/useActiveWeb3React'
+import useGaiaLocation from '../hooks/useGaiaLocation'
+import RectGrid from './RectGrid'
 
 export const GaiaMap = () => {
   const { account } = useActiveWeb3React()
+  const [pendingTx, setPendingTx] = useState(false)
+
   ////////////////////////////////////////////////////////////
   ////////////// Selected Locations tracking /////////////////
   ////////////////////////////////////////////////////////////
   const [selectedLocations, updateSelectedLocations] = useState([])
+  const [ownedLocations, updateOwnedLocations] = useState([])
   const toggleLocation = loc => {
     const filteredLocs = selectedLocations.filter(
       selectedLoc =>
@@ -29,31 +32,65 @@ export const GaiaMap = () => {
     }
   }
 
-  if (typeof web3 === 'undefined') {
+  ////////////////////////////////////////////////////////////
+  ////////////////// Web3 Contract Code //////////////////////
+  ////////////////////////////////////////////////////////////
+  const { mintLocations, getUserLocations } = useGaiaLocation(account)
+
+  const onClick = async () => {
+    setPendingTx(true)
+    const tx = await mintLocations(selectedLocations)
+    console.log('tx', tx, 'typeof wait', typeof tx.wait)
+    if (tx.wait) {
+      tx.wait()
+        .catch(err => {
+          console.error('err on tx.wait', err)
+        })
+        .finally(() => setPendingTx(false))
+    } else {
+      setPendingTx(false)
+    }
+  }
+
+  // read contract
+  useEffect(() => {
+    const fn = async () => {
+      if (account && !pendingTx) {
+        // setPendingTx(true)
+        const locations = await getUserLocations()
+        updateOwnedLocations(locations)
+        // setPendingTx(false)
+        console.log('USER LOCATIONS', locations)
+      }
+    }
+    fn()
+  }, [account, pendingTx, getUserLocations])
+
+  if (typeof account === 'undefined') {
     return (
-      <div className="App">
+      <div className="MapContainer">
         Loading Web3, accounts, and contract... Reload page
       </div>
     )
   }
 
-  ////////////////////////////////////////////////////////////
-  ////////////////// Web3 Contract Code //////////////////////
-  ////////////////////////////////////////////////////////////
-  // let storageValue
-  // let StorageContract
-  // if (web3.account) {
-  //   console.log('web3', web3)
-  //   const storageContractAddr = SimpleStorage[web3.chainId]
-  //   console.log(storageContractAddr)
-
-  //   StorageContract = new Contract(storageContractAddr, SimpleStorageABI.abi)
-  //   console.log(StorageContract)
-  //   storageValue = await StorageContract.get()
-  // }
-
   return (
     <>
+      {!!selectedLocations?.length && (
+        <Button
+          style={{
+            position: 'fixed',
+            top: '6vh',
+            left: '50%',
+            transform: 'translate(-50%, 0)',
+            zIndex: '10000',
+          }}
+          isLoading={pendingTx}
+          onClick={onClick}
+        >
+          Click to Purchase
+        </Button>
+      )}
       <MapContainer
         center={[38, 23.74]}
         zoom={13}
@@ -65,7 +102,12 @@ export const GaiaMap = () => {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           // url="http://{s}.tiles.wmflabs.org/osm-no-labels/{z}/{x}/{y}.png"
         />
-        <RectGrid toggleLocation={toggleLocation} />
+        {!pendingTx && (
+          <RectGrid
+            toggleLocation={toggleLocation}
+            ownedLocations={ownedLocations}
+          />
+        )}
       </MapContainer>
     </>
   )
