@@ -14,6 +14,9 @@ export const Rect = ({ loc, toggleLocation }) => {
   const [isSelected, updateIsSelected] = useState(false)
   // get bounds from loc
   const { lat, lng, isOwned } = loc
+  if (lat == 38.02 && lng == 23.78) {
+    console.log(loc)
+  }
   const bounds = [
     [lat - 0.005, lng - 0.005],
     [lat + 0.005, lng + 0.005],

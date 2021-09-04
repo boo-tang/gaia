@@ -12,10 +12,10 @@ const TEMP_LNG_START = 23.6
 const roundLoc = num => Math.round((num + Number.EPSILON) * 100) / 100
 
 const isLocOwned = (ownedLocations, loc) =>
-  ownedLocations.some(([lat, lng]) => {
-    // debugger
-    return lat === loc.lat * 100 && lng === loc.lng * 100
-  })
+  ownedLocations.some(
+    ([lat, lng]) =>
+      lat === Math.round(loc.lat * 100) && lng === Math.round(loc.lng * 100),
+  )
 
 const RectGrid = ({ ownedLocations = [], toggleLocation, ...props }) => {
   const [showGrid, changeShowGrid] = useState(true)

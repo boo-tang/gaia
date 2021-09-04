@@ -56,10 +56,8 @@ export const GaiaMap = () => {
   useEffect(() => {
     const fn = async () => {
       if (account && !pendingTx) {
-        // setPendingTx(true)
         const locations = await getUserLocations()
         updateOwnedLocations(locations)
-        // setPendingTx(false)
         console.log('USER LOCATIONS', locations)
       }
     }
