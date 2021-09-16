@@ -6,7 +6,7 @@ import { BigNumber } from '@ethersproject/bignumber'
 
 import useActiveWeb3React from '../hooks/useActiveWeb3React'
 import useGaiaLocation from '../hooks/useGaiaLocation'
-import RectGrid from './RectGrid'
+import RectGrid, { TEMP_LAT_START, TEMP_LNG_START } from './RectGrid'
 
 export const GaiaMap = () => {
   const { account } = useActiveWeb3React()
@@ -17,20 +17,23 @@ export const GaiaMap = () => {
   ////////////////////////////////////////////////////////////
   const [selectedLocations, updateSelectedLocations] = useState([])
   const [ownedLocations, updateOwnedLocations] = useState([])
-  const toggleLocation = loc => {
-    const filteredLocs = selectedLocations.filter(
-      selectedLoc =>
-        !(selectedLoc.lat === loc.lat && selectedLoc.lng === loc.lng),
-    )
-    if (filteredLocs.length !== selectedLocations.length) {
-      // if length changed, then we removed existing item, update locs
-      updateSelectedLocations(filteredLocs)
-    } else {
-      // if length is same, location is new so add and update
-      const updatedLocs = selectedLocations.concat(loc)
-      updateSelectedLocations(sortBy(updatedLocs, ['lat', 'lng']))
-    }
-  }
+  const toggleLocation = useCallback(
+    loc => {
+      const filteredLocs = selectedLocations.filter(
+        selectedLoc =>
+          !(selectedLoc.lat === loc.lat && selectedLoc.lng === loc.lng),
+      )
+      if (filteredLocs.length !== selectedLocations.length) {
+        // if length changed, then we removed existing item, update locs
+        updateSelectedLocations(filteredLocs)
+      } else {
+        // if length is same, location is new so add and update
+        const updatedLocs = selectedLocations.concat(loc)
+        updateSelectedLocations(sortBy(updatedLocs, ['lat', 'lng']))
+      }
+    },
+    [updateSelectedLocations],
+  )
 
   ////////////////////////////////////////////////////////////
   ////////////////// Web3 Contract Code //////////////////////
@@ -72,6 +75,8 @@ export const GaiaMap = () => {
     )
   }
 
+  console.log(selectedLocations)
+
   return (
     <>
       {!!selectedLocations?.length && (
@@ -90,7 +95,7 @@ export const GaiaMap = () => {
         </Button>
       )}
       <MapContainer
-        center={[38, 23.74]}
+        center={[TEMP_LAT_START + 0.01, TEMP_LNG_START + 0.014]}
         zoom={13}
         scrollWheelZoom={true}
         className="MapContainer"

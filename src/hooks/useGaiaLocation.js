@@ -1,10 +1,10 @@
 import { useCallback } from 'react'
-import { BigNumber } from '@ethersproject/bignumber'
 
 import useActiveWeb3React from './useActiveWeb3React'
 import GaiaLocationABI from '../contracts/Gaia_Location.json'
 import useContract from './useContract'
 import addresses from '../constants/addresses'
+import { fromCoorToUint } from '../utils/location'
 
 const useGaiaLocation = account => {
   const { chainId } = useActiveWeb3React()
@@ -18,10 +18,11 @@ const useGaiaLocation = account => {
   const mintLocations = useCallback(
     async selectedLocations => {
       try {
-        const locations = selectedLocations.map(({ lat, lng }) => {
-          return [Math.round(lat * 100), Math.round(lng * 100)]
+        const locations = selectedLocations.map(_loc => {
+          const loc = fromCoorToUint(_loc)
+          return [loc.lat, loc.lng]
         })
-        console.log('selected locs', locations)
+        console.log('minting selected locs', locations)
         const tx = await contract.mintMultipleLocations(locations)
         return tx
       } catch (err) {

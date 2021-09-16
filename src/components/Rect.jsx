@@ -1,5 +1,8 @@
+import { ListItem, UnorderedList } from '@chakra-ui/layout'
 import React, { useRef, useState } from 'react'
-import { Rectangle } from 'react-leaflet'
+import { Popup, Rectangle } from 'react-leaflet'
+
+import { fromCoorToUint, getLocationBounds } from '../utils/location'
 
 const pathOptions = (isSelected, isOwned) => ({
   color: 'black',
@@ -10,17 +13,24 @@ const pathOptions = (isSelected, isOwned) => ({
   fillOpacity: isSelected || isOwned ? 0.5 : 0,
 })
 
-export const Rect = ({ loc, toggleLocation }) => {
+const isLocOwned = (_loc, ownedLocations) => {
+  const loc = fromCoorToUint(_loc)
+  return ownedLocations.some(([lat, lng]) => {
+    return lat === loc.lat && lng === loc.lng
+  })
+}
+
+const Rect = ({ lat, lng, toggleLocation, ownedLocations }) => {
+  const loc = { lat, lng }
   const [isSelected, updateIsSelected] = useState(false)
   // get bounds from loc
-  const { lat, lng, isOwned } = loc
-  if (lat == 38.02 && lng == 23.78) {
-    console.log(loc)
+  const bounds = getLocationBounds(loc)
+  let isOwned = false
+
+  if (isLocOwned(loc, ownedLocations)) {
+    isOwned = true
   }
-  const bounds = [
-    [lat - 0.005, lng - 0.005],
-    [lat + 0.005, lng + 0.005],
-  ]
+
   const rectRef = useRef()
   const standardStyle = pathOptions(isSelected, isOwned)
   const eventHandlers = {
@@ -40,12 +50,27 @@ export const Rect = ({ loc, toggleLocation }) => {
       updateIsSelected(!isSelected)
     },
   }
+
   return (
     <Rectangle
       pathOptions={standardStyle}
       bounds={bounds}
       eventHandlers={eventHandlers}
       ref={rectRef}
-    />
+    >
+      {/* <Popup>
+        <UnorderedList>
+          <ListItem>
+            <b>Owner: </b> 0x1F68e805e90945845336d4Bb04C85D65faf3b3FD
+            <br />
+            <b>Name: </b> Spyroland
+            <br />
+            <b>Flag: </b>
+          </ListItem>
+        </UnorderedList>
+      </Popup> */}
+    </Rectangle>
   )
 }
+
+export default React.memo(Rect)
