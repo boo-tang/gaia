@@ -20,8 +20,7 @@ const isLocOwned = (_loc, ownedLocations) => {
   })
 }
 
-const Rect = ({ lat, lng, toggleLocation, ownedLocations }) => {
-  const loc = { lat, lng }
+const Rect = ({ loc, toggleLocation, ownedLocations }) => {
   const [isSelected, updateIsSelected] = useState(false)
   // get bounds from loc
   const bounds = getLocationBounds(loc)

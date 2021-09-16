@@ -52,12 +52,10 @@ const RectGrid = ({ ownedLocations = [], toggleLocation, ...props }) => {
     <>
       {locs.map(loc => (
         <Rect
-          // loc={loc}
-          lat={loc.lat}
-          lng={loc.lng}
+          loc={loc}
           key={`${loc.lat}-${loc.lng}`}
           toggleLocation={toggleLocation}
-          // ownedLocations={ownedLocations}
+          ownedLocations={ownedLocations}
         />
       ))}
     </>

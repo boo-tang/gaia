@@ -32,7 +32,7 @@ export const GaiaMap = () => {
         updateSelectedLocations(sortBy(updatedLocs, ['lat', 'lng']))
       }
     },
-    [updateSelectedLocations],
+    [updateSelectedLocations, selectedLocations],
   )
 
   ////////////////////////////////////////////////////////////
