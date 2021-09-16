@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom'
 import reportWebVitals from './reportWebVitals'
 import { ChakraProvider } from '@chakra-ui/react'
 import { Web3ReactProvider } from '@web3-react/core'
+import { store } from './store'
+import { Provider as ReduxProvider } from 'react-redux'
 
 import './index.css'
 import App from './App'
@@ -14,7 +16,9 @@ ReactDOM.render(
     <Web3ReactProvider getLibrary={getLibrary}>
       <Web3ProviderNetwork getLibrary={getLibrary}>
         <ChakraProvider>
-          <App />
+          <ReduxProvider store={store}>
+            <App />
+          </ReduxProvider>
         </ChakraProvider>
       </Web3ProviderNetwork>
     </Web3ReactProvider>

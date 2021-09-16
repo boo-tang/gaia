@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { MapContainer, TileLayer } from 'react-leaflet'
 import { sortBy } from 'lodash'
-import { Button, ButtonGroup, Input } from '@chakra-ui/react'
-import { BigNumber } from '@ethersproject/bignumber'
+import { Button } from '@chakra-ui/react'
+import { useSelector, useDispatch } from 'react-redux'
 
+import RectGrid, { TEMP_LAT_START, TEMP_LNG_START } from './RectGrid'
 import useActiveWeb3React from '../hooks/useActiveWeb3React'
 import useGaiaLocation from '../hooks/useGaiaLocation'
-import RectGrid, { TEMP_LAT_START, TEMP_LNG_START } from './RectGrid'
+import { toggleLocation as toggleLocationAction } from '../state/locations'
 
 export const GaiaMap = () => {
   const { account } = useActiveWeb3React()
@@ -15,25 +16,33 @@ export const GaiaMap = () => {
   ////////////////////////////////////////////////////////////
   ////////////// Selected Locations tracking /////////////////
   ////////////////////////////////////////////////////////////
-  const [selectedLocations, updateSelectedLocations] = useState([])
+  // const [selectedLocations, updateSelectedLocations] = useState([])
+
+  const { selectedLocations } = useSelector(state => state.locations)
+  const dispatch = useDispatch()
+
   const [ownedLocations, updateOwnedLocations] = useState([])
   const toggleLocation = useCallback(
-    loc => {
-      const filteredLocs = selectedLocations.filter(
-        selectedLoc =>
-          !(selectedLoc.lat === loc.lat && selectedLoc.lng === loc.lng),
-      )
-      if (filteredLocs.length !== selectedLocations.length) {
-        // if length changed, then we removed existing item, update locs
-        updateSelectedLocations(filteredLocs)
-      } else {
-        // if length is same, location is new so add and update
-        const updatedLocs = selectedLocations.concat(loc)
-        updateSelectedLocations(sortBy(updatedLocs, ['lat', 'lng']))
-      }
-    },
-    [updateSelectedLocations, selectedLocations],
+    loc => dispatch(toggleLocationAction(loc)),
+    [dispatch],
   )
+  // const toggleLocation = useCallback(
+  //   loc => {
+  //     const filteredLocs = selectedLocations.filter(
+  //       selectedLoc =>
+  //         !(selectedLoc.lat === loc.lat && selectedLoc.lng === loc.lng),
+  //     )
+  //     if (filteredLocs.length !== selectedLocations.length) {
+  //       // if length changed, then we removed existing item, update locs
+  //       updateSelectedLocations(filteredLocs)
+  //     } else {
+  //       // if length is same, location is new so add and update
+  //       const updatedLocs = selectedLocations.concat(loc)
+  //       updateSelectedLocations(sortBy(updatedLocs, ['lat', 'lng']))
+  //     }
+  //   },
+  //   [updateSelectedLocations, selectedLocations],
+  // )
 
   ////////////////////////////////////////////////////////////
   ////////////////// Web3 Contract Code //////////////////////

@@ -57,17 +57,16 @@ const Rect = ({ loc, toggleLocation, ownedLocations }) => {
       eventHandlers={eventHandlers}
       ref={rectRef}
     >
-      {/* <Popup>
+      <Popup>
         <UnorderedList>
           <ListItem>
             <b>Owner: </b> 0x1F68e805e90945845336d4Bb04C85D65faf3b3FD
-            <br />
+          </ListItem>
+          <ListItem>
             <b>Name: </b> Spyroland
-            <br />
-            <b>Flag: </b>
           </ListItem>
         </UnorderedList>
-      </Popup> */}
+      </Popup>
     </Rectangle>
   )
 }

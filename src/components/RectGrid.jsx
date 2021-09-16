@@ -9,8 +9,8 @@ export const TILE_WIDTH = 1 / COOR_PRECISION
 export const TEMP_GRID_HEIGHT = 64
 // export const TEMP_LAT_START = 37.9
 // export const TEMP_LNG_START = 23.6
-export const TEMP_LAT_START = 40.768699
-export const TEMP_LNG_START = -73.9897407
+export const TEMP_LAT_START = 40.6
+export const TEMP_LNG_START = -74.1
 
 const locs = []
 
