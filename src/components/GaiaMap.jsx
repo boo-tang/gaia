@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { MapContainer, TileLayer } from 'react-leaflet'
-import { sortBy } from 'lodash'
 import { Button } from '@chakra-ui/react'
 import { useSelector, useDispatch } from 'react-redux'
 
-import RectGrid, { TEMP_LAT_START, TEMP_LNG_START } from './RectGrid'
+import RectGrid from './RectGrid'
 import useActiveWeb3React from '../hooks/useActiveWeb3React'
 import useGaiaLocation from '../hooks/useGaiaLocation'
 import {
@@ -18,6 +17,9 @@ export const GaiaMap = () => {
 
   // loading state for running eth transaction
   const [pendingTx, setPendingTx] = useState(false)
+
+  // ready state for map to display grid
+  const [mapReady, setMapReady] = useState(false)
 
   ////////////////////////////////////////////////////////////
   ////////////// Selected Locations tracking /////////////////
@@ -33,24 +35,6 @@ export const GaiaMap = () => {
     loc => dispatch(resetLocationsAction()),
     [dispatch],
   )
-
-  // const toggleLocation = useCallback(
-  //   loc => {
-  //     const filteredLocs = selectedLocations.filter(
-  //       selectedLoc =>
-  //         !(selectedLoc.lat === loc.lat && selectedLoc.lng === loc.lng),
-  //     )
-  //     if (filteredLocs.length !== selectedLocations.length) {
-  //       // if length changed, then we removed existing item, update locs
-  //       updateSelectedLocations(filteredLocs)
-  //     } else {
-  //       // if length is same, location is new so add and update
-  //       const updatedLocs = selectedLocations.concat(loc)
-  //       updateSelectedLocations(sortBy(updatedLocs, ['lat', 'lng']))
-  //     }
-  //   },
-  //   [updateSelectedLocations, selectedLocations],
-  // )
 
   ////////////////////////////////////////////////////////////
   ////////////////// Web3 Contract Code //////////////////////
@@ -97,8 +81,6 @@ export const GaiaMap = () => {
     )
   }
 
-  console.log(selectedLocations)
-
   return (
     <>
       {!!selectedLocations?.length && (
@@ -117,10 +99,12 @@ export const GaiaMap = () => {
         </Button>
       )}
       <MapContainer
-        center={[TEMP_LAT_START + 0.01, TEMP_LNG_START + 0.014]}
-        zoom={13}
+        // start rendering the map from Manhattan
+        center={[40.76203, -73.96277]}
+        zoom={12}
         scrollWheelZoom={true}
         className="MapContainer"
+        whenReady={() => setMapReady(true)}
       >
         <TileLayer
           attribution='&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
@@ -131,6 +115,7 @@ export const GaiaMap = () => {
           <RectGrid
             toggleLocation={toggleLocation}
             ownedLocations={ownedLocations}
+            mapReady={mapReady}
           />
         )}
       </MapContainer>
