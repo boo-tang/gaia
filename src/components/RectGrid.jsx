@@ -58,14 +58,13 @@ const RectGrid = ({
   const map = useMapEvents({
     zoomend: () => {
       console.log(map.getZoom())
-      if (map.getZoom() < 10) {
+      if (map.getZoom() < 11) {
         changeShowGrid(false)
       } else if (!showGrid) {
         changeShowGrid(true)
       }
     },
     moveend: () => {
-      console.log(map.getCenter())
       if (!showGrid) return
       const _locs = getGridInBounds(map.getBounds(), setLocs)
       setLocs(_locs)
