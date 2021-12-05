@@ -3,6 +3,7 @@ import React, { useRef, useState } from 'react'
 import { Popup, Rectangle } from 'react-leaflet'
 
 import { fromCoorToUint, getLocationBounds } from '../utils/location'
+import flag from '../assets/flag_example.png'
 
 const pathOptions = (isSelected, isOwned) => ({
   color: 'black',
@@ -57,16 +58,19 @@ const Rect = ({ loc, toggleLocation, ownedLocations }) => {
       eventHandlers={eventHandlers}
       ref={rectRef}
     >
-      <Popup>
+      {/* <Popup>
         <UnorderedList>
           <ListItem>
-            <b>Owner: </b> 0x1F68e805e90945845336d4Bb04C85D65faf3b3FD
+            <b>Owner: </b> boo-tang.eth
           </ListItem>
           <ListItem>
-            <b>Name: </b> Spyroland
+            <b>Name: </b> Boo Tang Clan
+          </ListItem>
+          <ListItem>
+            <b>Flag: </b> <img src={flag} alt="Flag" />
           </ListItem>
         </UnorderedList>
-      </Popup>
+      </Popup> */}
     </Rectangle>
   )
 }

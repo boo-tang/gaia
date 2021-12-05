@@ -361,7 +361,9 @@ contract Gaia_Location {
         view
         returns (Loc[] memory)
     {
-        require(balanceOf[_owner] > 0, "requested address has no balance");
+        if (balanceOf[_owner] == 0) {
+          return new Loc[](0);
+        }
         uint256[] memory tokenIds = getOwnedTokenIds(_owner);
         Loc[] memory locations = new Loc[](tokenIds.length);
 

@@ -1,3 +1,3 @@
 export const NetworkContextName = 'NETWORK'
 
-export const COOR_PRECISION = 100
+export const COOR_PRECISION = 10

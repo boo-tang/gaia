@@ -7,25 +7,33 @@ import { useSelector, useDispatch } from 'react-redux'
 import RectGrid, { TEMP_LAT_START, TEMP_LNG_START } from './RectGrid'
 import useActiveWeb3React from '../hooks/useActiveWeb3React'
 import useGaiaLocation from '../hooks/useGaiaLocation'
-import { toggleLocation as toggleLocationAction } from '../state/locations'
+import {
+  toggleLocation as toggleLocationAction,
+  resetLocations as resetLocationsAction,
+} from '../state/locations'
 
 export const GaiaMap = () => {
   const { account } = useActiveWeb3React()
+  const dispatch = useDispatch()
+
+  // loading state for running eth transaction
   const [pendingTx, setPendingTx] = useState(false)
 
   ////////////////////////////////////////////////////////////
   ////////////// Selected Locations tracking /////////////////
   ////////////////////////////////////////////////////////////
-  // const [selectedLocations, updateSelectedLocations] = useState([])
-
+  // selected locations come from app Redux store
   const { selectedLocations } = useSelector(state => state.locations)
-  const dispatch = useDispatch()
 
-  const [ownedLocations, updateOwnedLocations] = useState([])
   const toggleLocation = useCallback(
     loc => dispatch(toggleLocationAction(loc)),
     [dispatch],
   )
+  const resetLocations = useCallback(
+    loc => dispatch(resetLocationsAction()),
+    [dispatch],
+  )
+
   // const toggleLocation = useCallback(
   //   loc => {
   //     const filteredLocs = selectedLocations.filter(
@@ -47,18 +55,23 @@ export const GaiaMap = () => {
   ////////////////////////////////////////////////////////////
   ////////////////// Web3 Contract Code //////////////////////
   ////////////////////////////////////////////////////////////
+  // owned locations are loaded from blockchain to component state
+  const [ownedLocations, updateOwnedLocations] = useState([])
+
   const { mintLocations, getUserLocations } = useGaiaLocation(account)
 
-  const onClick = async () => {
+  const onPurchase = async () => {
     setPendingTx(true)
     const tx = await mintLocations(selectedLocations)
-    console.log('tx', tx, 'typeof wait', typeof tx.wait)
     if (tx.wait) {
       tx.wait()
         .catch(err => {
           console.error('err on tx.wait', err)
         })
-        .finally(() => setPendingTx(false))
+        .finally(() => {
+          resetLocations()
+          setPendingTx(false)
+        })
     } else {
       setPendingTx(false)
     }
@@ -98,7 +111,7 @@ export const GaiaMap = () => {
             zIndex: '10000',
           }}
           isLoading={pendingTx}
-          onClick={onClick}
+          onClick={onPurchase}
         >
           Click to Purchase
         </Button>

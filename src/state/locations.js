@@ -28,10 +28,13 @@ export const locationsSlice = createSlice({
         state.selectedLocations = sortBy(updatedLocs, ['lat', 'lng'])
       }
     },
+    resetLocations: (state, action) => {
+      state.selectedLocations = []
+    },
   },
 })
 
 // Action creators are generated for each case reducer function
-export const { toggleLocation } = locationsSlice.actions
+export const { toggleLocation, resetLocations } = locationsSlice.actions
 
 export default locationsSlice.reducer
