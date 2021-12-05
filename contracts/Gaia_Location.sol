@@ -362,7 +362,7 @@ contract Gaia_Location {
         returns (Loc[] memory)
     {
         if (balanceOf[_owner] == 0) {
-          return new Loc[](0);
+            return new Loc[](0);
         }
         uint256[] memory tokenIds = getOwnedTokenIds(_owner);
         Loc[] memory locations = new Loc[](tokenIds.length);
@@ -372,6 +372,20 @@ contract Gaia_Location {
         }
 
         return locations;
+    }
+
+    // get OwnedLocations within bounds
+    function getOwnedLocationsInBounds(
+        address _owner,
+        uint16 minOwnedLat,
+        uint16 minOwnedLng,
+        uint16 maxOwnedLat,
+        uint16 maxOwnedLng
+    ) external view returns (Loc[] memory ownedLocs) {
+        if (balanceOf[_owner] == 0) {
+            return ownedLocs;
+        }
+        // for (uint16 = minOwnedLat;)
     }
 
     function tokenOfOwnerByIndex(address _owner, uint256 _index)
