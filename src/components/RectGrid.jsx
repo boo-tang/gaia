@@ -54,10 +54,9 @@ const RectGrid = ({
   ...props
 }) => {
   const [showGrid, changeShowGrid] = useState(true)
-  const [locs, setLocs] = useState([])
   const map = useMapEvents({
     zoomend: () => {
-      console.log(map.getZoom())
+      console.log('zoom: ', map.getZoom())
       if (map.getZoom() < 11) {
         changeShowGrid(false)
       } else if (!showGrid) {
@@ -66,28 +65,31 @@ const RectGrid = ({
     },
     moveend: () => {
       if (!showGrid) return
-      const _locs = getGridInBounds(map.getBounds(), setLocs)
+      const _locs = getGridInBounds(map.getBounds())
       setLocs(_locs)
     },
   })
+  const [locs, setLocs] = useState(getGridInBounds(map.getBounds()))
 
-  useEffect(() => {
-    if (!mapReady) {
-      return
-    }
-    const calculateNewGrid = () => {
-      if (!showGrid) return
-      const _locs = getGridInBounds(map.getBounds(), setLocs)
-      setLocs(_locs)
-    }
-    calculateNewGrid()
-  }, [mapReady, map, showGrid])
+  // useEffect(() => {
+  //   if (!mapReady) {
+  //     return
+  //   }
+  //   const calculateNewGrid = () => {
+  //     if (!showGrid) return
+  //     const _locs = getGridInBounds(map.getBounds(), setLocs)
+  //     setLocs(_locs)
+  //   }
+  //   calculateNewGrid()
+  // }, [mapReady, map, showGrid])
 
-  if (!showGrid) {
+  // QUICK FIX, don't render if number of locations is too big
+  // it's a bug with zooming in/out and getting the wrong bounds
+  if (!showGrid || locs.length > 5000) {
     return false
   }
 
-  console.log(locs.length)
+  console.log('# of tiles to render: ', locs.length)
 
   return (
     <>

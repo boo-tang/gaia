@@ -3,7 +3,7 @@ import React, { useRef, useState } from 'react'
 import { Popup, Rectangle } from 'react-leaflet'
 
 import { fromCoorToUint, getLocationBounds } from '../utils/location'
-import flag from '../assets/flag_example.png'
+// import flag from '../assets/flag_example.png'
 
 const pathOptions = (isSelected, isOwned) => ({
   color: 'black',
@@ -35,7 +35,7 @@ const Rect = ({ loc, toggleLocation, ownedLocations }) => {
   const standardStyle = pathOptions(isSelected, isOwned)
   const eventHandlers = {
     mouseover: () => {
-      rectRef.current.setStyle({
+      rectRef.current?.setStyle({
         ...standardStyle,
         opacity: 1,
         fillOpacity: isSelected ? 0.75 : 0.5,
@@ -43,7 +43,7 @@ const Rect = ({ loc, toggleLocation, ownedLocations }) => {
       })
     },
     mouseout: () => {
-      rectRef.current.setStyle(standardStyle)
+      rectRef.current?.setStyle(standardStyle)
     },
     click: () => {
       toggleLocation(loc)
