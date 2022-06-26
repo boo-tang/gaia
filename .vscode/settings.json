@@ -1,0 +1,7 @@
+{
+  "editor.minimap.maxColumn": 80,
+  "prettier.printWidth": 80,
+  "editor.rulers": [80],
+  "prettier.semi": false,
+  "prettier.arrowParens": "avoid"
+}

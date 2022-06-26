@@ -1,4 +1,4 @@
-import { ListItem, UnorderedList } from '@chakra-ui/layout'
+import { ListItem, UnorderedList } from '@chakra-ui/react'
 import React, { useRef, useState } from 'react'
 import { Popup, Rectangle } from 'react-leaflet'
 

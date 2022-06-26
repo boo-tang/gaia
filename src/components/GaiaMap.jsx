@@ -46,7 +46,8 @@ export const GaiaMap = () => {
 
   const onPurchase = async () => {
     setPendingTx(true)
-    const tx = await mintLocations(selectedLocations)
+    const tx = await mintLocations(selectedLocations).finally(resetLocations)
+
     if (tx.wait) {
       tx.wait()
         .catch(err => {

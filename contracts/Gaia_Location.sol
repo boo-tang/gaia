@@ -386,6 +386,8 @@ contract Gaia_Location {
             return ownedLocs;
         }
         // for (uint16 = minOwnedLat;)
+
+        // TODO
     }
 
     function tokenOfOwnerByIndex(address _owner, uint256 _index)
