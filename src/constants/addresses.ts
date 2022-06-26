@@ -5,7 +5,7 @@ const addresses = {
     [chainIds.LOCALHOST]: '0x0AF9caaA4443B1CB177ECaDDFfdc1e118d54EE23',
   },
   GaiaLocation: {
-    [chainIds.LOCALHOST]: '0xb2748D872B0371815Ed1F147F13e7F1674D69ab9',
+    [chainIds.LOCALHOST]: '0x48e46ae718D94080876A6c8A817288b1900B5833',
   },
 }
 

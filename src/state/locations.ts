@@ -1,7 +1,14 @@
-import { createSlice } from '@reduxjs/toolkit'
+import { createSlice, PayloadAction } from '@reduxjs/toolkit'
 import { sortBy } from 'lodash'
 
-const initialState = {
+import { RootState } from '../store'
+import { Loc } from '../types'
+
+interface LocationsState {
+  selectedLocations: Loc[]
+}
+
+const initialState: LocationsState = {
   selectedLocations: [],
 }
 
@@ -9,7 +16,7 @@ export const locationsSlice = createSlice({
   name: 'locations',
   initialState,
   reducers: {
-    toggleLocation: (state, action) => {
+    toggleLocation: (state, action: PayloadAction<Loc>) => {
       // Redux Toolkit allows us to write "mutating" logic in reducers. It
       // doesn't actually mutate the state because it uses the Immer library,
       // which detects changes to a "draft state" and produces a brand new
@@ -28,7 +35,7 @@ export const locationsSlice = createSlice({
         state.selectedLocations = sortBy(updatedLocs, ['lat', 'lng'])
       }
     },
-    resetLocations: (state, action) => {
+    resetLocations: (state, action: PayloadAction) => {
       state.selectedLocations = []
     },
   },
@@ -36,5 +43,7 @@ export const locationsSlice = createSlice({
 
 // Action creators are generated for each case reducer function
 export const { toggleLocation, resetLocations } = locationsSlice.actions
+
+export const getSelectedLocations = (state: RootState) => state.locations
 
 export default locationsSlice.reducer

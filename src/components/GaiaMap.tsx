@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { MapContainer, TileLayer } from 'react-leaflet'
 import { Button } from '@chakra-ui/react'
-import { useSelector, useDispatch } from 'react-redux'
 
 import RectGrid from './RectGrid'
 import useActiveWeb3React from '../hooks/useActiveWeb3React'
@@ -9,30 +8,32 @@ import useGaiaLocation from '../hooks/useGaiaLocation'
 import {
   toggleLocation as toggleLocationAction,
   resetLocations as resetLocationsAction,
+  getSelectedLocations,
 } from '../state/locations'
+import { useAppDispatch, useAppSelector } from '../hooks/reduxHooks'
 
 export const GaiaMap = () => {
   const { account } = useActiveWeb3React()
-  const dispatch = useDispatch()
+  const dispatch = useAppDispatch()
 
   // loading state for running eth transaction
-  const [pendingTx, setPendingTx] = useState(false)
+  const [pendingTx, setPendingTx] = useState<boolean>(false)
 
   // ready state for map to display grid
-  const [mapReady, setMapReady] = useState(false)
+  const [mapReady, setMapReady] = useState<boolean>(false)
 
   ////////////////////////////////////////////////////////////
   ////////////// Selected Locations tracking /////////////////
   ////////////////////////////////////////////////////////////
   // selected locations come from app Redux store
-  const { selectedLocations } = useSelector(state => state.locations)
+  const { selectedLocations } = useAppSelector(getSelectedLocations)
 
   const toggleLocation = useCallback(
     loc => dispatch(toggleLocationAction(loc)),
     [dispatch],
   )
   const resetLocations = useCallback(
-    loc => dispatch(resetLocationsAction()),
+    () => dispatch(resetLocationsAction()),
     [dispatch],
   )
 
@@ -40,9 +41,9 @@ export const GaiaMap = () => {
   ////////////////// Web3 Contract Code //////////////////////
   ////////////////////////////////////////////////////////////
   // owned locations are loaded from blockchain to component state
-  const [ownedLocations, updateOwnedLocations] = useState([])
+  const [userLocations, updateUserLocations] = useState([])
 
-  const { mintLocations, getUserLocations } = useGaiaLocation(account)
+  const { mintLocations, getUserLocations } = useGaiaLocation(account || '')
 
   const onPurchase = async () => {
     setPendingTx(true)
@@ -50,7 +51,7 @@ export const GaiaMap = () => {
 
     if (tx.wait) {
       tx.wait()
-        .catch(err => {
+        .catch((err: Error) => {
           console.error('err on tx.wait', err)
         })
         .finally(() => {
@@ -67,7 +68,7 @@ export const GaiaMap = () => {
     const fn = async () => {
       if (account && !pendingTx) {
         const locations = await getUserLocations()
-        updateOwnedLocations(locations)
+        updateUserLocations(locations)
         console.log('USER LOCATIONS', locations)
       }
     }
@@ -115,7 +116,7 @@ export const GaiaMap = () => {
         {!pendingTx && (
           <RectGrid
             toggleLocation={toggleLocation}
-            ownedLocations={ownedLocations}
+            userLocations={userLocations}
             mapReady={mapReady}
           />
         )}

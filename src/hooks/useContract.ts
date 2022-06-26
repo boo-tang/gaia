@@ -1,21 +1,30 @@
 import { useMemo } from 'react'
-import { Contract } from '@ethersproject/contracts'
+import { Contract, ContractInterface } from '@ethersproject/contracts'
 import { AddressZero } from '@ethersproject/constants'
 
 import { useActiveWeb3React } from './useActiveWeb3React'
 import { isAddress } from '../utils/validate'
+import { Web3Provider } from '@ethersproject/providers'
 
 // account is not optional
-export function getSigner(library, account) {
+export function getSigner(library: Web3Provider, account: string) {
   return library.getSigner(account).connectUnchecked()
 }
 
 // account is optional
-export function getProviderOrSigner(library, account) {
+export function getProviderOrSigner(
+  library: Web3Provider,
+  account: string | undefined,
+) {
   return account ? getSigner(library, account) : library
 }
 
-function getContract(address, ABI, library, account) {
+function getContract(
+  address: string,
+  ABI: ContractInterface,
+  library: Web3Provider,
+  account: string | undefined,
+) {
   if (!isAddress(address) || address === AddressZero) {
     throw Error(`Invalid 'address' parameter '${address}'.`)
   }
@@ -24,7 +33,11 @@ function getContract(address, ABI, library, account) {
 }
 
 // returns null on errors
-function useContract(address, ABI, withSignerIfPossible) {
+function useContract(
+  address: string,
+  ABI: ContractInterface,
+  withSignerIfPossible: boolean,
+) {
   const web3 = useActiveWeb3React()
   const { library, account } = web3
 

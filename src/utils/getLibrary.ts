@@ -1,8 +1,4 @@
-import {
-  ExternalProvider,
-  JsonRpcFetchFunc,
-  Web3Provider,
-} from '@ethersproject/providers'
+import { ExternalProvider, Web3Provider } from '@ethersproject/providers'
 
 import ChainId from '../constants/chains'
 
@@ -12,15 +8,8 @@ const NETWORK_POLLING_INTERVALS = {
   [ChainId.HARMONY]: 15_000,
 }
 
-export default function getLibrary(provider) {
-  const library = new Web3Provider(
-    provider,
-    typeof provider.chainId === 'number'
-      ? provider.chainId
-      : typeof provider.chainId === 'string'
-      ? parseInt(provider.chainId)
-      : 'any',
-  )
+export default function getLibrary(provider: ExternalProvider) {
+  const library = new Web3Provider(provider, 'any')
   library.pollingInterval = 15_000
   library.detectNetwork().then(network => {
     const networkPollingInterval = NETWORK_POLLING_INTERVALS[network.chainId]

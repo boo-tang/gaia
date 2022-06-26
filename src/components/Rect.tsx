@@ -1,37 +1,47 @@
-import { ListItem, UnorderedList } from '@chakra-ui/react'
+import { Rectangle as RectangleType, PathOptions } from 'leaflet'
 import React, { useRef, useState } from 'react'
-import { Popup, Rectangle } from 'react-leaflet'
+import { Rectangle } from 'react-leaflet'
 
+import { Loc, LocTuple } from '../types'
 import { fromCoorToUint, getLocationBounds } from '../utils/location'
-// import flag from '../assets/flag_example.png'
 
-const pathOptions = (isSelected, isOwned) => ({
-  color: 'black',
-  opacity: 0.25,
-  weight: 2,
-  fill: true,
-  fillColor: isOwned ? 'green' : isSelected ? 'red' : null,
-  fillOpacity: isSelected || isOwned ? 0.5 : 0,
-})
+const pathOptions = (isSelected: boolean, isOwned: boolean) => {
+  return {
+    color: 'black',
+    opacity: 0.25,
+    weight: 2,
+    fill: true,
+    fillColor: isOwned ? 'green' : isSelected ? 'red' : null,
+    fillOpacity: isSelected || isOwned ? 0.5 : 0,
+  } as PathOptions
+}
 
-const isLocOwned = (_loc, ownedLocations) => {
+const isLocOwned = (_loc: Loc, userLocations: LocTuple[]) => {
   const loc = fromCoorToUint(_loc)
-  return ownedLocations.some(([lat, lng]) => {
+  return userLocations.some(([lat, lng]) => {
     return lat === loc.lat && lng === loc.lng
   })
 }
 
-const Rect = ({ loc, toggleLocation, ownedLocations }) => {
+const Rect = ({
+  loc,
+  toggleLocation,
+  userLocations,
+}: {
+  loc: Loc
+  toggleLocation: (loc: Loc) => void
+  userLocations: LocTuple[]
+}) => {
   const [isSelected, updateIsSelected] = useState(false)
   // get bounds from loc
   const bounds = getLocationBounds(loc)
   let isOwned = false
 
-  if (isLocOwned(loc, ownedLocations)) {
+  if (isLocOwned(loc, userLocations)) {
     isOwned = true
   }
 
-  const rectRef = useRef()
+  const rectRef = useRef() as React.MutableRefObject<RectangleType>
   const standardStyle = pathOptions(isSelected, isOwned)
   const eventHandlers = {
     mouseover: () => {

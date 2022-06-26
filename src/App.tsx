@@ -6,16 +6,18 @@ import '@fontsource/inter'
 
 import { GaiaMap } from './components/GaiaMap'
 import { injected as connector } from './utils/connectors'
+// import { injected } from './utils/connectors'
 
 import './App.css'
+import { InjectedConnector } from '@web3-react/injected-connector'
 
 function App() {
   const { active, account, /* connector ,*/ activate, error, deactivate } =
     useWeb3React()
-  const [pendingWallet, setPendingWallet] = useState()
-  const [pendingError, setPendingError] = useState()
+  const [pendingWallet, setPendingWallet] = useState<InjectedConnector>()
+  const [pendingError, setPendingError] = useState<boolean>()
   const tryActivation = async () => {
-    let conn = typeof connector === 'function' ? await connector() : connector
+    let conn = connector
     setPendingWallet(conn) // set wallet for pending view
     conn &&
       activate(conn, undefined, true).catch(error => {

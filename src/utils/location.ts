@@ -1,6 +1,8 @@
+import { LatLngBounds } from 'leaflet'
 import { COOR_PRECISION } from '../constants'
+import { Loc } from '../types'
 
-export const fromCoorToUint = ({ lat, lng }) => {
+export const fromCoorToUint = ({ lat, lng }: Loc): Loc => {
   /**
    * Lat can have values from -90.00 -> 90.00
    * Lng can have values from -180.00 -> 180.00
@@ -16,7 +18,7 @@ export const fromCoorToUint = ({ lat, lng }) => {
   return result
 }
 
-export const fromUintToCoor = ([chainLat, chainLng]) => {
+export const fromUintToCoor = ([chainLat, chainLng]: [number, number]) => {
   /**
    * Lat can have values from -90.00 -> 90.00
    * Lng can have values from -180.00 -> 180.00
@@ -32,7 +34,8 @@ export const fromUintToCoor = ([chainLat, chainLng]) => {
   return result
 }
 
-export const getLocationBounds = ({ lat, lng }) => [
-  [lat - 0.5 / COOR_PRECISION, lng - 0.5 / COOR_PRECISION],
-  [lat + 0.5 / COOR_PRECISION, lng + 0.5 / COOR_PRECISION],
-]
+export const getLocationBounds = ({ lat, lng }: Loc): LatLngBounds =>
+  new LatLngBounds([
+    [lat - 0.5 / COOR_PRECISION, lng - 0.5 / COOR_PRECISION],
+    [lat + 0.5 / COOR_PRECISION, lng + 0.5 / COOR_PRECISION],
+  ])

@@ -4,13 +4,15 @@ import { round as _round } from 'lodash'
 
 import { COOR_PRECISION } from '../constants'
 import Rect from './Rect'
+import { LatLngBounds } from 'leaflet'
+import { Loc, LocTuple } from '../types'
 
 export const TILE_WIDTH = 1 / COOR_PRECISION
 
-const roundLoc = num =>
+const roundLoc = (num: number) =>
   Math.round((num + Number.EPSILON) * COOR_PRECISION) / COOR_PRECISION
 
-const getGridInBounds = bounds => {
+const getGridInBounds = (bounds: LatLngBounds) => {
   const locs = []
   // we calculate which grid locations to render given the current map bounds
   const southWest = bounds.getSouthWest()
@@ -48,10 +50,14 @@ const getGridInBounds = bounds => {
 }
 
 const RectGrid = ({
-  ownedLocations = [],
+  userLocations = [],
   toggleLocation,
   mapReady,
   ...props
+}: {
+  userLocations: LocTuple[]
+  toggleLocation: (loc: Loc) => void
+  mapReady: boolean
 }) => {
   const [showGrid, changeShowGrid] = useState(true)
   const map = useMapEvents({
@@ -86,7 +92,7 @@ const RectGrid = ({
   // QUICK FIX, don't render if number of locations is too big
   // it's a bug with zooming in/out and getting the wrong bounds
   if (!showGrid || locs.length > 5000) {
-    return false
+    return null
   }
 
   console.log('# of tiles to render: ', locs.length)
@@ -98,7 +104,7 @@ const RectGrid = ({
           loc={loc}
           key={`${loc.lat}-${loc.lng}`}
           toggleLocation={toggleLocation}
-          ownedLocations={ownedLocations}
+          userLocations={userLocations}
         />
       ))}
     </>

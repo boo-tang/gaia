@@ -71,8 +71,13 @@ contract Gaia_Location {
      * lat: 0 -> 18,000
      * lng: 0 -> 36,000
      */
-    uint16 constant maxLat = 18000;
-    uint16 constant maxLng = 36000;
+    uint16 constant MAX_LAT = 18000;
+    uint16 constant MAX_LNG = 36000;
+
+    /**
+     * Maximum lat/lng ranges allowed for lookup
+     */
+    uint16 constant MAX_LOOKUP_RANGE = 200;
 
     // event LocationClaimed(bytes indexed locId, address indexed by);
     // event LocationsClaimed(bytes[] indexed locIds, address indexed by);
@@ -130,7 +135,7 @@ contract Gaia_Location {
     // bytes[] public locationIds;
 
     constructor() {
-        uint256 supply = uint256(maxLng) * uint256(maxLat);
+        uint256 supply = uint256(MAX_LNG) * uint256(MAX_LAT);
         totalSupply = supply;
     }
 
@@ -328,7 +333,7 @@ contract Gaia_Location {
     }
 
     function isValidLoc(uint16 lat, uint16 lng) public pure returns (bool) {
-        return lat < maxLat && lng < maxLng;
+        return lat < MAX_LAT && lng < MAX_LNG;
     }
 
     function getAllOwners() public view returns (address[] memory) {
@@ -356,7 +361,7 @@ contract Gaia_Location {
         return ownerToTokenIds[_owner];
     }
 
-    function getOwnedLocations(address _owner)
+    function getUserLocations(address _owner)
         external
         view
         returns (Loc[] memory)
@@ -376,18 +381,36 @@ contract Gaia_Location {
 
     // get OwnedLocations within bounds
     function getOwnedLocationsInBounds(
-        address _owner,
         uint16 minOwnedLat,
         uint16 minOwnedLng,
         uint16 maxOwnedLat,
         uint16 maxOwnedLng
     ) external view returns (Loc[] memory ownedLocs) {
-        if (balanceOf[_owner] == 0) {
-            return ownedLocs;
-        }
-        // for (uint16 = minOwnedLat;)
+        require(isValidLoc(minOwnedLat, minOwnedLng));
+        require(isValidLoc(maxOwnedLat, maxOwnedLng));
+        require(
+            minOwnedLat <= maxOwnedLat &&
+                maxOwnedLat - minOwnedLat <= MAX_LOOKUP_RANGE,
+            "invalid latitude provided"
+        );
+        require(
+            minOwnedLng != maxOwnedLng &&
+                maxOwnedLng - minOwnedLng <= MAX_LOOKUP_RANGE,
+            "invalid min latitude provided"
+        );
 
-        // TODO
+        uint16 counter = 0;
+
+        for (uint16 lat = minOwnedLat; lat < maxOwnedLat; lat++) {
+            for (uint16 lng = minOwnedLng; lng < maxOwnedLng; lng++) {
+                if (hasOwner(lat, lng)) {
+                    ownedLocs[counter] = Loc(lat, lng);
+                    counter++;
+                }
+            }
+        }
+
+        return ownedLocs;
     }
 
     function tokenOfOwnerByIndex(address _owner, uint256 _index)
