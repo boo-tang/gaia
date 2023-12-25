@@ -16,10 +16,6 @@ const useGaiaLocation = (account: string) => {
     !!account,
   )
 
-  // if (!contract) {
-  // throw new Error('Gaia Location contract not found')
-  // }
-
   const mintLocations = useCallback(
     async (selectedLocations: Loc[]) => {
       try {
