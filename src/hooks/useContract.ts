@@ -6,7 +6,7 @@ import { useActiveWeb3React } from './useActiveWeb3React'
 import { isAddress } from '../utils/validate'
 import { Web3Provider } from '@ethersproject/providers'
 
-// account is not optional
+// account is not optional.
 export function getSigner(library: Web3Provider, account: string) {
   return library.getSigner(account).connectUnchecked()
 }
