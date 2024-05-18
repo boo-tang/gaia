@@ -4,3 +4,4 @@ cache/
 ignition/deployments/
 node_modules/
 dist/
+frontend/artifacts/
