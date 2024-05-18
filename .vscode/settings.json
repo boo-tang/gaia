@@ -1,7 +1,16 @@
 {
   "editor.minimap.maxColumn": 80,
   "prettier.printWidth": 80,
-  "editor.rulers": [80],
+  "editor.rulers": [
+    80
+  ],
   "prettier.semi": false,
-  "prettier.arrowParens": "avoid"
+  "prettier.arrowParens": "avoid",
+  "circleci.persistedProjectSelection": [],
+  "turboConsoleLog.addSemicolonInTheEnd": true,
+  "cSpell.words": [
+    "reduxjs",
+    "usedapp"
+  ],
+  "cSpell.checkOnlyEnabledFileTypes": false
 }

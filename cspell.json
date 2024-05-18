@@ -1,0 +1,19 @@
+{
+  "version": "0.2",
+  "ignorePaths": [],
+  "dictionaryDefinitions": [],
+  "dictionaries": [],
+  "words": [
+    "connectkit",
+    "COOR",
+    "moveend",
+    "reduxjs",
+    "sepolia",
+    "tanstack",
+    "wagmi",
+    "WALLETCONNECT",
+    "zoomend"
+  ],
+  "ignoreWords": [],
+  "import": []
+}

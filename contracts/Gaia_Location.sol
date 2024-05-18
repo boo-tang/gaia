@@ -139,12 +139,12 @@ contract Gaia_Location {
         totalSupply = supply;
     }
 
-    function mintSingleLocation(uint16 lat, uint16 lng)
-        public
-        returns (uint256)
-    {
+    function mintSingleLocation(
+        uint16 lat,
+        uint16 lng
+    ) public returns (uint256) {
         require(isValidLoc(lat, lng), "Invalid coordinates");
-        require(!hasOwner(lat, lng), "Location Owned");
+        require(!hasOwner(lat, lng), "Location already owned");
         // bytes memory locId = getLocHash(lat, lng);
 
         Loc memory loc = Loc(lat, lng);
@@ -168,10 +168,9 @@ contract Gaia_Location {
         return tokenId;
     }
 
-    function mintMultipleLocations(Loc[] memory locs)
-        public
-        returns (uint256[] memory tokenIds)
-    {
+    function mintMultipleLocations(
+        Loc[] memory locs
+    ) public returns (uint256[] memory tokenIds) {
         // returns (bytes[] memory)
         if (locs.length == 0) {
             return new uint256[](0);
@@ -231,7 +230,7 @@ contract Gaia_Location {
             } else if (leftDirectionFlipped) {
                 require(
                     longitudeRangeStart >= prevLongitudeRangeStart,
-                    "Convexity broken on rangeStart"
+                    "Shape is not convex"
                 );
             }
 
@@ -340,11 +339,10 @@ contract Gaia_Location {
         return landOwners;
     }
 
-    function locationOwner(uint16 lat, uint16 lng)
-        public
-        view
-        returns (address)
-    {
+    function locationOwner(
+        uint16 lat,
+        uint16 lng
+    ) public view returns (address) {
         return locationMap[lat][lng];
     }
 
@@ -352,20 +350,16 @@ contract Gaia_Location {
         return tokenIdToOwner[_tokenId];
     }
 
-    function getOwnedTokenIds(address _owner)
-        public
-        view
-        returns (uint256[] memory)
-    {
+    function getOwnedTokenIds(
+        address _owner
+    ) public view returns (uint256[] memory) {
         require(balanceOf[_owner] > 0, "requested address has no balance");
         return ownerToTokenIds[_owner];
     }
 
-    function getUserLocations(address _owner)
-        external
-        view
-        returns (Loc[] memory)
-    {
+    function getUserLocations(
+        address _owner
+    ) external view returns (Loc[] memory) {
         if (balanceOf[_owner] == 0) {
             return new Loc[](0);
         }
@@ -413,11 +407,10 @@ contract Gaia_Location {
         return ownedLocs;
     }
 
-    function tokenOfOwnerByIndex(address _owner, uint256 _index)
-        external
-        view
-        returns (uint256)
-    {
+    function tokenOfOwnerByIndex(
+        address _owner,
+        uint256 _index
+    ) external view returns (uint256) {
         require(
             _index > balanceOf[_owner],
             "_index larger than user's balance"
@@ -442,11 +435,7 @@ contract Gaia_Location {
         // bytes locId = _tokenIDToLocID[_tokenIDToLocID];
     }
 
-    function transfer(
-        uint16 lat,
-        uint16 lng,
-        address to
-    ) public {
+    function transfer(uint16 lat, uint16 lng, address to) public {
         //  require()
     }
 
@@ -468,11 +457,10 @@ contract Gaia_Location {
     //   require(ownerToLocIds[locOwner])
     // }
 
-    function areAdjacent(Loc memory loc1, Loc memory loc2)
-        public
-        pure
-        returns (bool)
-    {
+    function areAdjacent(
+        Loc memory loc1,
+        Loc memory loc2
+    ) public pure returns (bool) {
         // checks for right-left / up-down adjacency (not diagonal)
         // for 2 locs to be adjacent they need:
         // 1) same lat / lng
@@ -526,11 +514,9 @@ contract Gaia_Location {
     /**
      * @dev DEPRECATED
      */
-    function getLocFromId(bytes memory locId)
-        public
-        pure
-        returns (string memory)
-    {
+    function getLocFromId(
+        bytes memory locId
+    ) public pure returns (string memory) {
         return string(locId);
     }
 }
