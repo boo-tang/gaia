@@ -25,11 +25,7 @@ export const GaiaMap = () => {
   const dispatch = useAppDispatch();
   const chainId = useChainId();
 
-  const contractAddress = addresses.GaiaLocation[chainId || 1337];
-
   const { data: hash, isPending, writeContract, error } = useWriteContract();
-  console.log("hash", hash, isPending);
-  console.log("error", error);
 
   // ready state for map to display grid
   const [mapReady, setMapReady] = useState<boolean>(false);
@@ -52,13 +48,6 @@ export const GaiaMap = () => {
   ////////////////////////////////////////////////////////////
   ////////////////// Web3 Contract Code //////////////////////
   ////////////////////////////////////////////////////////////
-  // owned locations are loaded from blockchain to component state
-  const [userLocations, updateUserLocations] = useState([]);
-
-  // const { mintLocations, getUserLocations } = useGaiaLocation(
-  //   account.address || '',
-  // );
-
   const onPurchase = async () => {
     const locations = selectedLocations.map((_loc) => {
       const loc = fromCoorToUint(_loc);
@@ -79,14 +68,14 @@ export const GaiaMap = () => {
     });
 
   // read contract
-  const abi = [...GaiaLocationABI.abi] as const;
-  const { data: userLocationsData, isLoading: isUserLocationsLoading } =
-    useReadContract({
-      abi,
-      address: addresses.GaiaLocation[chainId || 1337],
-      functionName: "getUserLocations",
-      args: [account.address],
-    });
+  const { data, isLoading: isUserLocationsLoading } = useReadContract({
+    abi: GaiaLocationABI.abi,
+    address: addresses.GaiaLocation[chainId || 1337],
+    functionName: "getUserLocations",
+    args: [account.address],
+  });
+
+  const userLocationsData = data as unknown as Loc[];
 
   // useEffect(() => {
   //   const fn = async () => {
