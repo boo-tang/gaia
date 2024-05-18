@@ -1,24 +1,24 @@
-import { useCallback, useEffect, useState } from 'react';
-import { MapContainer, TileLayer } from 'react-leaflet';
+import React, { useCallback, useEffect, useState } from "react";
+import { MapContainer, TileLayer } from "react-leaflet";
 import {
   useAccount,
   useChainId,
   useReadContract,
   useWaitForTransactionReceipt,
   useWriteContract,
-} from 'wagmi';
+} from "wagmi";
 
-import RectGrid from './RectGrid';
+import RectGrid from "./RectGrid";
 import {
   toggleLocation as toggleLocationAction,
   resetLocations as resetLocationsAction,
   getSelectedLocations,
-} from '../state/locations';
-import { useAppDispatch, useAppSelector } from '../hooks/reduxHooks';
-import { Loc } from '../types';
-import GaiaLocationABI from '../../artifacts/contracts/Gaia_Location.sol/Gaia_Location.json';
-import addresses from '../constants/addresses';
-import { fromCoorToUint } from '../utils/location';
+} from "../state/locations";
+import { useAppDispatch, useAppSelector } from "../hooks/reduxHooks";
+import { Loc } from "../types";
+import GaiaLocationABI from "../../artifacts/contracts/Gaia_Location.sol/Gaia_Location.json";
+import addresses from "../constants/addresses";
+import { fromCoorToUint } from "../utils/location";
 
 export const GaiaMap = () => {
   const account = useAccount();
@@ -28,8 +28,8 @@ export const GaiaMap = () => {
   const contractAddress = addresses.GaiaLocation[chainId || 1337];
 
   const { data: hash, isPending, writeContract, error } = useWriteContract();
-  console.log('hash', hash, isPending);
-  console.log('error', error);
+  console.log("hash", hash, isPending);
+  console.log("error", error);
 
   // ready state for map to display grid
   const [mapReady, setMapReady] = useState<boolean>(false);
@@ -42,11 +42,11 @@ export const GaiaMap = () => {
 
   const toggleLocation = useCallback(
     (loc: Loc) => dispatch(toggleLocationAction(loc)),
-    [dispatch],
+    [dispatch]
   );
   const resetLocations = useCallback(
     () => dispatch(resetLocationsAction()),
-    [dispatch],
+    [dispatch]
   );
 
   ////////////////////////////////////////////////////////////
@@ -64,11 +64,11 @@ export const GaiaMap = () => {
       const loc = fromCoorToUint(_loc);
       return [loc.lat, loc.lng];
     });
-    console.log('minting selected locs', locations);
+    console.log("minting selected locs", locations);
     writeContract({
       abi: GaiaLocationABI.abi,
       address: addresses.GaiaLocation[chainId || 1337],
-      functionName: 'mintMultipleLocations',
+      functionName: "mintMultipleLocations",
       args: [locations],
     });
   };
@@ -84,7 +84,7 @@ export const GaiaMap = () => {
     useReadContract({
       abi,
       address: addresses.GaiaLocation[chainId || 1337],
-      functionName: 'getUserLocations',
+      functionName: "getUserLocations",
       args: [account.address],
     });
 
@@ -99,7 +99,7 @@ export const GaiaMap = () => {
   //   fn();
   // }, [account, pendingTx, getUserLocations]);
 
-  if (typeof account === 'undefined') {
+  if (typeof account === "undefined") {
     return (
       <div className="MapContainer">
         Loading Web3, accounts, and contract... Reload page
@@ -110,21 +110,22 @@ export const GaiaMap = () => {
   return (
     <>
       {!!selectedLocations?.length &&
+        account.address &&
         (!isPending ? (
           <button
             style={{
-              position: 'fixed',
-              top: '6vh',
-              left: '50%',
-              transform: 'translate(-50%, 0)',
-              zIndex: '10000',
+              position: "fixed",
+              top: "6vh",
+              left: "50%",
+              transform: "translate(-50%, 0)",
+              zIndex: "10000",
             }}
             onClick={onPurchase}
           >
             Click to Purchase
           </button>
         ) : (
-          'Loading...'
+          "Loading..."
         ))}
       <MapContainer
         // start rendering the map from Manhattan
