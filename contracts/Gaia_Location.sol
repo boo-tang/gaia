@@ -163,6 +163,9 @@ contract Gaia_Location {
         ownerToTokenIds[msg.sender].push(tokenId);
         tokenIdToLocation[tokenId] = loc;
 
+        // increment user balance for single mint
+        balanceOf[msg.sender] += 1;
+
         emit LocationClaimed(msg.sender, lat, lng);
 
         return tokenId;
@@ -388,18 +391,30 @@ contract Gaia_Location {
             "invalid latitude provided"
         );
         require(
-            minOwnedLng != maxOwnedLng &&
+            minOwnedLng <= maxOwnedLng &&
                 maxOwnedLng - minOwnedLng <= MAX_LOOKUP_RANGE,
-            "invalid min latitude provided"
+            "invalid longitude provided"
         );
-
-        uint16 counter = 0;
-
+        // First pass: count how many owned locations are within bounds
+        uint16 count = 0;
         for (uint16 lat = minOwnedLat; lat < maxOwnedLat; lat++) {
             for (uint16 lng = minOwnedLng; lng < maxOwnedLng; lng++) {
                 if (hasOwner(lat, lng)) {
-                    ownedLocs[counter] = Loc(lat, lng);
-                    counter++;
+                    count++;
+                }
+            }
+        }
+
+        // Allocate memory array with exact size
+        ownedLocs = new Loc[](count);
+
+        // Second pass: populate results
+        uint16 idx = 0;
+        for (uint16 lat = minOwnedLat; lat < maxOwnedLat; lat++) {
+            for (uint16 lng = minOwnedLng; lng < maxOwnedLng; lng++) {
+                if (hasOwner(lat, lng)) {
+                    ownedLocs[idx] = Loc(lat, lng);
+                    idx++;
                 }
             }
         }
@@ -411,10 +426,7 @@ contract Gaia_Location {
         address _owner,
         uint256 _index
     ) external view returns (uint256) {
-        require(
-            _index > balanceOf[_owner],
-            "_index larger than user's balance"
-        );
+        require(_index < balanceOf[_owner], "_index out of bounds");
 
         return ownerToTokenIds[_owner][_index];
     }
