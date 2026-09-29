@@ -16,3 +16,27 @@
   /* top: 5vh; */
   height: 95vh;
 }
+
+.auction-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 20px;
+  background-color: #f5f5f5;
+  font-size: 0.9em;
+}
+
+.bid-panel {
+  background-color: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.bid-panel-error {
+  color: #c0392b;
+}

@@ -5,3 +5,5 @@ ignition/deployments/
 node_modules/
 dist/
 frontend/artifacts/
+.DS_Store
+*.tmp.ts

@@ -8,4 +8,10 @@ export default defineConfig({
   build: {
     outDir: '../dist', // Output directory for build files, relative to the root
   },
+  server: {
+    proxy: {
+      // Proxies API calls to the local auction server (server/) during development.
+      '/api': 'http://localhost:8080',
+    },
+  },
 });

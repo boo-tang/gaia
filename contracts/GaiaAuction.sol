@@ -41,8 +41,6 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     mapping(uint16 => mapping(uint16 => Bid)) public highestBids;
     // refunds for outbid amounts
     mapping(address => uint256) public pendingReturns;
-    // bool flag whether the auction has been finalized
-    bool public finalized;
 
     // --- Per-shape state ---
     // shapeId 0 is a sentinel for "no active shape"; valid ids start at 1.
@@ -52,6 +50,12 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     mapping(uint256 => IGaiaLocation721.Loc[]) private _shapeLocs;
     // Current owning shape per square. 0 = no active shape.
     mapping(uint16 => mapping(uint16 => uint256)) private _squareShapeId;
+
+    // --- Per-shape settlement state ---
+    // Index into _shapeLocs[shapeId] up to which settlement has progressed.
+    mapping(uint256 => uint256) public shapeSettleCursor;
+    // Count of squares actually settled (i.e. not overtaken) for the shape so far.
+    mapping(uint256 => uint256) public shapeSettledSquares;
 
     // --- Shape validation scratch struct ---
     struct ShapeState {
@@ -76,13 +80,19 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint16 lat,
         uint16 lng
     );
-    event AuctionFinalized();
+    event ShapeSquaresSettled(uint256 indexed shapeId, uint256 count);
+    event ShapeSettled(
+        uint256 indexed shapeId,
+        address indexed winner,
+        uint256 totalSquares
+    );
 
     // --- Errors ---
     error AuctionAlreadyEnded();
     error AuctionNotYetStarted();
     error AuctionNotYetEnded();
-    error AuctionAlreadyFinalized();
+    error UnknownShape();
+    error ShapeAlreadySettled();
     error InsufficientValue(uint256 received, uint256 required);
     error EmptyShape();
     error ShapeTooSmall(uint256 count, uint256 minimum);
@@ -206,13 +216,66 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     }
 
     /// @inheritdoc IGaiaAuction
-    function finalize() external override onlyAfterAuction {
-        if (finalized) {
-            revert AuctionAlreadyFinalized();
+    function settleShape(
+        uint256 shapeId,
+        uint256 maxSquares
+    ) external override onlyAfterAuction {
+        address winner = shapeBidder[shapeId];
+        if (winner == address(0)) revert UnknownShape();
+
+        IGaiaLocation721.Loc[] storage stored = _shapeLocs[shapeId];
+        uint256 storedLen = stored.length;
+        uint256 cursor = shapeSettleCursor[shapeId];
+        if (cursor >= storedLen) revert ShapeAlreadySettled();
+
+        uint256 end = storedLen;
+        if (maxSquares != 0 && cursor + maxSquares < storedLen) {
+            end = cursor + maxSquares;
         }
-        // TODO: group by winner, mint ERC-721 squares to Country1155 custody, mint/attach country ids
-        finalized = true;
-        emit AuctionFinalized();
+
+        IGaiaLocation721.Loc[] memory owned = new IGaiaLocation721.Loc[](
+            end - cursor
+        );
+        uint256 ownedCount = 0;
+
+        for (uint256 i = cursor; i < end; ) {
+            IGaiaLocation721.Loc memory loc = stored[i];
+            if (_squareShapeId[loc.lat][loc.lng] == shapeId) {
+                owned[ownedCount] = loc;
+                unchecked {
+                    ownedCount++;
+                }
+            }
+            unchecked {
+                i++;
+            }
+        }
+
+        shapeSettleCursor[shapeId] = end;
+
+        if (ownedCount > 0) {
+            // Trim the pre-allocated array to the actual owned count.
+            assembly {
+                mstore(owned, ownedCount)
+            }
+            uint256[] memory tokenIds = squares.mintTo(
+                address(countries),
+                owned
+            );
+            countries.attachSquares(shapeId, tokenIds);
+            unchecked {
+                shapeSettledSquares[shapeId] += ownedCount;
+            }
+            emit ShapeSquaresSettled(shapeId, ownedCount);
+        }
+
+        if (end == storedLen) {
+            uint256 total = shapeSettledSquares[shapeId];
+            if (total > 0) {
+                countries.mintCountry(winner, shapeId, 1);
+                emit ShapeSettled(shapeId, winner, total);
+            }
+        }
     }
 
     // --- Internal helpers ---

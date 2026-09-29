@@ -1,6 +1,10 @@
-import { loadFixture } from "@nomicfoundation/hardhat-toolbox-viem/network-helpers";
+import {
+  loadFixture,
+  time,
+} from "@nomicfoundation/hardhat-toolbox-viem/network-helpers";
 import { expect } from "chai";
 import hre from "hardhat";
+import { getAddress } from "viem";
 
 describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
   async function deployAll() {
@@ -31,6 +35,15 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
         10n,   // maxShapeAspectRatio
       ]
     );
+
+    await squares.write.grantRole([
+      await squares.read.MINTER_ROLE(),
+      auction.address,
+    ]);
+    await countries.write.grantRole([
+      await countries.read.AUCTION_ROLE(),
+      auction.address,
+    ]);
 
     return { owner, squares, countries, auction, minBid };
   }
@@ -226,6 +239,15 @@ describe("GaiaAuction: totals and refunds", function () {
       ]
     );
 
+    await squares.write.grantRole([
+      await squares.read.MINTER_ROLE(),
+      auction.address,
+    ]);
+    await countries.write.grantRole([
+      await countries.read.AUCTION_ROLE(),
+      auction.address,
+    ]);
+
     return { owner, other, squares, countries, auction, minBid };
   }
 
@@ -371,6 +393,15 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
       ]
     );
 
+    await squares.write.grantRole([
+      await squares.read.MINTER_ROLE(),
+      auction.address,
+    ]);
+    await countries.write.grantRole([
+      await countries.read.AUCTION_ROLE(),
+      auction.address,
+    ]);
+
     return { owner, squares, countries, auction, minBid };
   }
 
@@ -493,6 +524,15 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
         10n,   // maxShapeAspectRatio
       ]
     );
+
+    await squares.write.grantRole([
+      await squares.read.MINTER_ROLE(),
+      auction.address,
+    ]);
+    await countries.write.grantRole([
+      await countries.read.AUCTION_ROLE(),
+      auction.address,
+    ]);
 
     const auctionAs1 = await hre.viem.getContractAt(
       "contracts/GaiaAuction.sol:GaiaAuction",
@@ -635,5 +675,232 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
     await expect(
       auctionAs2.write.bidOnShape([bobShape], { value: minBid * 2n })
     ).to.be.rejected; // NoLatAdjacency in remainder
+  });
+});
+
+describe("GaiaAuction: settleShape", function () {
+  async function deploySettle() {
+    const [owner, bidder1, bidder2] = await hre.viem.getWalletClients();
+
+    const squares = await hre.viem.deployContract("GaiaLocation721", [
+      owner.account.address,
+    ]);
+    const countries = await hre.viem.deployContract("Country1155", [
+      owner.account.address,
+      "ipfs://",
+    ]);
+
+    const now = Math.floor(Date.now() / 1000);
+    const start = BigInt(now - 10);
+    const end = BigInt(now + 3600);
+    const minBid = 1000n;
+    const auction = await hre.viem.deployContract(
+      "contracts/GaiaAuction.sol:GaiaAuction",
+      [
+        squares.address,
+        countries.address,
+        start,
+        end,
+        minBid,
+        1n, // minShapeSquares
+        1000n, // maxShapeSquares
+        10n, // maxShapeAspectRatio
+      ]
+    );
+
+    await squares.write.grantRole([
+      await squares.read.MINTER_ROLE(),
+      auction.address,
+    ]);
+    await countries.write.grantRole([
+      await countries.read.AUCTION_ROLE(),
+      auction.address,
+    ]);
+
+    const auctionAs1 = await hre.viem.getContractAt(
+      "contracts/GaiaAuction.sol:GaiaAuction",
+      auction.address,
+      { client: { wallet: bidder1 } }
+    );
+    const auctionAs2 = await hre.viem.getContractAt(
+      "contracts/GaiaAuction.sol:GaiaAuction",
+      auction.address,
+      { client: { wallet: bidder2 } }
+    );
+
+    return {
+      owner,
+      bidder1,
+      bidder2,
+      squares,
+      countries,
+      auction,
+      auctionAs1,
+      auctionAs2,
+      minBid,
+      end,
+    };
+  }
+
+  it("mints the winner's squares to Country1155 custody and mints the country on completion", async function () {
+    const { auctionAs1, bidder1, squares, countries, minBid, end } =
+      await loadFixture(deploySettle);
+
+    const shape = [
+      { lat: 10, lng: 10 },
+      { lat: 10, lng: 11 },
+      { lat: 10, lng: 12 },
+    ];
+    await auctionAs1.write.bidOnShape([shape], {
+      value: minBid * BigInt(shape.length),
+    });
+
+    await time.increaseTo(end + 1n);
+
+    const shapeId = 1n;
+    await expect(auctionAs1.write.settleShape([shapeId, 0n])).to.be.fulfilled;
+
+    const balance = await countries.read.balanceOf([
+      bidder1.account.address,
+      shapeId,
+    ]);
+    expect(balance).to.equal(1n);
+
+    const tokenIds = await countries.read.getSquares([shapeId]);
+    expect(tokenIds.length).to.equal(shape.length);
+
+    for (const loc of shape) {
+      const owner = await squares.read.ownerOfLoc([loc.lat, loc.lng]);
+      expect(getAddress(owner)).to.equal(getAddress(countries.address));
+    }
+  });
+
+  it("only mints the country once fully settled across paginated calls", async function () {
+    const { auctionAs1, bidder1, countries, minBid, end } = await loadFixture(
+      deploySettle
+    );
+
+    const shape = [
+      { lat: 20, lng: 10 },
+      { lat: 20, lng: 11 },
+      { lat: 20, lng: 12 },
+      { lat: 20, lng: 13 },
+    ];
+    await auctionAs1.write.bidOnShape([shape], {
+      value: minBid * BigInt(shape.length),
+    });
+
+    await time.increaseTo(end + 1n);
+
+    const shapeId = 1n;
+
+    await auctionAs1.write.settleShape([shapeId, 2n]);
+    expect(
+      await countries.read.balanceOf([bidder1.account.address, shapeId])
+    ).to.equal(0n);
+
+    await expect(auctionAs1.write.settleShape([shapeId, 2n])).to.be.fulfilled;
+    expect(
+      await countries.read.balanceOf([bidder1.account.address, shapeId])
+    ).to.equal(1n);
+
+    const tokenIds = await countries.read.getSquares([shapeId]);
+    expect(tokenIds.length).to.equal(shape.length);
+  });
+
+  it("skips squares overtaken by a later bid and settles them under the new shape", async function () {
+    const { auctionAs1, auctionAs2, bidder1, bidder2, countries, minBid, end } =
+      await loadFixture(deploySettle);
+
+    const aliceShape = [
+      { lat: 30, lng: 10 },
+      { lat: 30, lng: 11 },
+      { lat: 30, lng: 12 },
+    ];
+    await auctionAs1.write.bidOnShape([aliceShape], {
+      value: minBid * BigInt(aliceShape.length),
+    });
+
+    // Bob takes over the last square of Alice's shape.
+    const bobShape = [{ lat: 30, lng: 12 }];
+    await auctionAs2.write.bidOnShape([bobShape], { value: minBid * 2n });
+
+    await time.increaseTo(end + 1n);
+
+    const aliceShapeId = 1n;
+    const bobShapeId = 2n;
+
+    await auctionAs1.write.settleShape([aliceShapeId, 0n]);
+    await auctionAs2.write.settleShape([bobShapeId, 0n]);
+
+    const aliceTokens = await countries.read.getSquares([aliceShapeId]);
+    const bobTokens = await countries.read.getSquares([bobShapeId]);
+    expect(aliceTokens.length).to.equal(2); // (30,10) and (30,11)
+    expect(bobTokens.length).to.equal(1); // (30,12), no double-mint
+
+    expect(
+      await countries.read.balanceOf([bidder1.account.address, aliceShapeId])
+    ).to.equal(1n);
+    expect(
+      await countries.read.balanceOf([bidder2.account.address, bobShapeId])
+    ).to.equal(1n);
+  });
+
+  it("settles a fully-overtaken shape without minting a country", async function () {
+    const { auctionAs1, auctionAs2, bidder1, countries, minBid, end } =
+      await loadFixture(deploySettle);
+
+    const aliceShape = [
+      { lat: 40, lng: 10 },
+      { lat: 40, lng: 11 },
+    ];
+    await auctionAs1.write.bidOnShape([aliceShape], {
+      value: minBid * BigInt(aliceShape.length),
+    });
+
+    // Bob fully overtakes Alice's shape.
+    await auctionAs2.write.bidOnShape([aliceShape], {
+      value: (minBid + minBid) * BigInt(aliceShape.length),
+    });
+
+    await time.increaseTo(end + 1n);
+
+    const aliceShapeId = 1n;
+    await expect(auctionAs1.write.settleShape([aliceShapeId, 0n])).to.be
+      .fulfilled;
+
+    expect(
+      await countries.read.balanceOf([bidder1.account.address, aliceShapeId])
+    ).to.equal(0n);
+    expect(await countries.read.getSquares([aliceShapeId])).to.have.length(0);
+  });
+
+  it("reverts when settling before the auction has ended", async function () {
+    const { auctionAs1, minBid } = await loadFixture(deploySettle);
+
+    const shape = [{ lat: 50, lng: 10 }];
+    await auctionAs1.write.bidOnShape([shape], { value: minBid });
+
+    await expect(auctionAs1.write.settleShape([1n, 0n])).to.be.rejected; // AuctionNotYetEnded
+  });
+
+  it("reverts when settling an unknown shape id", async function () {
+    const { auctionAs1, end } = await loadFixture(deploySettle);
+
+    await time.increaseTo(end + 1n);
+
+    await expect(auctionAs1.write.settleShape([999n, 0n])).to.be.rejected; // UnknownShape
+  });
+
+  it("reverts when settling an already-settled shape", async function () {
+    const { auctionAs1, minBid, end } = await loadFixture(deploySettle);
+
+    const shape = [{ lat: 60, lng: 10 }];
+    await auctionAs1.write.bidOnShape([shape], { value: minBid });
+
+    await time.increaseTo(end + 1n);
+
+    await auctionAs1.write.settleShape([1n, 0n]);
+    await expect(auctionAs1.write.settleShape([1n, 0n])).to.be.rejected; // ShapeAlreadySettled
   });
 });
