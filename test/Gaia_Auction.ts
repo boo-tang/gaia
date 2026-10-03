@@ -908,6 +908,54 @@ describe("GaiaAuction: settleShape", function () {
     await auctionAs1.write.settleShape([1n, 0n]);
     await expect(auctionAs1.write.settleShape([1n, 0n])).to.be.rejected; // ShapeAlreadySettled
   });
+
+  it("rejects a bid with lat out of range", async function () {
+    const { auctionAs1, minBid } = await loadFixture(deploySettle);
+
+    const shape = [{ lat: 18000, lng: 10 }];
+    await expect(
+      auctionAs1.write.bidOnShape([shape], { value: minBid })
+    ).to.be.rejectedWith("InvalidCoordinates");
+  });
+
+  it("rejects a bid with lng out of range", async function () {
+    const { auctionAs1, minBid } = await loadFixture(deploySettle);
+
+    const shape = [
+      { lat: 10, lng: 35999 },
+      { lat: 10, lng: 36000 },
+    ];
+    await expect(
+      auctionAs1.write.bidOnShape([shape], { value: minBid * 2n })
+    ).to.be.rejectedWith("InvalidCoordinates");
+  });
+
+  it("settles a shape on the last valid row and column", async function () {
+    const { auctionAs1, bidder1, countries, minBid, end } = await loadFixture(
+      deploySettle
+    );
+
+    const shape = [
+      { lat: 17998, lng: 35998 },
+      { lat: 17998, lng: 35999 },
+      { lat: 17999, lng: 35998 },
+      { lat: 17999, lng: 35999 },
+    ];
+    await auctionAs1.write.bidOnShape([shape], {
+      value: minBid * BigInt(shape.length),
+    });
+
+    await time.increaseTo(end + 1n);
+
+    const shapeId = 1n;
+    await expect(auctionAs1.write.settleShape([shapeId, 0n])).to.be.fulfilled;
+    expect(
+      await countries.read.balanceOf([bidder1.account.address, shapeId])
+    ).to.equal(1n);
+    expect(await countries.read.getSquares([shapeId])).to.have.length(
+      shape.length
+    );
+  });
 });
 
 describe("GaiaAuction: treasury proceeds", function () {

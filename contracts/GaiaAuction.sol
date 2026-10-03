@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-import {IGaiaLocation721} from "./interfaces/IGaiaLocation721.sol";
+import {IGaiaLocation721, LOC_MAX_LAT, LOC_MAX_LNG} from "./interfaces/IGaiaLocation721.sol";
 import {ICountry1155} from "./interfaces/ICountry1155.sol";
 import {IGaiaAuction} from "./interfaces/IGaiaAuction.sol";
 
@@ -108,6 +108,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     error NoLatAdjacency();
     error NotConvexStart();
     error NotConvexEnd();
+    error InvalidCoordinates();
     error OverlapWouldInvalidateShape(uint256 shapeId);
     error ProceedsTransferFailed();
 
@@ -433,6 +434,11 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             ) {
                 revert NotConvexEnd();
             }
+        }
+
+        // Sorting guarantees the last loc has the highest lat.
+        if (locs[len - 1].lat >= LOC_MAX_LAT || s.globalMaxLng >= LOC_MAX_LNG) {
+            revert InvalidCoordinates();
         }
 
         _checkAspectRatio(

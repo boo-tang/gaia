@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-import {IGaiaLocation721} from "./interfaces/IGaiaLocation721.sol";
+import {IGaiaLocation721, LOC_MAX_LAT, LOC_MAX_LNG} from "./interfaces/IGaiaLocation721.sol";
 
 /**
  * @title GaiaLocation721
@@ -15,8 +15,8 @@ contract GaiaLocation721 is ERC721, AccessControl, IGaiaLocation721 {
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
 
     // Coordinate bounds (same scheme used elsewhere in the repo)
-    uint16 public constant MAX_LAT = 18000;
-    uint16 public constant MAX_LNG = 36000;
+    uint16 public constant MAX_LAT = LOC_MAX_LAT;
+    uint16 public constant MAX_LNG = LOC_MAX_LNG;
 
     // Next token id to assign (starts at 0 for typical ERC721; you can start at 1 if preferred)
     uint256 private _nextTokenId;
