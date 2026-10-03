@@ -1,8 +1,10 @@
+import { LNG_COLUMNS } from '../constants';
 import { Loc } from '../types';
 
 // Mirrors GaiaAuction.sol's shape-validity rules (contracts/GaiaAuction.sol: _validateShapeMem /
 // _validateAndComputeTotal) so the client can give live feedback before submitting a bid.
-// Operates on chain (uint16) coordinates, sorted lat asc then lng asc within each row.
+// Operates on chain (uint16) coordinates, sorted lat asc then lng west to east within each row.
+// Longitude wraps, so a row can be e.g. 35998, 35999, 0, 1.
 
 export interface ShapeLimits {
   minShapeSquares: bigint;
@@ -12,8 +14,33 @@ export interface ShapeLimits {
 
 export type ShapeValidation = { valid: true } | { valid: false; reason: string };
 
-export const sortLocs = (locs: Loc[]): Loc[] =>
-  [...locs].sort((a, b) => a.lat - b.lat || a.lng - b.lng);
+// Mirrors GaiaAuction.sol's LNG_ORIGIN / _normLng.
+const LNG_ORIGIN = LNG_COLUMNS / 2;
+const normLng = (lng: number, refLng: number) =>
+  (lng + LNG_COLUMNS + LNG_ORIGIN - refLng) % LNG_COLUMNS;
+
+// The west edge of the shape is the column after the largest gap between occupied columns,
+// with the gap that wraps around the antimeridian included.
+const westEdgeLng = (locs: Loc[]): number => {
+  const lngs = [...new Set(locs.map((loc) => loc.lng))].sort((a, b) => a - b);
+  let west = lngs[0];
+  let largestGap = lngs[0] + LNG_COLUMNS - lngs[lngs.length - 1];
+  for (let i = 1; i < lngs.length; i++) {
+    const gap = lngs[i] - lngs[i - 1];
+    if (gap > largestGap) {
+      largestGap = gap;
+      west = lngs[i];
+    }
+  }
+  return west;
+};
+
+export const sortLocs = (locs: Loc[]): Loc[] => {
+  if (locs.length === 0) return [];
+  const west = westEdgeLng(locs);
+  const eastOfWest = (lng: number) => (lng - west + LNG_COLUMNS) % LNG_COLUMNS;
+  return [...locs].sort((a, b) => a.lat - b.lat || eastOfWest(a.lng) - eastOfWest(b.lng));
+};
 
 // `locs` must already be sorted (see sortLocs).
 export const validateShape = (locs: Loc[], limits: ShapeLimits): ShapeValidation => {
@@ -26,21 +53,23 @@ export const validateShape = (locs: Loc[], limits: ShapeLimits): ShapeValidation
     return { valid: false, reason: `Shape can have at most ${limits.maxShapeSquares} squares` };
   }
 
+  const refLng = locs[0].lng;
   let currentLat = locs[0].lat;
-  let prevLngInLat = locs[0].lng;
-  let longitudeRangeStart = locs[0].lng;
-  let longitudeRangeEnd = locs[0].lng;
-  let globalMinLng = locs[0].lng;
-  let globalMaxLng = locs[0].lng;
-  let prevRangeStart = locs[0].lng;
-  let prevRangeEnd = locs[0].lng;
+  let prevLngInLat = LNG_ORIGIN;
+  let longitudeRangeStart = LNG_ORIGIN;
+  let longitudeRangeEnd = LNG_ORIGIN;
+  let globalMinLng = LNG_ORIGIN;
+  let globalMaxLng = LNG_ORIGIN;
+  let prevRangeStart = LNG_ORIGIN;
+  let prevRangeEnd = LNG_ORIGIN;
   let isFirstLat = true;
   let latHasAdjacent = true;
   let leftFlipped = false;
   let rightFlipped = false;
 
   for (let i = 1; i < len; i++) {
-    const { lat, lng } = locs[i];
+    const { lat } = locs[i];
+    const lng = normLng(locs[i].lng, refLng);
 
     if (lat === currentLat) {
       if (lng !== prevLngInLat + 1) {

@@ -1,5 +1,5 @@
 import { LatLngBounds } from 'leaflet';
-import { COOR_PRECISION } from '../constants';
+import { COOR_PRECISION, LNG_COLUMNS } from '../constants';
 import { Loc } from '../types';
 
 export const fromCoorToUint = (loc: Loc): Loc => {
@@ -12,7 +12,9 @@ export const fromCoorToUint = (loc: Loc): Loc => {
    * lng: 0 -> 36,000
    */
   const chainLat = Math.round((lat + 90) * COOR_PRECISION);
-  const chainLng = Math.round((lng + 180) * COOR_PRECISION);
+  // The map can show longitudes outside -180 -> 180 (world copies), so wrap them.
+  const chainLng =
+    ((Math.round((lng + 180) * COOR_PRECISION) % LNG_COLUMNS) + LNG_COLUMNS) % LNG_COLUMNS;
 
   // chain functions work with 2-element array structures: [lat, lng]
   const result = { lat: chainLat, lng: chainLng };

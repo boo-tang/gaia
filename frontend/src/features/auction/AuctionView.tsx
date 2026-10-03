@@ -8,7 +8,8 @@ import { CellViewModel } from '../map/types';
 import { useAppDispatch, useAppSelector } from '../../hooks/reduxHooks';
 import { getSelectedLocations, toggleLocation } from '../../state/locations';
 import { useAuctionConfig } from '../../chain/useGaiaAuction';
-import { fromCoorToUint } from '../../utils/location';
+import { fromCoorToUint, fromUintToCoor } from '../../utils/location';
+import { LNG_COLUMNS } from '../../constants';
 import { Loc } from '../../types';
 import { AuctionStatus } from './AuctionStatus';
 import { BidPanel } from './BidPanel';
@@ -40,6 +41,10 @@ export const AuctionView = () => {
     }
     const min = fromCoorToUint({ lat: minLat, lng: minLng });
     const max = fromCoorToUint({ lat: maxLat, lng: maxLng });
+    // The viewport crosses the antimeridian: fetch the full longitude range for these rows.
+    if (min.lng > max.lng) {
+      return { minLat: min.lat, maxLat: max.lat, minLng: 0, maxLng: LNG_COLUMNS - 1 };
+    }
     return { minLat: min.lat, maxLat: max.lat, minLng: min.lng, maxLng: max.lng };
   }, [visibleLocs]);
 
@@ -81,7 +86,15 @@ export const AuctionView = () => {
     [selectedKeys],
   );
 
-  const onCellClick = useCallback((loc: Loc) => dispatch(toggleLocation(loc)), [dispatch]);
+  // Store one map position per chain square, so that two world copies of a square (e.g. 180.00
+  // and -180.00) toggle the same selection.
+  const onCellClick = useCallback(
+    (loc: Loc) => {
+      const chainLoc = fromCoorToUint(loc);
+      dispatch(toggleLocation(fromUintToCoor([chainLoc.lat, chainLoc.lng])));
+    },
+    [dispatch],
+  );
 
   return (
     <>

@@ -179,6 +179,60 @@ describe("utils/shape (mirrors GaiaAuction.sol shape validation)", function () {
       { lat: 1, lng: 5 },
     ]);
   });
+
+  it("sortLocs sorts a crossing shape west to east across the antimeridian", function () {
+    const shape = [
+      { lat: 1, lng: 0 },
+      { lat: 0, lng: 1 },
+      { lat: 1, lng: 35999 },
+      { lat: 0, lng: 35998 },
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 35999 },
+    ];
+    expect(sortLocs(shape)).to.deep.equal([
+      { lat: 0, lng: 35998 },
+      { lat: 0, lng: 35999 },
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 1 },
+      { lat: 1, lng: 35999 },
+      { lat: 1, lng: 0 },
+    ]);
+  });
+
+  it("accepts a valid shape that crosses the antimeridian", function () {
+    const shape = sortLocs([
+      { lat: 50, lng: 35998 },
+      { lat: 50, lng: 35999 },
+      { lat: 50, lng: 0 },
+      { lat: 50, lng: 1 },
+      { lat: 51, lng: 35998 },
+      { lat: 51, lng: 35999 },
+      { lat: 51, lng: 0 },
+      { lat: 51, lng: 1 },
+    ]);
+    expect(validateShape(shape, limits)).to.deep.equal({ valid: true });
+  });
+
+  it("rejects a crossing shape with a gap", function () {
+    const shape = sortLocs([
+      { lat: 50, lng: 35998 },
+      { lat: 50, lng: 35999 },
+      { lat: 50, lng: 1 },
+    ]);
+    expect(validateShape(shape, limits).valid).to.be.false;
+  });
+
+  it("uses the real width of a crossing shape for the aspect ratio", function () {
+    const stricterLimits = { ...limits, maxShapeAspectRatio: 3n };
+    const narrow = sortLocs([
+      { lat: 50, lng: 35999 },
+      { lat: 50, lng: 0 },
+      { lat: 50, lng: 1 },
+    ]);
+    const wide = sortLocs([...narrow, { lat: 50, lng: 35998 }]);
+    expect(validateShape(narrow, stricterLimits)).to.deep.equal({ valid: true });
+    expect(validateShape(wide, stricterLimits).valid).to.be.false;
+  });
 });
 
 describe("utils/shape bid totals (mirrors GaiaAuction.sol._nextBid)", function () {

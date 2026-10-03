@@ -17,6 +17,11 @@ import {IGaiaAuction} from "./interfaces/IGaiaAuction.sol";
  *   - Bounding-box aspect ratio must satisfy max(width,height) <= min(width,height) * maxShapeAspectRatio.
  *   - A bid that partially overlaps an existing active shape is accepted only if each affected
  *     shape's remaining squares are either zero (full takeover) or still form a valid shape.
+ *
+ * Longitude wraps: square 35999 and square 0 are neighbours. Shape checks use longitudes
+ * normalised relative to the first square of the shape (see _normLng), so a shape can cross the
+ * antimeridian. Sort order: lat ascending, then lng west to east within a row, continuing across
+ * the antimeridian (e.g. 35998, 35999, 0, 1).
  */
 contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     // --- External contracts ---
@@ -59,6 +64,10 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     mapping(uint256 => uint256) public shapeSettleCursor;
     // Count of squares actually settled (i.e. not overtaken) for the shape so far.
     mapping(uint256 => uint256) public shapeSettledSquares;
+
+    // Normalised value of a shape's reference longitude. Squares up to LNG_ORIGIN columns west or
+    // east of the reference keep their relative order after normalisation.
+    uint16 private constant LNG_ORIGIN = LOC_MAX_LNG / 2;
 
     // --- Shape validation scratch struct ---
     struct ShapeState {
@@ -325,31 +334,38 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         if (len < minShapeSquares) revert ShapeTooSmall(len, minShapeSquares);
         if (len > maxShapeSquares) revert ShapeTooLarge(len, maxShapeSquares);
 
+        uint16 refLng = locs[0].lng;
+        // Check raw values: normalisation is modulo LOC_MAX_LNG and would hide out-of-range values.
+        if (refLng >= LOC_MAX_LNG) revert InvalidCoordinates();
+
         ShapeState memory s;
         s.currentLat = locs[0].lat;
-        s.prevLngInLat = locs[0].lng;
-        s.longitudeRangeStart = locs[0].lng;
-        s.longitudeRangeEnd = locs[0].lng;
-        s.globalMinLng = locs[0].lng;
-        s.globalMaxLng = locs[0].lng;
-        s.prevLongitudeRangeStart = locs[0].lng;
-        s.prevLongitudeRangeEnd = locs[0].lng;
+        s.prevLngInLat = LNG_ORIGIN;
+        s.longitudeRangeStart = LNG_ORIGIN;
+        s.longitudeRangeEnd = LNG_ORIGIN;
+        s.globalMinLng = LNG_ORIGIN;
+        s.globalMaxLng = LNG_ORIGIN;
+        s.prevLongitudeRangeStart = LNG_ORIGIN;
+        s.prevLongitudeRangeEnd = LNG_ORIGIN;
         s.isFirstLat = true;
         s.latHasAdjacent = true;
 
         {
-            Bid memory cur0 = highestBids[locs[0].lat][locs[0].lng];
+            Bid memory cur0 = highestBids[locs[0].lat][refLng];
             requiredTotal = _nextBid(cur0.amount);
         }
 
         for (uint256 i = 1; i < len; ) {
             uint16 lat = locs[i].lat;
             uint16 lng = locs[i].lng;
+            if (lng >= LOC_MAX_LNG) revert InvalidCoordinates();
 
             {
                 Bid memory current = highestBids[lat][lng];
                 requiredTotal += _nextBid(current.amount);
             }
+
+            lng = _normLng(lng, refLng);
 
             if (lat == s.currentLat) {
                 if (lng != s.prevLngInLat + 1) revert GapBetweenLongitudes();
@@ -437,9 +453,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         }
 
         // Sorting guarantees the last loc has the highest lat.
-        if (locs[len - 1].lat >= LOC_MAX_LAT || s.globalMaxLng >= LOC_MAX_LNG) {
-            revert InvalidCoordinates();
-        }
+        if (locs[len - 1].lat >= LOC_MAX_LAT) revert InvalidCoordinates();
 
         _checkAspectRatio(
             locs[0].lat,
@@ -459,21 +473,23 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         if (len < minShapeSquares) revert ShapeTooSmall(len, minShapeSquares);
         if (len > maxShapeSquares) revert ShapeTooLarge(len, maxShapeSquares);
 
+        uint16 refLng = locs[0].lng;
+
         ShapeState memory s;
         s.currentLat = locs[0].lat;
-        s.prevLngInLat = locs[0].lng;
-        s.longitudeRangeStart = locs[0].lng;
-        s.longitudeRangeEnd = locs[0].lng;
-        s.globalMinLng = locs[0].lng;
-        s.globalMaxLng = locs[0].lng;
-        s.prevLongitudeRangeStart = locs[0].lng;
-        s.prevLongitudeRangeEnd = locs[0].lng;
+        s.prevLngInLat = LNG_ORIGIN;
+        s.longitudeRangeStart = LNG_ORIGIN;
+        s.longitudeRangeEnd = LNG_ORIGIN;
+        s.globalMinLng = LNG_ORIGIN;
+        s.globalMaxLng = LNG_ORIGIN;
+        s.prevLongitudeRangeStart = LNG_ORIGIN;
+        s.prevLongitudeRangeEnd = LNG_ORIGIN;
         s.isFirstLat = true;
         s.latHasAdjacent = true;
 
         for (uint256 i = 1; i < len; ) {
             uint16 lat = locs[i].lat;
-            uint16 lng = locs[i].lng;
+            uint16 lng = _normLng(locs[i].lng, refLng);
 
             if (lat == s.currentLat) {
                 if (lng != s.prevLngInLat + 1) revert GapBetweenLongitudes();
@@ -568,6 +584,15 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         );
     }
 
+    /// Maps `lng` into a frame where `refLng` is LNG_ORIGIN, so that the columns on each side of the
+    /// antimeridian are consecutive. Inputs must be < LOC_MAX_LNG.
+    function _normLng(uint16 lng, uint16 refLng) internal pure returns (uint16) {
+        return
+            uint16(
+                (uint256(lng) + LOC_MAX_LNG + LNG_ORIGIN - refLng) % LOC_MAX_LNG
+            );
+    }
+
     /// Reverts if max(width, height) > min(width, height) * maxShapeAspectRatio.
     function _checkAspectRatio(
         uint16 minLat,
@@ -624,7 +649,8 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     }
 
     /// Simulates removing `removing` from shapeId's effective squares and validates the remainder.
-    /// Uses a merge scan (both stored and removing are sorted by lat asc, lng asc within lat).
+    /// Uses a merge scan (both stored and removing are sorted by lat asc, lng west to east within
+    /// lat). Longitudes are compared in the stored shape's normalised frame.
     function _validateShapeRemainder(
         uint256 shapeId,
         IGaiaLocation721.Loc[] calldata removing
@@ -632,6 +658,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         IGaiaLocation721.Loc[] storage stored = _shapeLocs[shapeId];
         uint256 storedLen = stored.length;
         uint256 removeLen = removing.length;
+        uint16 refLng = stored[0].lng;
 
         IGaiaLocation721.Loc[] memory remaining = new IGaiaLocation721.Loc[](
             storedLen
@@ -652,10 +679,14 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             }
 
             // Advance removing pointer past entries sorted before (sLat, sLng).
+            uint16 sNorm = _normLng(sLng, refLng);
             while (rIdx < removeLen) {
                 uint16 rLat = removing[rIdx].lat;
-                uint16 rLng = removing[rIdx].lng;
-                if (rLat < sLat || (rLat == sLat && rLng < sLng)) {
+                if (
+                    rLat < sLat ||
+                    (rLat == sLat &&
+                        _normLng(removing[rIdx].lng, refLng) < sNorm)
+                ) {
                     unchecked {
                         rIdx++;
                     }

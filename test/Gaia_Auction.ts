@@ -958,6 +958,232 @@ describe("GaiaAuction: settleShape", function () {
   });
 });
 
+describe("GaiaAuction: shapes that cross the antimeridian", function () {
+  async function deployAntimeridian() {
+    const [owner, bidder1, bidder2] = await hre.viem.getWalletClients();
+
+    const squares = await hre.viem.deployContract("GaiaLocation721", [
+      owner.account.address,
+    ]);
+    const countries = await hre.viem.deployContract("Country1155", [
+      owner.account.address,
+      "ipfs://",
+    ]);
+
+    const publicClient = await hre.viem.getPublicClient();
+    const now = (await publicClient.getBlock()).timestamp;
+    const start = now - 10n;
+    const end = now + 3600n;
+    const minBid = 1000n;
+    const auction = await hre.viem.deployContract(
+      "contracts/GaiaAuction.sol:GaiaAuction",
+      [
+        squares.address,
+        countries.address,
+        owner.account.address, // treasury
+        start,
+        end,
+        minBid,
+        2n, // minShapeSquares
+        1000n, // maxShapeSquares
+        3n, // maxShapeAspectRatio
+      ]
+    );
+
+    await squares.write.grantRole([
+      await squares.read.MINTER_ROLE(),
+      auction.address,
+    ]);
+    await countries.write.grantRole([
+      await countries.read.AUCTION_ROLE(),
+      auction.address,
+    ]);
+
+    const auctionAs1 = await hre.viem.getContractAt(
+      "contracts/GaiaAuction.sol:GaiaAuction",
+      auction.address,
+      { client: { wallet: bidder1 } }
+    );
+    const auctionAs2 = await hre.viem.getContractAt(
+      "contracts/GaiaAuction.sol:GaiaAuction",
+      auction.address,
+      { client: { wallet: bidder2 } }
+    );
+
+    return {
+      bidder1,
+      squares,
+      countries,
+      auctionAs1,
+      auctionAs2,
+      minBid,
+      end,
+    };
+  }
+
+  // 2 rows x 4 columns: 35998, 35999, 0, 1.
+  const crossingRect = (lat: number) => [
+    { lat, lng: 35998 },
+    { lat, lng: 35999 },
+    { lat, lng: 0 },
+    { lat, lng: 1 },
+    { lat: lat + 1, lng: 35998 },
+    { lat: lat + 1, lng: 35999 },
+    { lat: lat + 1, lng: 0 },
+    { lat: lat + 1, lng: 1 },
+  ];
+
+  it("accepts and settles a shape from 35998 to 1", async function () {
+    const { auctionAs1, bidder1, squares, countries, minBid, end } =
+      await loadFixture(deployAntimeridian);
+
+    const shape = crossingRect(50);
+    await expect(
+      auctionAs1.write.bidOnShape([shape], {
+        value: minBid * BigInt(shape.length),
+      })
+    ).to.be.fulfilled;
+
+    await time.increaseTo(end + 1n);
+
+    const shapeId = 1n;
+    await expect(auctionAs1.write.settleShape([shapeId, 0n])).to.be.fulfilled;
+    expect(
+      await countries.read.balanceOf([bidder1.account.address, shapeId])
+    ).to.equal(1n);
+    expect(await countries.read.getSquares([shapeId])).to.have.length(
+      shape.length
+    );
+    for (const loc of shape) {
+      const owner = await squares.read.ownerOfLoc([loc.lat, loc.lng]);
+      expect(getAddress(owner)).to.equal(getAddress(countries.address));
+    }
+  });
+
+  it("rejects a crossing shape with a gap", async function () {
+    const { auctionAs1, minBid } = await loadFixture(deployAntimeridian);
+
+    const shape = [
+      { lat: 50, lng: 35998 },
+      { lat: 50, lng: 35999 },
+      { lat: 50, lng: 1 },
+    ];
+    await expect(
+      auctionAs1.write.bidOnShape([shape], { value: minBid * 3n })
+    ).to.be.rejectedWith("GapBetweenLongitudes");
+  });
+
+  it("rejects a crossing shape that is not sorted west to east", async function () {
+    const { auctionAs1, minBid } = await loadFixture(deployAntimeridian);
+
+    const shape = [
+      { lat: 50, lng: 0 },
+      { lat: 50, lng: 35999 },
+    ];
+    await expect(
+      auctionAs1.write.bidOnShape([shape], { value: minBid * 2n })
+    ).to.be.rejectedWith("GapBetweenLongitudes");
+  });
+
+  it("rejects a crossing shape with a concave left edge", async function () {
+    const { auctionAs1, minBid } = await loadFixture(deployAntimeridian);
+
+    // Left edge goes 35999 -> 0 -> 35999.
+    const shape = [
+      { lat: 50, lng: 35999 },
+      { lat: 50, lng: 0 },
+      { lat: 51, lng: 0 },
+      { lat: 51, lng: 1 },
+      { lat: 52, lng: 35999 },
+      { lat: 52, lng: 0 },
+    ];
+    await expect(
+      auctionAs1.write.bidOnShape([shape], {
+        value: minBid * BigInt(shape.length),
+      })
+    ).to.be.rejectedWith("NotConvexStart");
+  });
+
+  it("uses the real width of a crossing shape for the aspect ratio", async function () {
+    const { auctionAs1, minBid } = await loadFixture(deployAntimeridian);
+
+    // 1 x 3 → ratio 3 == maxShapeAspectRatio.
+    const narrow = [
+      { lat: 50, lng: 35999 },
+      { lat: 50, lng: 0 },
+      { lat: 50, lng: 1 },
+    ];
+    await expect(
+      auctionAs1.write.bidOnShape([narrow], { value: minBid * 3n })
+    ).to.be.fulfilled;
+
+    // 1 x 4 → ratio 4 > maxShapeAspectRatio.
+    const wide = [
+      { lat: 60, lng: 35998 },
+      { lat: 60, lng: 35999 },
+      { lat: 60, lng: 0 },
+      { lat: 60, lng: 1 },
+    ];
+    await expect(
+      auctionAs1.write.bidOnShape([wide], { value: minBid * 4n })
+    ).to.be.rejectedWith("AspectRatioExceeded");
+  });
+
+  it("permits an overlap on a crossing shape that leaves a valid remainder", async function () {
+    const { auctionAs1, auctionAs2, countries, minBid, end } =
+      await loadFixture(deployAntimeridian);
+
+    const aliceShape = crossingRect(70);
+    await auctionAs1.write.bidOnShape([aliceShape], {
+      value: minBid * BigInt(aliceShape.length),
+    });
+
+    // Bob takes the west half (35998, 35999). Alice keeps the 2 x 2 block at 0, 1.
+    const bobShape = [
+      { lat: 70, lng: 35998 },
+      { lat: 70, lng: 35999 },
+      { lat: 71, lng: 35998 },
+      { lat: 71, lng: 35999 },
+    ];
+    await expect(
+      auctionAs2.write.bidOnShape([bobShape], {
+        value: (minBid + minBid) * BigInt(bobShape.length),
+      })
+    ).to.be.fulfilled;
+
+    await time.increaseTo(end + 1n);
+
+    await auctionAs1.write.settleShape([1n, 0n]);
+    await auctionAs2.write.settleShape([2n, 0n]);
+    expect(await countries.read.getSquares([1n])).to.have.length(4);
+    expect(await countries.read.getSquares([2n])).to.have.length(4);
+  });
+
+  it("rejects an overlap on a crossing shape that splits the remainder", async function () {
+    const { auctionAs1, auctionAs2, minBid } = await loadFixture(
+      deployAntimeridian
+    );
+
+    const aliceShape = crossingRect(80);
+    await auctionAs1.write.bidOnShape([aliceShape], {
+      value: minBid * BigInt(aliceShape.length),
+    });
+
+    // Bob takes the middle columns (35999, 0). Alice keeps 35998 and 1, which are not adjacent.
+    const bobShape = [
+      { lat: 80, lng: 35999 },
+      { lat: 80, lng: 0 },
+      { lat: 81, lng: 35999 },
+      { lat: 81, lng: 0 },
+    ];
+    await expect(
+      auctionAs2.write.bidOnShape([bobShape], {
+        value: (minBid + minBid) * BigInt(bobShape.length),
+      })
+    ).to.be.rejectedWith("GapBetweenLongitudes");
+  });
+});
+
 describe("GaiaAuction: treasury proceeds", function () {
   async function deployProceeds() {
     const [owner, bidder1, bidder2, treasury] =
