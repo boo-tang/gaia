@@ -10,8 +10,12 @@ interface IGaiaAuction {
     /// @notice Bids on a convex shape of locations; `msg.value` must cover the sum of next bids
     function bidOnShape(IGaiaLocation721.Loc[] calldata locs) external payable;
 
-    /// @notice Withdraws refunds for outbid amounts
+    /// @notice Withdraws refunds for outbid amounts and overpayments
     function withdraw() external returns (bool);
+
+    /// @notice Sends the sum of all winning bids to the treasury after the auction ends.
+    ///         Callable by anyone. Does not touch bidder refunds in `pendingReturns`.
+    function withdrawProceeds() external;
 
     /// @notice Settles a winning shape after the auction ends: mints its still-owned squares as
     ///         ERC-721 tokens into Country1155 custody and, once fully processed, mints the

@@ -22,6 +22,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     // --- External contracts ---
     IGaiaLocation721 public immutable squares;
     ICountry1155 public immutable countries;
+    address public immutable treasury;
 
     // --- Auction config ---
     uint64 public immutable startTime;
@@ -41,6 +42,8 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     mapping(uint16 => mapping(uint16 => Bid)) public highestBids;
     // refunds for outbid amounts
     mapping(address => uint256) public pendingReturns;
+    // Sum of current highest bids; owed to the treasury. Kept separate from pendingReturns.
+    uint256 public proceeds;
 
     // --- Per-shape state ---
     // shapeId 0 is a sentinel for "no active shape"; valid ids start at 1.
@@ -86,6 +89,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         address indexed winner,
         uint256 totalSquares
     );
+    event ProceedsWithdrawn(address indexed treasury, uint256 amount);
 
     // --- Errors ---
     error AuctionAlreadyEnded();
@@ -105,6 +109,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     error NotConvexStart();
     error NotConvexEnd();
     error OverlapWouldInvalidateShape(uint256 shapeId);
+    error ProceedsTransferFailed();
 
     // --- Modifiers ---
     modifier onlyDuringAuction() {
@@ -121,6 +126,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     constructor(
         IGaiaLocation721 squares_,
         ICountry1155 countries_,
+        address treasury_,
         uint64 startTime_,
         uint64 endTime_,
         uint256 minBidPerSquareWei_,
@@ -130,7 +136,8 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     ) {
         require(
             address(squares_) != address(0) &&
-                address(countries_) != address(0),
+                address(countries_) != address(0) &&
+                treasury_ != address(0),
             "zero address"
         );
         require(startTime_ < endTime_, "invalid time window");
@@ -141,6 +148,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         require(maxShapeAspectRatio_ >= 1, "invalid aspect ratio");
         squares = squares_;
         countries = countries_;
+        treasury = treasury_;
         startTime = startTime_;
         endTime = endTime_;
         minBidPerSquareWei = minBidPerSquareWei_;
@@ -170,6 +178,12 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         }
         shapeBidder[newShapeId] = msg.sender;
 
+        uint256 excess = msg.value - requiredTotal;
+        if (excess != 0) {
+            pendingReturns[msg.sender] += excess;
+        }
+
+        uint256 proceedsIncrease = 0;
         uint256 len = locs.length;
         for (uint256 i = 0; i < len; ) {
             IGaiaLocation721.Loc calldata loc = locs[i];
@@ -182,6 +196,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             }
 
             uint256 nextAmount = _nextBid(current.amount);
+            proceedsIncrease += nextAmount - current.amount;
             highestBids[loc.lat][loc.lng] = Bid({
                 bidder: msg.sender,
                 amount: nextAmount
@@ -195,6 +210,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
                 i++;
             }
         }
+        proceeds += proceedsIncrease;
     }
 
     /// @inheritdoc IGaiaAuction
@@ -213,6 +229,24 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         }
 
         return true;
+    }
+
+    /// @inheritdoc IGaiaAuction
+    function withdrawProceeds()
+        external
+        override
+        nonReentrant
+        onlyAfterAuction
+    {
+        uint256 amount = proceeds;
+        if (amount == 0) return;
+
+        proceeds = 0;
+
+        (bool success, ) = payable(treasury).call{value: amount}("");
+        if (!success) revert ProceedsTransferFailed();
+
+        emit ProceedsWithdrawn(treasury, amount);
     }
 
     /// @inheritdoc IGaiaAuction

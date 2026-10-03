@@ -27,6 +27,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       [
         squares.address,
         countries.address,
+        owner.account.address, // treasury
         start,
         end,
         minBid,
@@ -230,6 +231,7 @@ describe("GaiaAuction: totals and refunds", function () {
       [
         squares.address,
         countries.address,
+        owner.account.address, // treasury
         start,
         end,
         minBid,
@@ -384,6 +386,7 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
       [
         squares.address,
         countries.address,
+        owner.account.address, // treasury
         start,
         end,
         minBid,
@@ -516,6 +519,7 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
       [
         squares.address,
         countries.address,
+        owner.account.address, // treasury
         start,
         end,
         minBid,
@@ -699,6 +703,7 @@ describe("GaiaAuction: settleShape", function () {
       [
         squares.address,
         countries.address,
+        owner.account.address, // treasury
         start,
         end,
         minBid,
@@ -902,5 +907,181 @@ describe("GaiaAuction: settleShape", function () {
 
     await auctionAs1.write.settleShape([1n, 0n]);
     await expect(auctionAs1.write.settleShape([1n, 0n])).to.be.rejected; // ShapeAlreadySettled
+  });
+});
+
+describe("GaiaAuction: treasury proceeds", function () {
+  async function deployProceeds() {
+    const [owner, bidder1, bidder2, treasury] =
+      await hre.viem.getWalletClients();
+    const publicClient = await hre.viem.getPublicClient();
+
+    const squares = await hre.viem.deployContract("GaiaLocation721", [
+      owner.account.address,
+    ]);
+    const countries = await hre.viem.deployContract("Country1155", [
+      owner.account.address,
+      "ipfs://",
+    ]);
+
+    const now = (await publicClient.getBlock()).timestamp;
+    const start = now - 10n;
+    const end = now + 3600n;
+    const minBid = 1000n;
+    const auction = await hre.viem.deployContract(
+      "contracts/GaiaAuction.sol:GaiaAuction",
+      [
+        squares.address,
+        countries.address,
+        treasury.account.address,
+        start,
+        end,
+        minBid,
+        1n, // minShapeSquares
+        1000n, // maxShapeSquares
+        10n, // maxShapeAspectRatio
+      ]
+    );
+
+    const auctionAs1 = await hre.viem.getContractAt(
+      "contracts/GaiaAuction.sol:GaiaAuction",
+      auction.address,
+      { client: { wallet: bidder1 } }
+    );
+    const auctionAs2 = await hre.viem.getContractAt(
+      "contracts/GaiaAuction.sol:GaiaAuction",
+      auction.address,
+      { client: { wallet: bidder2 } }
+    );
+
+    return {
+      publicClient,
+      bidder1,
+      bidder2,
+      treasury,
+      auction,
+      auctionAs1,
+      auctionAs2,
+      minBid,
+      end,
+    };
+  }
+
+  // bidder1 bids 3 squares, bidder2 overtakes one of them, bidder1 bids 2 more squares.
+  // Winning bids: 2*minBid (bidder1, shape 1) + 2*minBid (bidder2) + 2*minBid (bidder1, shape 3).
+  // Refund owed to bidder1: minBid.
+  async function placeBids(
+    f: Awaited<ReturnType<typeof deployProceeds>>
+  ) {
+    const { auctionAs1, auctionAs2, minBid } = f;
+    await auctionAs1.write.bidOnShape(
+      [
+        [
+          { lat: 10, lng: 10 },
+          { lat: 10, lng: 11 },
+          { lat: 10, lng: 12 },
+        ],
+      ],
+      { value: minBid * 3n }
+    );
+    await auctionAs2.write.bidOnShape([[{ lat: 10, lng: 12 }]], {
+      value: minBid * 2n,
+    });
+    await auctionAs1.write.bidOnShape(
+      [
+        [
+          { lat: 20, lng: 10 },
+          { lat: 20, lng: 11 },
+        ],
+      ],
+      { value: minBid * 2n }
+    );
+    return { winningTotal: minBid * 6n, refund: minBid };
+  }
+
+  it("sends the sum of all winning bids to the treasury after the auction ends", async function () {
+    const f = await loadFixture(deployProceeds);
+    const { publicClient, treasury, auction, auctionAs1, end } = f;
+    const { winningTotal, refund } = await placeBids(f);
+
+    expect(await auction.read.proceeds()).to.equal(winningTotal);
+
+    await time.increaseTo(end + 1n);
+
+    const before = await publicClient.getBalance({
+      address: treasury.account.address,
+    });
+    await expect(auctionAs1.write.withdrawProceeds()).to.be.fulfilled;
+    const after = await publicClient.getBalance({
+      address: treasury.account.address,
+    });
+
+    expect(after - before).to.equal(winningTotal);
+    expect(await auction.read.proceeds()).to.equal(0n);
+    expect(
+      await publicClient.getBalance({ address: auction.address })
+    ).to.equal(refund);
+  });
+
+  it("lets outbid bidders withdraw their full refunds after the proceeds are sent", async function () {
+    const f = await loadFixture(deployProceeds);
+    const { publicClient, bidder1, auction, auctionAs1, end } = f;
+    const { refund } = await placeBids(f);
+
+    await time.increaseTo(end + 1n);
+    await auctionAs1.write.withdrawProceeds();
+
+    expect(
+      await auction.read.pendingReturns([bidder1.account.address])
+    ).to.equal(refund);
+
+    await expect(auctionAs1.write.withdraw()).to.be.fulfilled;
+
+    expect(
+      await auction.read.pendingReturns([bidder1.account.address])
+    ).to.equal(0n);
+    expect(
+      await publicClient.getBalance({ address: auction.address })
+    ).to.equal(0n);
+  });
+
+  it("credits overpayment to the bidder, not to the proceeds", async function () {
+    const { bidder2, auction, auctionAs2, minBid } = await loadFixture(
+      deployProceeds
+    );
+
+    await auctionAs2.write.bidOnShape([[{ lat: 30, lng: 10 }]], {
+      value: minBid * 5n,
+    });
+
+    expect(await auction.read.proceeds()).to.equal(minBid);
+    expect(
+      await auction.read.pendingReturns([bidder2.account.address])
+    ).to.equal(minBid * 4n);
+  });
+
+  it("does not send proceeds twice", async function () {
+    const f = await loadFixture(deployProceeds);
+    const { publicClient, treasury, auctionAs1, end } = f;
+    await placeBids(f);
+
+    await time.increaseTo(end + 1n);
+    await auctionAs1.write.withdrawProceeds();
+
+    const before = await publicClient.getBalance({
+      address: treasury.account.address,
+    });
+    await expect(auctionAs1.write.withdrawProceeds()).to.be.fulfilled;
+    const after = await publicClient.getBalance({
+      address: treasury.account.address,
+    });
+    expect(after).to.equal(before);
+  });
+
+  it("reverts when withdrawing proceeds before the auction has ended", async function () {
+    const f = await loadFixture(deployProceeds);
+    await placeBids(f);
+
+    await expect(f.auctionAs1.write.withdrawProceeds()).to.be.rejected; // AuctionNotYetEnded
   });
 });
