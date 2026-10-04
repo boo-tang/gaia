@@ -7,3 +7,4 @@ dist/
 frontend/artifacts/
 .DS_Store
 *.tmp.ts
+.cursor/
