@@ -155,6 +155,12 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             minShapeSquares_ >= 1 && minShapeSquares_ <= maxShapeSquares_,
             "invalid shape bounds"
         );
+        // Longitude normalisation (_normLng) keeps order only within LNG_ORIGIN columns of the
+        // reference square.
+        require(
+            maxShapeSquares_ <= LNG_ORIGIN,
+            "shape too large for lng wrap"
+        );
         require(maxShapeAspectRatio_ >= 1, "invalid aspect ratio");
         squares = squares_;
         countries = countries_;
@@ -587,10 +593,13 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     /// Maps `lng` into a frame where `refLng` is LNG_ORIGIN, so that the columns on each side of the
     /// antimeridian are consecutive. Inputs must be < LOC_MAX_LNG.
     function _normLng(uint16 lng, uint16 refLng) internal pure returns (uint16) {
-        return
-            uint16(
-                (uint256(lng) + LOC_MAX_LNG + LNG_ORIGIN - refLng) % LOC_MAX_LNG
-            );
+        unchecked {
+            return
+                uint16(
+                    (uint256(lng) + LOC_MAX_LNG + LNG_ORIGIN - refLng) %
+                        LOC_MAX_LNG
+                );
+        }
     }
 
     /// Reverts if max(width, height) > min(width, height) * maxShapeAspectRatio.
@@ -681,11 +690,10 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             // Advance removing pointer past entries sorted before (sLat, sLng).
             uint16 sNorm = _normLng(sLng, refLng);
             while (rIdx < removeLen) {
-                uint16 rLat = removing[rIdx].lat;
+                IGaiaLocation721.Loc calldata r = removing[rIdx];
                 if (
-                    rLat < sLat ||
-                    (rLat == sLat &&
-                        _normLng(removing[rIdx].lng, refLng) < sNorm)
+                    r.lat < sLat ||
+                    (r.lat == sLat && _normLng(r.lng, refLng) < sNorm)
                 ) {
                     unchecked {
                         rIdx++;
