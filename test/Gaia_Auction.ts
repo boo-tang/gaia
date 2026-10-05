@@ -6,17 +6,13 @@ import { expect } from "chai";
 import hre from "hardhat";
 import { getAddress } from "viem";
 
+import { deployLand, squareId } from "./helpers/land";
+
 describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
   async function deployAll() {
     const [owner] = await hre.viem.getWalletClients();
 
-    const squares = await hre.viem.deployContract("GaiaLocation721", [
-      owner.account.address,
-    ]);
-    const countries = await hre.viem.deployContract("Country1155", [
-      owner.account.address,
-      "ipfs://",
-    ]);
+    const { countries } = await deployLand(owner.account.address);
 
     const now = Math.floor(Date.now() / 1000);
     const start = BigInt(now - 10);
@@ -25,7 +21,6 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
     const auction = await hre.viem.deployContract(
       "contracts/GaiaAuction.sol:GaiaAuction",
       [
-        squares.address,
         countries.address,
         owner.account.address, // treasury
         start,
@@ -37,16 +32,13 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       ]
     );
 
-    await squares.write.grantRole([
-      await squares.read.MINTER_ROLE(),
-      auction.address,
-    ]);
     await countries.write.grantRole([
-      await countries.read.AUCTION_ROLE(),
+      await countries.read.ISSUER_ROLE(),
       auction.address,
     ]);
+    await countries.write.addAuction([auction.address]);
 
-    return { owner, squares, countries, auction, minBid };
+    return { owner, countries, auction, minBid };
   }
 
   it("accepts a valid convex, contiguous shape across rows", async function () {
@@ -214,13 +206,7 @@ describe("GaiaAuction: totals and refunds", function () {
   async function deployAll() {
     const [owner, other] = await hre.viem.getWalletClients();
 
-    const squares = await hre.viem.deployContract("GaiaLocation721", [
-      owner.account.address,
-    ]);
-    const countries = await hre.viem.deployContract("Country1155", [
-      owner.account.address,
-      "ipfs://",
-    ]);
+    const { countries } = await deployLand(owner.account.address);
 
     const now = Math.floor(Date.now() / 1000);
     const start = BigInt(now - 10);
@@ -229,7 +215,6 @@ describe("GaiaAuction: totals and refunds", function () {
     const auction = await hre.viem.deployContract(
       "contracts/GaiaAuction.sol:GaiaAuction",
       [
-        squares.address,
         countries.address,
         owner.account.address, // treasury
         start,
@@ -241,16 +226,13 @@ describe("GaiaAuction: totals and refunds", function () {
       ]
     );
 
-    await squares.write.grantRole([
-      await squares.read.MINTER_ROLE(),
-      auction.address,
-    ]);
     await countries.write.grantRole([
-      await countries.read.AUCTION_ROLE(),
+      await countries.read.ISSUER_ROLE(),
       auction.address,
     ]);
+    await countries.write.addAuction([auction.address]);
 
-    return { owner, other, squares, countries, auction, minBid };
+    return { owner, other, countries, auction, minBid };
   }
 
   it("computes total as minBid per new square", async function () {
@@ -368,13 +350,7 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
   async function deployBounded() {
     const [owner] = await hre.viem.getWalletClients();
 
-    const squares = await hre.viem.deployContract("GaiaLocation721", [
-      owner.account.address,
-    ]);
-    const countries = await hre.viem.deployContract("Country1155", [
-      owner.account.address,
-      "ipfs://",
-    ]);
+    const { countries } = await deployLand(owner.account.address);
 
     const now = Math.floor(Date.now() / 1000);
     const start = BigInt(now - 10);
@@ -384,7 +360,6 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
     const auction = await hre.viem.deployContract(
       "contracts/GaiaAuction.sol:GaiaAuction",
       [
-        squares.address,
         countries.address,
         owner.account.address, // treasury
         start,
@@ -396,16 +371,13 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
       ]
     );
 
-    await squares.write.grantRole([
-      await squares.read.MINTER_ROLE(),
-      auction.address,
-    ]);
     await countries.write.grantRole([
-      await countries.read.AUCTION_ROLE(),
+      await countries.read.ISSUER_ROLE(),
       auction.address,
     ]);
+    await countries.write.addAuction([auction.address]);
 
-    return { owner, squares, countries, auction, minBid };
+    return { owner, countries, auction, minBid };
   }
 
   it("rejects a single-square bid when minShapeSquares=2", async function () {
@@ -501,13 +473,7 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
   async function deployAntiGrief() {
     const [owner, bidder1, bidder2] = await hre.viem.getWalletClients();
 
-    const squares = await hre.viem.deployContract("GaiaLocation721", [
-      owner.account.address,
-    ]);
-    const countries = await hre.viem.deployContract("Country1155", [
-      owner.account.address,
-      "ipfs://",
-    ]);
+    const { countries } = await deployLand(owner.account.address);
 
     const now = Math.floor(Date.now() / 1000);
     const start = BigInt(now - 10);
@@ -517,7 +483,6 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
     const auction = await hre.viem.deployContract(
       "contracts/GaiaAuction.sol:GaiaAuction",
       [
-        squares.address,
         countries.address,
         owner.account.address, // treasury
         start,
@@ -529,14 +494,11 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
       ]
     );
 
-    await squares.write.grantRole([
-      await squares.read.MINTER_ROLE(),
-      auction.address,
-    ]);
     await countries.write.grantRole([
-      await countries.read.AUCTION_ROLE(),
+      await countries.read.ISSUER_ROLE(),
       auction.address,
     ]);
+    await countries.write.addAuction([auction.address]);
 
     const auctionAs1 = await hre.viem.getContractAt(
       "contracts/GaiaAuction.sol:GaiaAuction",
@@ -686,13 +648,7 @@ describe("GaiaAuction: settleShape", function () {
   async function deploySettle() {
     const [owner, bidder1, bidder2] = await hre.viem.getWalletClients();
 
-    const squares = await hre.viem.deployContract("GaiaLocation721", [
-      owner.account.address,
-    ]);
-    const countries = await hre.viem.deployContract("Country1155", [
-      owner.account.address,
-      "ipfs://",
-    ]);
+    const { countries, squares } = await deployLand(owner.account.address);
 
     const now = Math.floor(Date.now() / 1000);
     const start = BigInt(now - 10);
@@ -701,7 +657,6 @@ describe("GaiaAuction: settleShape", function () {
     const auction = await hre.viem.deployContract(
       "contracts/GaiaAuction.sol:GaiaAuction",
       [
-        squares.address,
         countries.address,
         owner.account.address, // treasury
         start,
@@ -713,14 +668,11 @@ describe("GaiaAuction: settleShape", function () {
       ]
     );
 
-    await squares.write.grantRole([
-      await squares.read.MINTER_ROLE(),
-      auction.address,
-    ]);
     await countries.write.grantRole([
-      await countries.read.AUCTION_ROLE(),
+      await countries.read.ISSUER_ROLE(),
       auction.address,
     ]);
+    await countries.write.addAuction([auction.address]);
 
     const auctionAs1 = await hre.viem.getContractAt(
       "contracts/GaiaAuction.sol:GaiaAuction",
@@ -737,8 +689,8 @@ describe("GaiaAuction: settleShape", function () {
       owner,
       bidder1,
       bidder2,
-      squares,
       countries,
+      squares,
       auction,
       auctionAs1,
       auctionAs2,
@@ -747,8 +699,8 @@ describe("GaiaAuction: settleShape", function () {
     };
   }
 
-  it("mints the winner's squares to Country1155 custody and mints the country on completion", async function () {
-    const { auctionAs1, bidder1, squares, countries, minBid, end } =
+  it("creates a country with the winner's squares and transfers it to the winner", async function () {
+    const { auction, auctionAs1, bidder1, countries, squares, minBid, end } =
       await loadFixture(deploySettle);
 
     const shape = [
@@ -765,31 +717,29 @@ describe("GaiaAuction: settleShape", function () {
     const shapeId = 1n;
     await expect(auctionAs1.write.settleShape([shapeId, 0n])).to.be.fulfilled;
 
-    const balance = await countries.read.balanceOf([
-      bidder1.account.address,
-      shapeId,
-    ]);
-    expect(balance).to.equal(1n);
-
-    const tokenIds = await countries.read.getSquares([shapeId]);
-    expect(tokenIds.length).to.equal(shape.length);
-
+    const countryId = await auction.read.shapeCountryId([shapeId]);
+    expect(countryId).to.equal(1n);
+    expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(
+      getAddress(bidder1.account.address)
+    );
+    expect(await squares.read.squareCount([countryId])).to.equal(
+      BigInt(shape.length)
+    );
     for (const loc of shape) {
-      const owner = await squares.read.ownerOfLoc([loc.lat, loc.lng]);
-      expect(getAddress(owner)).to.equal(getAddress(countries.address));
+      const owner = await squares.read.controllerOf([loc.lat, loc.lng]);
+      expect(getAddress(owner)).to.equal(getAddress(bidder1.account.address));
     }
   });
 
-  it("only mints the country once fully settled across paginated calls", async function () {
-    const { auctionAs1, bidder1, countries, minBid, end } = await loadFixture(
-      deploySettle
-    );
+  it("keeps the country in the auction until the last chunk is settled", async function () {
+    const { auction, auctionAs1, bidder1, countries, squares, minBid, end } =
+      await loadFixture(deploySettle);
 
     const shape = [
       { lat: 20, lng: 10 },
       { lat: 20, lng: 11 },
-      { lat: 20, lng: 12 },
-      { lat: 20, lng: 13 },
+      { lat: 21, lng: 10 },
+      { lat: 21, lng: 11 },
     ];
     await auctionAs1.write.bidOnShape([shape], {
       value: minBid * BigInt(shape.length),
@@ -800,22 +750,160 @@ describe("GaiaAuction: settleShape", function () {
     const shapeId = 1n;
 
     await auctionAs1.write.settleShape([shapeId, 2n]);
-    expect(
-      await countries.read.balanceOf([bidder1.account.address, shapeId])
-    ).to.equal(0n);
+    const countryId = await auction.read.shapeCountryId([shapeId]);
+    expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(
+      getAddress(auction.address)
+    );
+    expect(await squares.read.squareCount([countryId])).to.equal(2n);
 
     await expect(auctionAs1.write.settleShape([shapeId, 2n])).to.be.fulfilled;
-    expect(
-      await countries.read.balanceOf([bidder1.account.address, shapeId])
-    ).to.equal(1n);
+    expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(
+      getAddress(bidder1.account.address)
+    );
+    expect(await squares.read.squareCount([countryId])).to.equal(
+      BigInt(shape.length)
+    );
+  });
 
-    const tokenIds = await countries.read.getSquares([shapeId]);
-    expect(tokenIds.length).to.equal(shape.length);
+  it("extends a chunk to the end of its latitude row", async function () {
+    const { auction, auctionAs1, bidder1, countries, squares, minBid, end } =
+      await loadFixture(deploySettle);
+
+    const shape = [
+      { lat: 25, lng: 10 },
+      { lat: 25, lng: 11 },
+      { lat: 25, lng: 12 },
+      { lat: 25, lng: 13 },
+    ];
+    await auctionAs1.write.bidOnShape([shape], {
+      value: minBid * BigInt(shape.length),
+    });
+
+    await time.increaseTo(end + 1n);
+
+    await auctionAs1.write.settleShape([1n, 2n]);
+    expect(await auction.read.shapeSettleCursor([1n])).to.equal(4n);
+    const countryId = await auction.read.shapeCountryId([1n]);
+    expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(
+      getAddress(bidder1.account.address)
+    );
+  });
+
+  it("settles one row at a time when a row starts west of the row before it", async function () {
+    const { auction, auctionAs1, bidder1, countries, squares, minBid, end } =
+      await loadFixture(deploySettle);
+
+    // The first square of row 31 (lng 10) has no side neighbour in row 30.
+    const shape = [
+      { lat: 30, lng: 11 },
+      { lat: 30, lng: 12 },
+      { lat: 31, lng: 10 },
+      { lat: 31, lng: 11 },
+      { lat: 31, lng: 12 },
+    ];
+    await auctionAs1.write.bidOnShape([shape], {
+      value: minBid * BigInt(shape.length),
+    });
+
+    await time.increaseTo(end + 1n);
+
+    await auctionAs1.write.settleShape([1n, 1n]);
+    expect(await auction.read.shapeSettleCursor([1n])).to.equal(2n);
+    await expect(auctionAs1.write.settleShape([1n, 1n])).to.be.fulfilled;
+
+    const countryId = await auction.read.shapeCountryId([1n]);
+    expect(await squares.read.squareCount([countryId])).to.equal(5n);
+    expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(
+      getAddress(bidder1.account.address)
+    );
+    await expect(auctionAs1.write.settleShape([1n, 1n])).to.be.rejectedWith(
+      "ShapeAlreadySettled"
+    );
+  });
+
+  it("transfers the country to a winner contract without a receiver hook", async function () {
+    const { auction, auctionAs1, countries, minBid, end } = await loadFixture(
+      deploySettle
+    );
+
+    const bidder = await hre.viem.deployContract("ContractBidder");
+    const shape = [
+      { lat: 35, lng: 10 },
+      { lat: 35, lng: 11 },
+    ];
+    await bidder.write.bid([auction.address, shape], {
+      value: minBid * BigInt(shape.length),
+    });
+
+    await time.increaseTo(end + 1n);
+
+    await expect(auctionAs1.write.settleShape([1n, 0n])).to.be.fulfilled;
+    const countryId = await auction.read.shapeCountryId([1n]);
+    expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(
+      getAddress(bidder.address)
+    );
+  });
+
+  it("blocks other issuers from the squares of a shape, before and after settlement", async function () {
+    const { owner, auction, auctionAs1, countries, minBid, end } =
+      await loadFixture(deploySettle);
+    await countries.write.grantRole([
+      await countries.read.ISSUER_ROLE(),
+      owner.account.address,
+    ]);
+
+    const shape = [
+      { lat: 45, lng: 10 },
+      { lat: 45, lng: 11 },
+    ];
+    await auctionAs1.write.bidOnShape([shape], {
+      value: minBid * BigInt(shape.length),
+    });
+
+    await expect(
+      countries.write.createCountry([
+        owner.account.address,
+        [{ lat: 45, lng: 11 }],
+      ])
+    ).to.be.rejectedWith("SquareReserved");
+
+    await time.increaseTo(end + 1n);
+    await expect(
+      countries.write.createCountry([
+        owner.account.address,
+        [{ lat: 45, lng: 11 }],
+      ])
+    ).to.be.rejectedWith("SquareReserved");
+
+    await auctionAs1.write.settleShape([1n, 0n]);
+    await expect(
+      countries.write.createCountry([
+        owner.account.address,
+        [{ lat: 45, lng: 11 }],
+      ])
+    ).to.be.rejectedWith("SquareReserved");
+
+    await countries.write.removeAuction([auction.address]);
+    await expect(
+      countries.write.createCountry([
+        owner.account.address,
+        [{ lat: 45, lng: 11 }],
+      ])
+    ).to.be.rejectedWith("SquareAlreadyExists");
   });
 
   it("skips squares overtaken by a later bid and settles them under the new shape", async function () {
-    const { auctionAs1, auctionAs2, bidder1, bidder2, countries, minBid, end } =
-      await loadFixture(deploySettle);
+    const {
+      auction,
+      auctionAs1,
+      auctionAs2,
+      bidder1,
+      bidder2,
+      countries,
+      squares,
+      minBid,
+      end,
+    } = await loadFixture(deploySettle);
 
     const aliceShape = [
       { lat: 30, lng: 10 },
@@ -838,21 +926,22 @@ describe("GaiaAuction: settleShape", function () {
     await auctionAs1.write.settleShape([aliceShapeId, 0n]);
     await auctionAs2.write.settleShape([bobShapeId, 0n]);
 
-    const aliceTokens = await countries.read.getSquares([aliceShapeId]);
-    const bobTokens = await countries.read.getSquares([bobShapeId]);
-    expect(aliceTokens.length).to.equal(2); // (30,10) and (30,11)
-    expect(bobTokens.length).to.equal(1); // (30,12), no double-mint
+    const aliceCountry = await auction.read.shapeCountryId([aliceShapeId]);
+    const bobCountry = await auction.read.shapeCountryId([bobShapeId]);
+    expect(await squares.read.squareCount([aliceCountry])).to.equal(2n); // (30,10) and (30,11)
+    expect(await squares.read.squareCount([bobCountry])).to.equal(1n); // (30,12), no double-mint
+    expect(await squares.read.countryOf([30, 12])).to.equal(bobCountry);
 
-    expect(
-      await countries.read.balanceOf([bidder1.account.address, aliceShapeId])
-    ).to.equal(1n);
-    expect(
-      await countries.read.balanceOf([bidder2.account.address, bobShapeId])
-    ).to.equal(1n);
+    expect(getAddress(await countries.read.ownerOf([aliceCountry]))).to.equal(
+      getAddress(bidder1.account.address)
+    );
+    expect(getAddress(await countries.read.ownerOf([bobCountry]))).to.equal(
+      getAddress(bidder2.account.address)
+    );
   });
 
   it("settles a fully-overtaken shape without minting a country", async function () {
-    const { auctionAs1, auctionAs2, bidder1, countries, minBid, end } =
+    const { auction, auctionAs1, auctionAs2, bidder1, countries, squares, minBid, end } =
       await loadFixture(deploySettle);
 
     const aliceShape = [
@@ -874,10 +963,10 @@ describe("GaiaAuction: settleShape", function () {
     await expect(auctionAs1.write.settleShape([aliceShapeId, 0n])).to.be
       .fulfilled;
 
+    expect(await auction.read.shapeCountryId([aliceShapeId])).to.equal(0n);
     expect(
-      await countries.read.balanceOf([bidder1.account.address, aliceShapeId])
+      await countries.read.balanceOf([bidder1.account.address])
     ).to.equal(0n);
-    expect(await countries.read.getSquares([aliceShapeId])).to.have.length(0);
   });
 
   it("reverts when settling before the auction has ended", async function () {
@@ -931,9 +1020,8 @@ describe("GaiaAuction: settleShape", function () {
   });
 
   it("settles a shape on the last valid row and column", async function () {
-    const { auctionAs1, bidder1, countries, minBid, end } = await loadFixture(
-      deploySettle
-    );
+    const { auction, auctionAs1, bidder1, countries, squares, minBid, end } =
+      await loadFixture(deploySettle);
 
     const shape = [
       { lat: 17998, lng: 35998 },
@@ -949,12 +1037,32 @@ describe("GaiaAuction: settleShape", function () {
 
     const shapeId = 1n;
     await expect(auctionAs1.write.settleShape([shapeId, 0n])).to.be.fulfilled;
-    expect(
-      await countries.read.balanceOf([bidder1.account.address, shapeId])
-    ).to.equal(1n);
-    expect(await countries.read.getSquares([shapeId])).to.have.length(
-      shape.length
+    const countryId = await auction.read.shapeCountryId([shapeId]);
+    expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(
+      getAddress(bidder1.account.address)
     );
+    expect(await squares.read.squareCount([countryId])).to.equal(
+      BigInt(shape.length)
+    );
+  });
+
+  it("settles a 100-square shape for less than 5.2M gas", async function () {
+    const { auctionAs1, minBid, end } = await loadFixture(deploySettle);
+    const publicClient = await hre.viem.getPublicClient();
+
+    const shape = [];
+    for (let lat = 70; lat < 80; lat++) {
+      for (let lng = 10; lng < 20; lng++) shape.push({ lat, lng });
+    }
+    await auctionAs1.write.bidOnShape([shape], {
+      value: minBid * BigInt(shape.length),
+    });
+
+    await time.increaseTo(end + 1n);
+
+    const hash = await auctionAs1.write.settleShape([1n, 0n]);
+    const { gasUsed } = await publicClient.waitForTransactionReceipt({ hash });
+    expect(gasUsed < 5_200_000n).to.equal(true);
   });
 });
 
@@ -962,13 +1070,7 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
   async function deployAntimeridian() {
     const [owner, bidder1, bidder2] = await hre.viem.getWalletClients();
 
-    const squares = await hre.viem.deployContract("GaiaLocation721", [
-      owner.account.address,
-    ]);
-    const countries = await hre.viem.deployContract("Country1155", [
-      owner.account.address,
-      "ipfs://",
-    ]);
+    const { countries, squares } = await deployLand(owner.account.address);
 
     const publicClient = await hre.viem.getPublicClient();
     const now = (await publicClient.getBlock()).timestamp;
@@ -978,7 +1080,6 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
     const auction = await hre.viem.deployContract(
       "contracts/GaiaAuction.sol:GaiaAuction",
       [
-        squares.address,
         countries.address,
         owner.account.address, // treasury
         start,
@@ -990,14 +1091,11 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
       ]
     );
 
-    await squares.write.grantRole([
-      await squares.read.MINTER_ROLE(),
-      auction.address,
-    ]);
     await countries.write.grantRole([
-      await countries.read.AUCTION_ROLE(),
+      await countries.read.ISSUER_ROLE(),
       auction.address,
     ]);
+    await countries.write.addAuction([auction.address]);
 
     const auctionAs1 = await hre.viem.getContractAt(
       "contracts/GaiaAuction.sol:GaiaAuction",
@@ -1012,8 +1110,8 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
 
     return {
       bidder1,
-      squares,
       countries,
+      squares,
       auctionAs1,
       auctionAs2,
       minBid,
@@ -1034,7 +1132,7 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
   ];
 
   it("accepts and settles a shape from 35998 to 1", async function () {
-    const { auctionAs1, bidder1, squares, countries, minBid, end } =
+    const { auctionAs1, bidder1, countries, squares, minBid, end } =
       await loadFixture(deployAntimeridian);
 
     const shape = crossingRect(50);
@@ -1048,15 +1146,13 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
 
     const shapeId = 1n;
     await expect(auctionAs1.write.settleShape([shapeId, 0n])).to.be.fulfilled;
-    expect(
-      await countries.read.balanceOf([bidder1.account.address, shapeId])
-    ).to.equal(1n);
-    expect(await countries.read.getSquares([shapeId])).to.have.length(
-      shape.length
+    const countryId = await auctionAs1.read.shapeCountryId([shapeId]);
+    expect(await squares.read.squareCount([countryId])).to.equal(
+      BigInt(shape.length)
     );
     for (const loc of shape) {
-      const owner = await squares.read.ownerOfLoc([loc.lat, loc.lng]);
-      expect(getAddress(owner)).to.equal(getAddress(countries.address));
+      const owner = await squares.read.controllerOf([loc.lat, loc.lng]);
+      expect(getAddress(owner)).to.equal(getAddress(bidder1.account.address));
     }
   });
 
@@ -1130,7 +1226,7 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
   });
 
   it("permits an overlap on a crossing shape that leaves a valid remainder", async function () {
-    const { auctionAs1, auctionAs2, countries, minBid, end } =
+    const { auctionAs1, auctionAs2, squares, minBid, end } =
       await loadFixture(deployAntimeridian);
 
     const aliceShape = crossingRect(70);
@@ -1155,8 +1251,10 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
 
     await auctionAs1.write.settleShape([1n, 0n]);
     await auctionAs2.write.settleShape([2n, 0n]);
-    expect(await countries.read.getSquares([1n])).to.have.length(4);
-    expect(await countries.read.getSquares([2n])).to.have.length(4);
+    const aliceCountry = await auctionAs1.read.shapeCountryId([1n]);
+    const bobCountry = await auctionAs1.read.shapeCountryId([2n]);
+    expect(await squares.read.squareCount([aliceCountry])).to.equal(4n);
+    expect(await squares.read.squareCount([bobCountry])).to.equal(4n);
   });
 
   it("rejects an overlap on a crossing shape that splits the remainder", async function () {
@@ -1190,13 +1288,7 @@ describe("GaiaAuction: treasury proceeds", function () {
       await hre.viem.getWalletClients();
     const publicClient = await hre.viem.getPublicClient();
 
-    const squares = await hre.viem.deployContract("GaiaLocation721", [
-      owner.account.address,
-    ]);
-    const countries = await hre.viem.deployContract("Country1155", [
-      owner.account.address,
-      "ipfs://",
-    ]);
+    const { countries } = await deployLand(owner.account.address);
 
     const now = (await publicClient.getBlock()).timestamp;
     const start = now - 10n;
@@ -1205,7 +1297,6 @@ describe("GaiaAuction: treasury proceeds", function () {
     const auction = await hre.viem.deployContract(
       "contracts/GaiaAuction.sol:GaiaAuction",
       [
-        squares.address,
         countries.address,
         treasury.account.address,
         start,

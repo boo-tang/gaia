@@ -3,14 +3,14 @@ pragma solidity ^0.8.24;
 
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-import {IGaiaLocation721, LOC_MAX_LAT, LOC_MAX_LNG} from "./interfaces/IGaiaLocation721.sol";
-import {ICountry1155} from "./interfaces/ICountry1155.sol";
+import {Loc, LOC_MAX_LAT, LOC_MAX_LNG} from "./interfaces/GaiaTypes.sol";
+import {IGaiaCountries} from "./interfaces/IGaiaCountries.sol";
 import {IGaiaAuction} from "./interfaces/IGaiaAuction.sol";
 
 /**
  * @title GaiaAuction
- * @notice Timeboxed per-square bidding with convex-shape constraint. Winners settle to an ERC-1155
- *         "country" that will custody the ERC-721 squares.
+ * @notice Timeboxed per-square bidding with convex-shape constraint. Each winning shape settles
+ *         into an ERC-721 country in GaiaCountries.
  *
  * Anti-griefing rules enforced on every bid and on every simulated remainder after overlap:
  *   - Shape size must be in [minShapeSquares, maxShapeSquares].
@@ -25,8 +25,7 @@ import {IGaiaAuction} from "./interfaces/IGaiaAuction.sol";
  */
 contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     // --- External contracts ---
-    IGaiaLocation721 public immutable squares;
-    ICountry1155 public immutable countries;
+    IGaiaCountries public immutable countries;
     address public immutable treasury;
 
     // --- Auction config ---
@@ -55,7 +54,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     uint256 private _nextShapeId;
     mapping(uint256 => address) public shapeBidder;
     // Original sorted locs submitted with the bid. Squares may later be overtaken by newer bids.
-    mapping(uint256 => IGaiaLocation721.Loc[]) private _shapeLocs;
+    mapping(uint256 => Loc[]) private _shapeLocs;
     // Current owning shape per square. 0 = no active shape.
     mapping(uint16 => mapping(uint16 => uint256)) private _squareShapeId;
 
@@ -64,6 +63,8 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     mapping(uint256 => uint256) public shapeSettleCursor;
     // Count of squares actually settled (i.e. not overtaken) for the shape so far.
     mapping(uint256 => uint256) public shapeSettledSquares;
+    // Country created for the shape in GaiaCountries. 0 = not created yet.
+    mapping(uint256 => uint256) public shapeCountryId;
 
     // Normalised value of a shape's reference longitude. Squares up to LNG_ORIGIN columns west or
     // east of the reference keep their relative order after normalisation.
@@ -92,9 +93,14 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint16 lat,
         uint16 lng
     );
-    event ShapeSquaresSettled(uint256 indexed shapeId, uint256 count);
+    event ShapeSquaresSettled(
+        uint256 indexed shapeId,
+        uint256 indexed countryId,
+        uint256 count
+    );
     event ShapeSettled(
         uint256 indexed shapeId,
+        uint256 indexed countryId,
         address indexed winner,
         uint256 totalSquares
     );
@@ -134,8 +140,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     }
 
     constructor(
-        IGaiaLocation721 squares_,
-        ICountry1155 countries_,
+        IGaiaCountries countries_,
         address treasury_,
         uint64 startTime_,
         uint64 endTime_,
@@ -145,9 +150,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint256 maxShapeAspectRatio_
     ) {
         require(
-            address(squares_) != address(0) &&
-                address(countries_) != address(0) &&
-                treasury_ != address(0),
+            address(countries_) != address(0) && treasury_ != address(0),
             "zero address"
         );
         require(startTime_ < endTime_, "invalid time window");
@@ -162,7 +165,6 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             "shape too large for lng wrap"
         );
         require(maxShapeAspectRatio_ >= 1, "invalid aspect ratio");
-        squares = squares_;
         countries = countries_;
         treasury = treasury_;
         startTime = startTime_;
@@ -178,7 +180,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
 
     /// @inheritdoc IGaiaAuction
     function bidOnShape(
-        IGaiaLocation721.Loc[] calldata locs
+        Loc[] calldata locs
     ) external payable override onlyDuringAuction {
         uint256 requiredTotal = _validateAndComputeTotal(locs);
         if (msg.value < requiredTotal) {
@@ -202,7 +204,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint256 proceedsIncrease = 0;
         uint256 len = locs.length;
         for (uint256 i = 0; i < len; ) {
-            IGaiaLocation721.Loc calldata loc = locs[i];
+            Loc calldata loc = locs[i];
             Bid memory current = highestBids[loc.lat][loc.lng];
 
             if (current.bidder != address(0) && current.amount != 0) {
@@ -273,7 +275,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         address winner = shapeBidder[shapeId];
         if (winner == address(0)) revert UnknownShape();
 
-        IGaiaLocation721.Loc[] storage stored = _shapeLocs[shapeId];
+        Loc[] storage stored = _shapeLocs[shapeId];
         uint256 storedLen = stored.length;
         uint256 cursor = shapeSettleCursor[shapeId];
         if (cursor >= storedLen) revert ShapeAlreadySettled();
@@ -281,15 +283,21 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint256 end = storedLen;
         if (maxSquares != 0 && cursor + maxSquares < storedLen) {
             end = cursor + maxSquares;
+            // Chunks end on a row boundary, so each row is ordered as a whole (see
+            // _orderForSettlement).
+            uint16 rowLat = stored[end - 1].lat;
+            while (end < storedLen && stored[end].lat == rowLat) {
+                unchecked {
+                    end++;
+                }
+            }
         }
 
-        IGaiaLocation721.Loc[] memory owned = new IGaiaLocation721.Loc[](
-            end - cursor
-        );
+        Loc[] memory owned = new Loc[](end - cursor);
         uint256 ownedCount = 0;
 
         for (uint256 i = cursor; i < end; ) {
-            IGaiaLocation721.Loc memory loc = stored[i];
+            Loc memory loc = stored[i];
             if (_squareShapeId[loc.lat][loc.lng] == shapeId) {
                 owned[ownedCount] = loc;
                 unchecked {
@@ -303,37 +311,97 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
 
         shapeSettleCursor[shapeId] = end;
 
+        uint256 countryId = shapeCountryId[shapeId];
         if (ownedCount > 0) {
             // Trim the pre-allocated array to the actual owned count.
             assembly {
                 mstore(owned, ownedCount)
             }
-            uint256[] memory tokenIds = squares.mintTo(
-                address(countries),
-                owned
-            );
-            countries.attachSquares(shapeId, tokenIds);
+            owned = _orderForSettlement(owned, shapeId);
+            // The auction holds the country until the last chunk, so nobody can trade a
+            // partially settled country.
+            if (countryId == 0) {
+                countryId = countries.createCountry(address(this), owned);
+                shapeCountryId[shapeId] = countryId;
+            } else {
+                countries.addSquares(countryId, address(this), owned);
+            }
             unchecked {
                 shapeSettledSquares[shapeId] += ownedCount;
             }
-            emit ShapeSquaresSettled(shapeId, ownedCount);
+            emit ShapeSquaresSettled(shapeId, countryId, ownedCount);
         }
 
         if (end == storedLen) {
-            uint256 total = shapeSettledSquares[shapeId];
-            if (total > 0) {
-                countries.mintCountry(winner, shapeId, 1);
-                emit ShapeSettled(shapeId, winner, total);
+            if (countryId != 0) {
+                // transferFrom, not safeTransferFrom: a winner contract without a receiver hook
+                // must not block settlement.
+                countries.transferFrom(address(this), winner, countryId);
+                emit ShapeSettled(
+                    shapeId,
+                    countryId,
+                    winner,
+                    shapeSettledSquares[shapeId]
+                );
             }
         }
     }
 
+    /// @inheritdoc IGaiaAuction
+    function squareShapeId(
+        uint16 lat,
+        uint16 lng
+    ) external view override returns (uint256) {
+        return _squareShapeId[lat][lng];
+    }
+
     // --- Internal helpers ---
+
+    /// GaiaSquares adds squares one at a time and requires each one to keep the country connected
+    /// and without holes. Input is sorted by row, west to east. Each row starts at an anchor: the
+    /// first square above a square of this shape in the row below (that square is already in the
+    /// country), or the first square if no row below exists. The row then extends west, then
+    /// east, so every added square touches exactly one run of the country.
+    function _orderForSettlement(
+        Loc[] memory locs,
+        uint256 shapeId
+    ) internal view returns (Loc[] memory ordered) {
+        uint256 len = locs.length;
+        ordered = new Loc[](len);
+        uint256 out = 0;
+        uint256 rowStart = 0;
+
+        while (rowStart < len) {
+            uint16 lat = locs[rowStart].lat;
+            uint256 rowEnd = rowStart + 1;
+            while (rowEnd < len && locs[rowEnd].lat == lat) rowEnd++;
+
+            uint256 anchor = rowStart;
+            if (lat > 0) {
+                for (uint256 k = rowStart; k < rowEnd; k++) {
+                    if (_squareShapeId[lat - 1][locs[k].lng] == shapeId) {
+                        anchor = k;
+                        break;
+                    }
+                }
+            }
+
+            ordered[out++] = locs[anchor];
+            for (uint256 k = anchor; k > rowStart; ) {
+                k--;
+                ordered[out++] = locs[k];
+            }
+            for (uint256 k = anchor + 1; k < rowEnd; k++) {
+                ordered[out++] = locs[k];
+            }
+            rowStart = rowEnd;
+        }
+    }
 
     /// Validates shape via calldata and computes the total bid required.
     /// Reverts on any shape-validity failure.
     function _validateAndComputeTotal(
-        IGaiaLocation721.Loc[] calldata locs
+        Loc[] calldata locs
     ) internal view returns (uint256 requiredTotal) {
         uint256 len = locs.length;
         if (len == 0) revert EmptyShape();
@@ -472,7 +540,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     /// Same shape validity checks as _validateAndComputeTotal but operates on a memory array
     /// and does not compute a bid total. Used for simulating affected shape remainders.
     function _validateShapeMem(
-        IGaiaLocation721.Loc[] memory locs
+        Loc[] memory locs
     ) internal view {
         uint256 len = locs.length;
         if (len == 0) revert EmptyShape();
@@ -618,7 +686,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
 
     /// Collects unique active shape ids affected by the incoming bid and validates each remainder.
     function _validateOverlaps(
-        IGaiaLocation721.Loc[] calldata locs
+        Loc[] calldata locs
     ) internal view {
         uint256 len = locs.length;
         uint256[] memory affected = new uint256[](len);
@@ -662,14 +730,14 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     /// lat). Longitudes are compared in the stored shape's normalised frame.
     function _validateShapeRemainder(
         uint256 shapeId,
-        IGaiaLocation721.Loc[] calldata removing
+        Loc[] calldata removing
     ) internal view {
-        IGaiaLocation721.Loc[] storage stored = _shapeLocs[shapeId];
+        Loc[] storage stored = _shapeLocs[shapeId];
         uint256 storedLen = stored.length;
         uint256 removeLen = removing.length;
         uint16 refLng = stored[0].lng;
 
-        IGaiaLocation721.Loc[] memory remaining = new IGaiaLocation721.Loc[](
+        Loc[] memory remaining = new Loc[](
             storedLen
         );
         uint256 remainCount = 0;
@@ -690,7 +758,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             // Advance removing pointer past entries sorted before (sLat, sLng).
             uint16 sNorm = _normLng(sLng, refLng);
             while (rIdx < removeLen) {
-                IGaiaLocation721.Loc calldata r = removing[rIdx];
+                Loc calldata r = removing[rIdx];
                 if (
                     r.lat < sLat ||
                     (r.lat == sLat && _normLng(r.lng, refLng) < sNorm)
@@ -716,7 +784,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
                 continue;
             }
 
-            remaining[remainCount] = IGaiaLocation721.Loc({
+            remaining[remainCount] = Loc({
                 lat: sLat,
                 lng: sLng
             });
