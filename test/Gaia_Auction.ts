@@ -722,7 +722,7 @@ describe("GaiaAuction: settleShape", function () {
     expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(
       getAddress(bidder1.account.address)
     );
-    expect(await squares.read.squareCount([countryId])).to.equal(
+    expect(await countries.read.squareCount([countryId])).to.equal(
       BigInt(shape.length)
     );
     for (const loc of shape) {
@@ -754,13 +754,13 @@ describe("GaiaAuction: settleShape", function () {
     expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(
       getAddress(auction.address)
     );
-    expect(await squares.read.squareCount([countryId])).to.equal(2n);
+    expect(await countries.read.squareCount([countryId])).to.equal(2n);
 
     await expect(auctionAs1.write.settleShape([shapeId, 2n])).to.be.fulfilled;
     expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(
       getAddress(bidder1.account.address)
     );
-    expect(await squares.read.squareCount([countryId])).to.equal(
+    expect(await countries.read.squareCount([countryId])).to.equal(
       BigInt(shape.length)
     );
   });
@@ -812,7 +812,7 @@ describe("GaiaAuction: settleShape", function () {
     await expect(auctionAs1.write.settleShape([1n, 1n])).to.be.fulfilled;
 
     const countryId = await auction.read.shapeCountryId([1n]);
-    expect(await squares.read.squareCount([countryId])).to.equal(5n);
+    expect(await countries.read.squareCount([countryId])).to.equal(5n);
     expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(
       getAddress(bidder1.account.address)
     );
@@ -928,8 +928,8 @@ describe("GaiaAuction: settleShape", function () {
 
     const aliceCountry = await auction.read.shapeCountryId([aliceShapeId]);
     const bobCountry = await auction.read.shapeCountryId([bobShapeId]);
-    expect(await squares.read.squareCount([aliceCountry])).to.equal(2n); // (30,10) and (30,11)
-    expect(await squares.read.squareCount([bobCountry])).to.equal(1n); // (30,12), no double-mint
+    expect(await countries.read.squareCount([aliceCountry])).to.equal(2n); // (30,10) and (30,11)
+    expect(await countries.read.squareCount([bobCountry])).to.equal(1n); // (30,12), no double-mint
     expect(await squares.read.countryOf([30, 12])).to.equal(bobCountry);
 
     expect(getAddress(await countries.read.ownerOf([aliceCountry]))).to.equal(
@@ -1041,7 +1041,7 @@ describe("GaiaAuction: settleShape", function () {
     expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(
       getAddress(bidder1.account.address)
     );
-    expect(await squares.read.squareCount([countryId])).to.equal(
+    expect(await countries.read.squareCount([countryId])).to.equal(
       BigInt(shape.length)
     );
   });
@@ -1147,7 +1147,7 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
     const shapeId = 1n;
     await expect(auctionAs1.write.settleShape([shapeId, 0n])).to.be.fulfilled;
     const countryId = await auctionAs1.read.shapeCountryId([shapeId]);
-    expect(await squares.read.squareCount([countryId])).to.equal(
+    expect(await countries.read.squareCount([countryId])).to.equal(
       BigInt(shape.length)
     );
     for (const loc of shape) {
@@ -1226,7 +1226,7 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
   });
 
   it("permits an overlap on a crossing shape that leaves a valid remainder", async function () {
-    const { auctionAs1, auctionAs2, squares, minBid, end } =
+    const { auctionAs1, auctionAs2, countries, minBid, end } =
       await loadFixture(deployAntimeridian);
 
     const aliceShape = crossingRect(70);
@@ -1253,8 +1253,8 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
     await auctionAs2.write.settleShape([2n, 0n]);
     const aliceCountry = await auctionAs1.read.shapeCountryId([1n]);
     const bobCountry = await auctionAs1.read.shapeCountryId([2n]);
-    expect(await squares.read.squareCount([aliceCountry])).to.equal(4n);
-    expect(await squares.read.squareCount([bobCountry])).to.equal(4n);
+    expect(await countries.read.squareCount([aliceCountry])).to.equal(4n);
+    expect(await countries.read.squareCount([bobCountry])).to.equal(4n);
   });
 
   it("rejects an overlap on a crossing shape that splits the remainder", async function () {

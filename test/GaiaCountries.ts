@@ -165,7 +165,7 @@ describe("GaiaCountries", function () {
       );
       const account = await countries.read.accountOf([1n]);
       expect(await land.squares.read.countryOfAccount([account])).to.equal(1n);
-      expect(await land.squares.read.squareCount([1n])).to.equal(2n);
+      expect(await land.countries.read.squareCount([1n])).to.equal(2n);
 
       const events = await countries.getEvents.CountryCreated();
       expect(events).to.have.length(1);
@@ -211,6 +211,54 @@ describe("GaiaCountries", function () {
       await expect(
         asIssuer.write.createCountry([alice.account.address, []])
       ).to.be.rejectedWith("EmptySquares");
+    });
+  });
+
+  describe("composition counters", function () {
+    it("lets only GaiaSquares record a square change", async function () {
+      const { countries, asIssuer, asAlice, alice } = await loadFixture(
+        deployCountries
+      );
+      await asIssuer.write.createCountry([
+        alice.account.address,
+        [{ lat: 1, lng: 1 }],
+      ]);
+      await expect(
+        countries.write.recordSquareChange([1n, true])
+      ).to.be.rejectedWith("NotSquares");
+      await expect(
+        asIssuer.write.recordSquareChange([1n, true])
+      ).to.be.rejectedWith("NotSquares");
+      await expect(
+        asAlice.write.recordSquareChange([1n, false])
+      ).to.be.rejectedWith("NotSquares");
+    });
+
+    it("emits CountryCompositionChanged from GaiaCountries for each square", async function () {
+      const { publicClient, countries, asIssuer, alice } = await loadFixture(
+        deployCountries
+      );
+      const hash = await asIssuer.write.createCountry([
+        alice.account.address,
+        [
+          { lat: 1, lng: 1 },
+          { lat: 1, lng: 2 },
+        ],
+      ]);
+      const { blockNumber } = await publicClient.waitForTransactionReceipt({
+        hash,
+      });
+      const events = await countries.getEvents.CountryCompositionChanged(
+        {},
+        { fromBlock: blockNumber, toBlock: blockNumber }
+      );
+      expect(events.map((e) => e.args)).to.deep.equal([
+        { countryId: 1n, version: 1n, squareCount: 1n },
+        { countryId: 1n, version: 2n, squareCount: 2n },
+      ]);
+      expect(getAddress(events[0].address)).to.equal(
+        getAddress(countries.address)
+      );
     });
   });
 

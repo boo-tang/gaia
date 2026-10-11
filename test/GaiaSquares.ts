@@ -64,8 +64,8 @@ describe("GaiaSquares", function () {
       expect(await land.squares.read.controllerOf([10, 14])).to.equal(
         zeroAddress
       );
-      expect(await land.squares.read.squareCount([1n])).to.equal(4n);
-      expect(await land.squares.read.compositionVersion([1n])).to.equal(4n);
+      expect(await land.countries.read.squareCount([1n])).to.equal(4n);
+      expect(await land.countries.read.compositionVersion([1n])).to.equal(4n);
       expect(
         getAddress(await land.squares.read.accountOfCountry([1n]))
       ).to.equal(getAddress(account));
@@ -127,7 +127,7 @@ describe("GaiaSquares", function () {
           { lat: 11, lng: 10 },
         ],
       ]);
-      expect(await land.squares.read.squareCount([1n])).to.equal(3n);
+      expect(await land.countries.read.squareCount([1n])).to.equal(3n);
     });
 
     it("rejects a square that does not touch the country", async function () {
@@ -179,7 +179,7 @@ describe("GaiaSquares", function () {
         { lat: 12, lng: 10 },
       ];
       await asIssuer.write.createCountry([alice.account.address, ring]);
-      expect(await land.squares.read.squareCount([1n])).to.equal(7n);
+      expect(await land.countries.read.squareCount([1n])).to.equal(7n);
 
       await expect(
         asIssuer.write.addSquares([
@@ -209,9 +209,9 @@ describe("GaiaSquares", function () {
         ],
       ]);
       await asIssuer.write.createCountry([alice.account.address, row(0, 5, 7)]);
-      expect(await land.squares.read.squareCount([1n])).to.equal(3n);
-      expect(await land.squares.read.squareCount([2n])).to.equal(3n);
-      expect(await land.squares.read.squareCount([3n])).to.equal(3n);
+      expect(await land.countries.read.squareCount([1n])).to.equal(3n);
+      expect(await land.countries.read.squareCount([2n])).to.equal(3n);
+      expect(await land.countries.read.squareCount([3n])).to.equal(3n);
     });
   });
 
@@ -229,7 +229,7 @@ describe("GaiaSquares", function () {
 
     it("lets the owner split an edge square out of the country", async function () {
       const { land, alice, account } = await loadFixture(withBlock);
-      const versionBefore = await land.squares.read.compositionVersion([1n]);
+      const versionBefore = await land.countries.read.compositionVersion([1n]);
 
       await accountTransferSquare(
         land,
@@ -245,8 +245,8 @@ describe("GaiaSquares", function () {
       ).to.equal(getAddress(alice.account.address));
       expect(await land.squares.read.countryOf([10, 11])).to.equal(0n);
       expect(await land.squares.read.exists([10, 11])).to.equal(true);
-      expect(await land.squares.read.squareCount([1n])).to.equal(8n);
-      expect(await land.squares.read.compositionVersion([1n])).to.equal(
+      expect(await land.countries.read.squareCount([1n])).to.equal(8n);
+      expect(await land.countries.read.compositionVersion([1n])).to.equal(
         versionBefore + 1n
       );
     });
@@ -282,7 +282,7 @@ describe("GaiaSquares", function () {
         10,
         10
       );
-      expect(await land.squares.read.squareCount([1n])).to.equal(0n);
+      expect(await land.countries.read.squareCount([1n])).to.equal(0n);
       expect(getAddress(await land.countries.read.ownerOf([1n]))).to.equal(
         getAddress(alice.account.address)
       );
@@ -366,7 +366,7 @@ describe("GaiaSquares", function () {
         squareId(10, 12),
       ]);
       expect(await land.squares.read.countryOf([10, 12])).to.equal(1n);
-      expect(await land.squares.read.squareCount([1n])).to.equal(3n);
+      expect(await land.countries.read.squareCount([1n])).to.equal(3n);
     });
 
     it("rejects a merge of a square that does not touch the country", async function () {
@@ -411,8 +411,8 @@ describe("GaiaSquares", function () {
 
       await accountTransferSquare(land, alice, account, otherAccount, 10, 10);
       expect(await land.squares.read.countryOf([10, 10])).to.equal(2n);
-      expect(await land.squares.read.squareCount([1n])).to.equal(1n);
-      expect(await land.squares.read.squareCount([2n])).to.equal(3n);
+      expect(await land.countries.read.squareCount([1n])).to.equal(1n);
+      expect(await land.countries.read.squareCount([2n])).to.equal(3n);
     });
 
     it("rejects moving a square into a country of another owner", async function () {

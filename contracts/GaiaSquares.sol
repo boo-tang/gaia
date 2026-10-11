@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {IGaiaCountries} from "./interfaces/IGaiaCountries.sol";
 import {IGaiaSquares} from "./interfaces/IGaiaSquares.sol";
 import {Loc, LOC_MAX_LAT, LOC_MAX_LNG} from "./interfaces/GaiaTypes.sol";
 
@@ -22,8 +23,6 @@ contract GaiaSquares is ERC721, IGaiaSquares {
 
     mapping(address => uint256) private _countryOfAccount;
     mapping(uint256 => address) private _accountOfCountry;
-    mapping(uint256 => uint256) private _squareCount;
-    mapping(uint256 => uint256) private _compositionVersion;
 
     error NotCountries();
     error InvalidCoordinates();
@@ -118,18 +117,6 @@ contract GaiaSquares is ERC721, IGaiaSquares {
         return _accountOfCountry[countryId];
     }
 
-    function squareCount(
-        uint256 countryId
-    ) external view override returns (uint256) {
-        return _squareCount[countryId];
-    }
-
-    function compositionVersion(
-        uint256 countryId
-    ) external view override returns (uint256) {
-        return _compositionVersion[countryId];
-    }
-
     // -------- Transfer hook --------
 
     /// Runs after the ownership change, so the shape checks see the new state.
@@ -149,16 +136,26 @@ contract GaiaSquares is ERC721, IGaiaSquares {
 
         if (from == address(0) && toCountry == 0) revert NotACountryAccount();
 
+        // GaiaCountries records the change first. If a check below fails, the transaction
+        // reverts, so the order does not change the result.
         if (fromCountry != 0) {
             if (auth != from) revert TransferNotByAccount();
-            _checkShape(from, fromCountry, lat, lng, false);
-            _recordChange(fromCountry, _squareCount[fromCountry] - 1);
+            uint256 countBefore = IGaiaCountries(countries).recordSquareChange(
+                fromCountry,
+                false
+            );
+            // The removal of the last square is always allowed.
+            if (countBefore != 1) _checkShape(from, lat, lng);
         }
 
         if (toCountry != 0) {
             if (from != address(0)) _requireConsent(auth, from, fromCountry, toCountry);
-            _checkShape(to, toCountry, lat, lng, true);
-            _recordChange(toCountry, _squareCount[toCountry] + 1);
+            uint256 countBefore = IGaiaCountries(countries).recordSquareChange(
+                toCountry,
+                true
+            );
+            // The first square of a country is always allowed.
+            if (countBefore != 0) _checkShape(to, lat, lng);
         }
     }
 
@@ -182,20 +179,8 @@ contract GaiaSquares is ERC721, IGaiaSquares {
 
     /// Adding or removing square P keeps the country connected and without holes only if P is a
     /// simple point: Yokoi's 4-connectivity number of its 8 neighbours equals 1. The neighbours
-    /// are read after the ownership change of P, so P itself is never read. The first square of a
-    /// country and the removal of its last square are always allowed.
-    function _checkShape(
-        address account,
-        uint256 countryId,
-        uint16 lat,
-        uint16 lng,
-        bool adding
-    ) private view {
-        // Square count before this change: 0 when adding the first square, 1 when removing the
-        // last one.
-        uint256 countBefore = _squareCount[countryId];
-        if (adding ? countBefore == 0 : countBefore == 1) return;
-
+    /// are read after the ownership change of P, so P itself is never read.
+    function _checkShape(address account, uint16 lat, uint16 lng) private view {
         if (_connectivityNumber(_neighbourMask(account, lat, lng)) != 1) {
             revert ShapeBroken(lat, lng);
         }
@@ -235,12 +220,6 @@ contract GaiaSquares is ERC721, IGaiaSquares {
             bool nextSide = (mask >> ((k + 2) % 8)) & 1 == 1;
             if (side && !(corner && nextSide)) nc++;
         }
-    }
-
-    function _recordChange(uint256 countryId, uint256 newCount) private {
-        _squareCount[countryId] = newCount;
-        uint256 version = ++_compositionVersion[countryId];
-        emit CountryCompositionChanged(countryId, version, newCount);
     }
 
     function _isIn(

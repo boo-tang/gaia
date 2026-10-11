@@ -10,12 +10,6 @@ import {Loc} from "./GaiaTypes.sol";
  *         the country's ERC-6551 account.
  */
 interface IGaiaSquares is IERC721 {
-    event CountryCompositionChanged(
-        uint256 indexed countryId,
-        uint256 version,
-        uint256 squareCount
-    );
-
     /// @notice The GaiaCountries contract, the only address that can mint squares.
     function countries() external view returns (address);
 
@@ -41,11 +35,4 @@ interface IGaiaSquares is IERC721 {
     function countryOfAccount(address account) external view returns (uint256);
 
     function accountOfCountry(uint256 countryId) external view returns (address);
-
-    function squareCount(uint256 countryId) external view returns (uint256);
-
-    /// @notice Increases on every change of the country's squares.
-    function compositionVersion(
-        uint256 countryId
-    ) external view returns (uint256);
 }

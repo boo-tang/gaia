@@ -16,6 +16,11 @@ interface IGaiaCountries is IERC721 {
         address account,
         address indexed issuer
     );
+    event CountryCompositionChanged(
+        uint256 indexed countryId,
+        uint256 version,
+        uint256 squareCount
+    );
     event AuctionAdded(address indexed auction);
     event AuctionRemoved(address indexed auction);
 
@@ -34,6 +39,21 @@ interface IGaiaCountries is IERC721 {
         address buyer,
         Loc[] calldata squares
     ) external;
+
+    /// @notice Records that a square entered (`added`) or left the country, and returns the
+    ///         square count before the change.
+    /// @dev GaiaSquares only.
+    function recordSquareChange(
+        uint256 countryId,
+        bool added
+    ) external returns (uint256 countBefore);
+
+    function squareCount(uint256 countryId) external view returns (uint256);
+
+    /// @notice Increases on every change of the country's squares.
+    function compositionVersion(
+        uint256 countryId
+    ) external view returns (uint256);
 
     /// @notice Returns the ERC-6551 account of a country (deployed or not).
     function accountOf(uint256 countryId) external view returns (address);

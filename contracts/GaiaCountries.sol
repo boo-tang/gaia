@@ -28,6 +28,8 @@ contract GaiaCountries is ERC721, AccessControl, IGaiaCountries {
     // Country ids start at 1; 0 means "no country".
     uint256 private _nextCountryId = 1;
     address[] private _auctions;
+    mapping(uint256 => uint256) private _squareCount;
+    mapping(uint256 => uint256) private _compositionVersion;
 
     error EmptySquares();
     error SquaresNotSet();
@@ -39,6 +41,7 @@ contract GaiaCountries is ERC721, AccessControl, IGaiaCountries {
     error AuctionAlreadyAdded();
     error UnknownAuction();
     error OwnershipLoop();
+    error NotSquares();
 
     constructor(
         address admin,
@@ -84,6 +87,20 @@ contract GaiaCountries is ERC721, AccessControl, IGaiaCountries {
 
         _requireNotReserved(squareLocs);
         squares_.mintToCountry(countryId, squareLocs);
+    }
+
+    // -------- GaiaSquares only --------
+
+    function recordSquareChange(
+        uint256 countryId,
+        bool added
+    ) external override returns (uint256 countBefore) {
+        if (msg.sender != address(squares)) revert NotSquares();
+        countBefore = _squareCount[countryId];
+        uint256 newCount = added ? countBefore + 1 : countBefore - 1;
+        _squareCount[countryId] = newCount;
+        uint256 version = ++_compositionVersion[countryId];
+        emit CountryCompositionChanged(countryId, version, newCount);
     }
 
     // -------- Admin --------
@@ -142,6 +159,18 @@ contract GaiaCountries is ERC721, AccessControl, IGaiaCountries {
 
     function auctions() external view override returns (address[] memory) {
         return _auctions;
+    }
+
+    function squareCount(
+        uint256 countryId
+    ) external view override returns (uint256) {
+        return _squareCount[countryId];
+    }
+
+    function compositionVersion(
+        uint256 countryId
+    ) external view override returns (uint256) {
+        return _compositionVersion[countryId];
     }
 
     // -------- Internal --------
