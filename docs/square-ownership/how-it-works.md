@@ -180,11 +180,11 @@ Users cannot create a new country to split into. Only an issuer can call `create
 
 ## Sale: sell the country, not each square
 
-Later sales (see the composition-version sale work) do not list four square NFTs.
+A sale in `GaiaCountryMarket` does not list four square NFTs.
 
 They list **Country 1**.
 
-Buyer Dana pays. The sale contract transfers **Country NFT 1** from Alice to Dana.
+Buyer Dana pays. The market transfers **Country NFT 1** from Alice to Dana. The sale includes everything in `accountOf(1)`: squares, ETH, tokens and NFTs.
 
 Nothing happens to the squares.
 
@@ -204,9 +204,9 @@ Nothing happens to the squares.
 
 Dana can now split, merge, or sell again. Alice cannot.
 
-The sale should bind the price to `compositionVersion`. If Alice splits off a cell after Dana bids, the version changes and the old bid must not complete. That is why the version exists now, even before the marketplace is live.
+The market binds the price to two values that Dana gives with her purchase: `compositionVersion(1)` and the account's `state()`. If Alice splits off a cell, or takes ETH or a token out of the account, after Dana looked, one value changes and the purchase reverts. Assets that arrive in the account after that are not checked. They are a gain for Dana.
 
-A person can also sell by sending the country NFT in a wallet. Same effect. The marketplace is the safe way, because it can check the version.
+A person can also sell by sending the country NFT in a wallet. Same effect. The market is the safe way, because it checks both values.
 
 ## Merge: grow a country
 
@@ -271,12 +271,12 @@ A standalone square has an NFT but `countryOf = 0`. Do not use `countryOf == 0` 
 
 `accountOf(next country id)` is public before that country exists. Someone who already has a square can send it there. When the next country is created, that square does **not** join it. Each square records its own country, and only a mint or transfer into a registered account sets that record. The parked square stays standalone (`countryOf = 0`). The new country owner can move it out with `execute`, then merge it from a wallet. The normal shape and consent checks then apply.
 
-## Quick picture of a later marketplace fill
+## Quick picture of a market sale
 
-1. Dana lists Country 1 at version `7` for 10 ETH.
-2. A buyer accepts.
-3. The sale contract checks `compositionVersion(1) == 7`.
-4. It transfers Country NFT 1 to the buyer.
+1. Dana approves `GaiaCountryMarket` for Country 1 and lists it for 10 ETH.
+2. A buyer reads version `7` and account state `4`, and calls `buy(1, 7, 4)` with 10 ETH. (The state of an account that is not deployed is `0`.)
+3. The market checks that Dana still owns Country 1, `compositionVersion(1) == 7` and `accountOf(1).state() == 4`.
+4. It transfers Country NFT 1 to the buyer and pays Dana.
 5. The four (or N) squares do not move. The buyer is now `controllerOf` each of them.
 
-If Dana merged Carol's bar after listing, version would be `10` (example). The old listing would fail the check. The buyer would not pay for a different shape.
+If Dana merged Carol's bar after listing, version would be `10` (example). The purchase would fail the check. The buyer would not pay for a different shape.
