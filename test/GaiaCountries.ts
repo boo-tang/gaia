@@ -164,7 +164,7 @@ describe("GaiaCountries", function () {
         getAddress(alice.account.address)
       );
       const account = await countries.read.accountOf([1n]);
-      expect(await land.squares.read.countryOfAccount([account])).to.equal(1n);
+      expect(await land.countries.read.countryOfAccount([account])).to.equal(1n);
       expect(await land.countries.read.squareCount([1n])).to.equal(2n);
 
       const events = await countries.getEvents.CountryCreated();

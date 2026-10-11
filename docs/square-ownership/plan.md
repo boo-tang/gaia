@@ -30,7 +30,8 @@ These are fixed. Do not change them without the user.
 | Squares in wallets | Allowed. A square outside a country is a normal NFT (`countryOf == 0`). |
 | Country sale | A sale includes **everything** in the country's account: squares, ETH, tokens, NFTs. |
 | Empty country | When the last square leaves, the country NFT is **burned** in the same transaction. |
-| Country data | Data about a country is stored in `GaiaCountries`: `squareCount`, `compositionVersion` and the `CountryCompositionChanged` event. `GaiaSquares` tells `GaiaCountries` about each change. Decided on 11 October 2026. The extra call costs about 1,000 gas for each square (less than $0.01 for 100 squares at normal Base gas prices). |
+| Leftover-square sale | The price drops continuously. It starts at a start price, drops at a set rate, then stays at an end price. Start price, end price, rate and curve are TBD. They are constructor parameters. See BOO-5. |
+| Country data | Data about a country is stored in `GaiaCountries` only, with no copy in `GaiaSquares`: `squareCount`, `compositionVersion`, the `CountryCompositionChanged` event and the account-to-country registry (`countryOfAccount`). `GaiaSquares` tells `GaiaCountries` about each change and asks it which country an address belongs to. Decided on 11 October 2026. The extra call costs about 1,000 gas for each square (less than $0.01 for 100 squares at normal Base gas prices). |
 | Leftover squares | After the auction, a second issuer sells unwon squares at a price that **drops continuously** from a start price to an end price, then stays at the end price. Every square has the same price at a given time. Start price, end price, rate and curve are TBD (constructor parameters). |
 
 Consequence of the last two rows: after the burn, nobody can control the account. Anything still in it is locked forever. The owner must empty the account before the last split. The frontend must warn about this.
@@ -69,8 +70,9 @@ The account implementation is immutable, and `accountOf` depends on its address.
 2. `GaiaCountries`: add `recordSquareChange(uint256 countryId, bool added) returns (uint256 countBefore)`. Only the `squares` contract can call it (`NotSquares`). It changes the count, increments the version and emits the event.
 3. `GaiaSquares._update`: call `recordSquareChange` once for the source country and once for the destination country. Use the returned `countBefore` for the first-square and last-square cases of the shape check. If the shape check fails, the transaction reverts, so the order of the call and the check does not change the result.
 4. Remove the counters, their views and the event from `GaiaSquares` and `IGaiaSquares`.
+5. Move the account registry. `GaiaCountries` stores `_countryOfAccount` and sets it in `createCountry`, before the mint. Add the view `countryOfAccount`. `GaiaSquares` reads it from `GaiaCountries`. Remove `registerCountry`, `countryOfAccount`, `accountOfCountry` and their storage from `GaiaSquares`. `mintToCountry` gets the account from `GaiaCountries.accountOf`.
 
-**Tests:** move the existing count and version reads to `GaiaCountries`. Add: only `GaiaSquares` can call `recordSquareChange`, and `GaiaCountries` emits the event.
+**Tests:** move the existing count, version and registry reads to `GaiaCountries`. Add: only `GaiaSquares` can call `recordSquareChange`, and `GaiaCountries` emits the event. Make one commit for items 1 to 4, and one commit for item 5.
 
 ### Step 1. Do not admit preloaded land (BOO-36)
 

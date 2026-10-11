@@ -13,9 +13,6 @@ interface IGaiaSquares is IERC721 {
     /// @notice The GaiaCountries contract, the only address that can mint squares.
     function countries() external view returns (address);
 
-    /// @notice Links a country to its account. Only GaiaCountries.
-    function registerCountry(uint256 countryId, address account) external;
-
     /// @notice Mints `squares`, in order, to the account of `countryId`. Only GaiaCountries.
     function mintToCountry(uint256 countryId, Loc[] calldata squares) external;
 
@@ -31,8 +28,4 @@ interface IGaiaSquares is IERC721 {
         uint16 lat,
         uint16 lng
     ) external view returns (address);
-
-    function countryOfAccount(address account) external view returns (uint256);
-
-    function accountOfCountry(uint256 countryId) external view returns (address);
 }

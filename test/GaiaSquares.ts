@@ -66,19 +66,16 @@ describe("GaiaSquares", function () {
       );
       expect(await land.countries.read.squareCount([1n])).to.equal(4n);
       expect(await land.countries.read.compositionVersion([1n])).to.equal(4n);
-      expect(
-        getAddress(await land.squares.read.accountOfCountry([1n]))
-      ).to.equal(getAddress(account));
+      expect(await land.countries.read.countryOfAccount([account])).to.equal(
+        1n
+      );
     });
 
-    it("lets only GaiaCountries mint or register accounts", async function () {
+    it("lets only GaiaCountries mint", async function () {
       const { alice, squaresAs } = await loadFixture(deploy);
       const asAlice = await squaresAs(alice);
       await expect(
         asAlice.write.mintToCountry([1n, [{ lat: 1, lng: 1 }]])
-      ).to.be.rejectedWith("NotCountries");
-      await expect(
-        asAlice.write.registerCountry([1n, alice.account.address])
       ).to.be.rejectedWith("NotCountries");
     });
 

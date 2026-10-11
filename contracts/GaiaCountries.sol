@@ -28,6 +28,8 @@ contract GaiaCountries is ERC721, AccessControl, IGaiaCountries {
     // Country ids start at 1; 0 means "no country".
     uint256 private _nextCountryId = 1;
     address[] private _auctions;
+    // Country account => country id. 0 = not a country account.
+    mapping(address => uint256) private _countryOfAccount;
     mapping(uint256 => uint256) private _squareCount;
     mapping(uint256 => uint256) private _compositionVersion;
 
@@ -66,7 +68,7 @@ contract GaiaCountries is ERC721, AccessControl, IGaiaCountries {
         countryId = _nextCountryId++;
         address account = accountOf(countryId);
         // Register before minting so that the ownership-loop guard already knows the account.
-        squares_.registerCountry(countryId, account);
+        _countryOfAccount[account] = countryId;
         _mint(owner, countryId);
         emit CountryCreated(countryId, owner, account, msg.sender);
 
@@ -161,6 +163,12 @@ contract GaiaCountries is ERC721, AccessControl, IGaiaCountries {
         return _auctions;
     }
 
+    function countryOfAccount(
+        address account
+    ) external view override returns (uint256) {
+        return _countryOfAccount[account];
+    }
+
     function squareCount(
         uint256 countryId
     ) external view override returns (uint256) {
@@ -205,11 +213,7 @@ contract GaiaCountries is ERC721, AccessControl, IGaiaCountries {
         uint256 tokenId,
         address auth
     ) internal override returns (address) {
-        IGaiaSquares squares_ = squares;
-        if (
-            address(squares_) != address(0) &&
-            squares_.countryOfAccount(to) != 0
-        ) revert OwnershipLoop();
+        if (_countryOfAccount[to] != 0) revert OwnershipLoop();
         return super._update(to, tokenId, auth);
     }
 

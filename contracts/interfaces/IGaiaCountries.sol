@@ -55,6 +55,9 @@ interface IGaiaCountries is IERC721 {
         uint256 countryId
     ) external view returns (uint256);
 
+    /// @notice Returns the country of a registered country account; 0 for any other address.
+    function countryOfAccount(address account) external view returns (uint256);
+
     /// @notice Returns the ERC-6551 account of a country (deployed or not).
     function accountOf(uint256 countryId) external view returns (address);
 

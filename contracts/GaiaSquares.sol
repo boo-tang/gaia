@@ -21,16 +21,12 @@ import {Loc, LOC_MAX_LAT, LOC_MAX_LNG} from "./interfaces/GaiaTypes.sol";
 contract GaiaSquares is ERC721, IGaiaSquares {
     address public immutable countries;
 
-    mapping(address => uint256) private _countryOfAccount;
-    mapping(uint256 => address) private _accountOfCountry;
     // Square id => country id. 0 = standalone or unclaimed. A square joins a country only through
     // a mint or transfer into a registered account, never through a later registration.
     mapping(uint256 => uint256) private _countryOfSquare;
 
     error NotCountries();
     error InvalidCoordinates();
-    error AccountAlreadyRegistered();
-    error UnknownCountry();
     error SquareAlreadyExists(uint16 lat, uint16 lng);
     error NotACountryAccount();
     error BurnNotAllowed();
@@ -49,24 +45,11 @@ contract GaiaSquares is ERC721, IGaiaSquares {
 
     // -------- GaiaCountries only --------
 
-    function registerCountry(
-        uint256 countryId,
-        address account
-    ) external override onlyCountries {
-        if (
-            _countryOfAccount[account] != 0 ||
-            _accountOfCountry[countryId] != address(0)
-        ) revert AccountAlreadyRegistered();
-        _countryOfAccount[account] = countryId;
-        _accountOfCountry[countryId] = account;
-    }
-
     function mintToCountry(
         uint256 countryId,
         Loc[] calldata squares
     ) external override onlyCountries {
-        address account = _accountOfCountry[countryId];
-        if (account == address(0)) revert UnknownCountry();
+        address account = IGaiaCountries(countries).accountOf(countryId);
         uint256 len = squares.length;
         for (uint256 i = 0; i < len; i++) {
             uint16 lat = squares[i].lat;
@@ -107,18 +90,6 @@ contract GaiaSquares is ERC721, IGaiaSquares {
         return IERC721(countries).ownerOf(countryId);
     }
 
-    function countryOfAccount(
-        address account
-    ) external view override returns (uint256) {
-        return _countryOfAccount[account];
-    }
-
-    function accountOfCountry(
-        uint256 countryId
-    ) external view override returns (address) {
-        return _accountOfCountry[countryId];
-    }
-
     // -------- Transfer hook --------
 
     /// Runs after the ownership change, so the shape checks see the new state.
@@ -136,7 +107,7 @@ contract GaiaSquares is ERC721, IGaiaSquares {
         // The source country comes from the square's own record, not from the owner address. A
         // square that arrived at an account before its registration is standalone.
         uint256 fromCountry = _countryOfSquare[tokenId];
-        uint256 toCountry = _countryOfAccount[to];
+        uint256 toCountry = IGaiaCountries(countries).countryOfAccount(to);
 
         if (from == address(0) && toCountry == 0) revert NotACountryAccount();
         if (fromCountry != toCountry) _countryOfSquare[tokenId] = toCountry;
