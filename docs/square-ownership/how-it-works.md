@@ -267,7 +267,7 @@ Unclaimed cells have no square NFT.
 
 A standalone square has an NFT but `countryOf = 0`. Do not use `countryOf == 0` to find unclaimed land. Use `exists(lat, lng)`.
 
-There is one known gap: `accountOf(next country id)` is public before that country exists. Someone who already has a square can send it there. When the next country is created, today's code treats that parked square as part of the new country. That is a follow-up defect, not the intended model.
+`accountOf(next country id)` is public before that country exists. Someone who already has a square can send it there. When the next country is created, that square does **not** join it. Each square records its own country, and only a mint or transfer into a registered account sets that record. The parked square stays standalone (`countryOf = 0`). The new country owner can move it out with `execute`, then merge it from a wallet. The normal shape and consent checks then apply.
 
 ## Quick picture of a later marketplace fill
 

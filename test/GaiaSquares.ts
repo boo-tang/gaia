@@ -439,4 +439,100 @@ describe("GaiaSquares", function () {
       ).to.equal(getAddress(bob.account.address));
     });
   });
+
+  describe("land sent to an account before its country exists", function () {
+    /// Alice owns Country 1 with square (10, 10). Before Country 2 exists, she sends that square
+    /// to the account address of Country 2.
+    async function withParked() {
+      const base = await deploy();
+      const { land, alice, asIssuer } = base;
+      await asIssuer.write.createCountry([
+        alice.account.address,
+        [{ lat: 10, lng: 10 }],
+      ]);
+      const account1 = await deployAccount(land, 1n);
+      const futureAccount = await land.countries.read.accountOf([2n]);
+      await accountTransferSquare(land, alice, account1, futureAccount, 10, 10);
+      return { ...base, account1, futureAccount };
+    }
+
+    it("keeps a parked square standalone when the country is created", async function () {
+      const { land, bob, asIssuer, futureAccount } = await loadFixture(
+        withParked
+      );
+      await asIssuer.write.createCountry([
+        bob.account.address,
+        [{ lat: 100, lng: 100 }],
+      ]);
+
+      expect(
+        getAddress(await land.squares.read.ownerOf([squareId(10, 10)]))
+      ).to.equal(getAddress(futureAccount));
+      expect(await land.squares.read.countryOf([10, 10])).to.equal(0n);
+      expect(
+        getAddress(await land.squares.read.controllerOf([10, 10]))
+      ).to.equal(getAddress(futureAccount));
+      expect(await land.squares.read.countryOf([100, 100])).to.equal(2n);
+      expect(
+        getAddress(await land.countries.read.ownerOf([2n]))
+      ).to.equal(getAddress(bob.account.address));
+      expect(await land.countries.read.squareCount([2n])).to.equal(1n);
+      expect(await land.countries.read.compositionVersion([2n])).to.equal(1n);
+      expect(await land.countries.read.squareCount([1n])).to.equal(0n);
+    });
+
+    it("does not let a parked square connect land in the new country", async function () {
+      const { bob, asIssuer } = await loadFixture(withParked);
+      await asIssuer.write.createCountry([
+        bob.account.address,
+        [{ lat: 11, lng: 10 }],
+      ]);
+      // (9, 10) touches (11, 10) only through the parked square (10, 10).
+      await expect(
+        asIssuer.write.addSquares([2n, bob.account.address, [{ lat: 9, lng: 10 }]])
+      ).to.be.rejectedWith("ShapeBroken");
+    });
+
+    it("lets the new owner move a parked square out and merge it with the normal checks", async function () {
+      const { land, bob, asIssuer, squaresAs } = await loadFixture(withParked);
+      await asIssuer.write.createCountry([
+        bob.account.address,
+        [{ lat: 10, lng: 11 }],
+      ]);
+      const account2 = await deployAccount(land, 2n);
+
+      await accountTransferSquare(land, bob, account2, bob.account.address, 10, 10);
+      expect(await land.squares.read.countryOf([10, 10])).to.equal(0n);
+      expect(await land.countries.read.squareCount([2n])).to.equal(1n);
+
+      const asBob = await squaresAs(bob);
+      await asBob.write.transferFrom([
+        bob.account.address,
+        account2,
+        squareId(10, 10),
+      ]);
+      expect(await land.squares.read.countryOf([10, 10])).to.equal(2n);
+      expect(await land.countries.read.squareCount([2n])).to.equal(2n);
+    });
+
+    it("applies the shape and consent rules to a parked square", async function () {
+      const { land, bob, asIssuer, squaresAs, account1 } = await loadFixture(
+        withParked
+      );
+      await asIssuer.write.createCountry([
+        bob.account.address,
+        [{ lat: 100, lng: 100 }],
+      ]);
+      const account2 = await deployAccount(land, 2n);
+      await accountTransferSquare(land, bob, account2, bob.account.address, 10, 10);
+
+      const asBob = await squaresAs(bob);
+      await expect(
+        asBob.write.transferFrom([bob.account.address, account2, squareId(10, 10)])
+      ).to.be.rejectedWith("ShapeBroken");
+      await expect(
+        asBob.write.transferFrom([bob.account.address, account1, squareId(10, 10)])
+      ).to.be.rejectedWith("NoConsent");
+    });
+  });
 });

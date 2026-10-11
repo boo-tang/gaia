@@ -23,6 +23,9 @@ contract GaiaSquares is ERC721, IGaiaSquares {
 
     mapping(address => uint256) private _countryOfAccount;
     mapping(uint256 => address) private _accountOfCountry;
+    // Square id => country id. 0 = standalone or unclaimed. A square joins a country only through
+    // a mint or transfer into a registered account, never through a later registration.
+    mapping(uint256 => uint256) private _countryOfSquare;
 
     error NotCountries();
     error InvalidCoordinates();
@@ -89,18 +92,17 @@ contract GaiaSquares is ERC721, IGaiaSquares {
         uint16 lat,
         uint16 lng
     ) external view override returns (uint256) {
-        address owner = _ownerOf(_squareId(lat, lng));
-        if (owner == address(0)) return 0;
-        return _countryOfAccount[owner];
+        return _countryOfSquare[_squareId(lat, lng)];
     }
 
     function controllerOf(
         uint16 lat,
         uint16 lng
     ) external view override returns (address) {
-        address owner = _ownerOf(_squareId(lat, lng));
+        uint256 id = _squareId(lat, lng);
+        address owner = _ownerOf(id);
         if (owner == address(0)) return address(0);
-        uint256 countryId = _countryOfAccount[owner];
+        uint256 countryId = _countryOfSquare[id];
         if (countryId == 0) return owner;
         return IERC721(countries).ownerOf(countryId);
     }
@@ -131,10 +133,13 @@ contract GaiaSquares is ERC721, IGaiaSquares {
 
         uint16 lat = uint16(tokenId / LOC_MAX_LNG);
         uint16 lng = uint16(tokenId % LOC_MAX_LNG);
-        uint256 fromCountry = from == address(0) ? 0 : _countryOfAccount[from];
+        // The source country comes from the square's own record, not from the owner address. A
+        // square that arrived at an account before its registration is standalone.
+        uint256 fromCountry = _countryOfSquare[tokenId];
         uint256 toCountry = _countryOfAccount[to];
 
         if (from == address(0) && toCountry == 0) revert NotACountryAccount();
+        if (fromCountry != toCountry) _countryOfSquare[tokenId] = toCountry;
 
         // GaiaCountries records the change first. If a check below fails, the transaction
         // reverts, so the order does not change the result.
@@ -145,7 +150,7 @@ contract GaiaSquares is ERC721, IGaiaSquares {
                 false
             );
             // The removal of the last square is always allowed.
-            if (countBefore != 1) _checkShape(from, lat, lng);
+            if (countBefore != 1) _checkShape(fromCountry, lat, lng);
         }
 
         if (toCountry != 0) {
@@ -155,7 +160,7 @@ contract GaiaSquares is ERC721, IGaiaSquares {
                 true
             );
             // The first square of a country is always allowed.
-            if (countBefore != 0) _checkShape(to, lat, lng);
+            if (countBefore != 0) _checkShape(toCountry, lat, lng);
         }
     }
 
@@ -180,8 +185,8 @@ contract GaiaSquares is ERC721, IGaiaSquares {
     /// Adding or removing square P keeps the country connected and without holes only if P is a
     /// simple point: Yokoi's 4-connectivity number of its 8 neighbours equals 1. The neighbours
     /// are read after the ownership change of P, so P itself is never read.
-    function _checkShape(address account, uint16 lat, uint16 lng) private view {
-        if (_connectivityNumber(_neighbourMask(account, lat, lng)) != 1) {
+    function _checkShape(uint256 countryId, uint16 lat, uint16 lng) private view {
+        if (_connectivityNumber(_neighbourMask(countryId, lat, lng)) != 1) {
             revert ShapeBroken(lat, lng);
         }
     }
@@ -189,23 +194,23 @@ contract GaiaSquares is ERC721, IGaiaSquares {
     /// Bit k is set if neighbour k is in the country. Cyclic order from bit 0: E, NE, N, NW, W,
     /// SW, S, SE. Longitude wraps; rows beyond the poles are never in a country.
     function _neighbourMask(
-        address account,
+        uint256 countryId,
         uint16 lat,
         uint16 lng
     ) private view returns (uint256 mask) {
         uint16 west = lng == 0 ? LOC_MAX_LNG - 1 : lng - 1;
         uint16 east = lng == LOC_MAX_LNG - 1 ? 0 : lng + 1;
-        if (_isIn(account, lat, east)) mask |= 1;
-        if (_isIn(account, lat, west)) mask |= 1 << 4;
+        if (_isIn(countryId, lat, east)) mask |= 1;
+        if (_isIn(countryId, lat, west)) mask |= 1 << 4;
         if (lat + 1 < LOC_MAX_LAT) {
-            if (_isIn(account, lat + 1, east)) mask |= 1 << 1;
-            if (_isIn(account, lat + 1, lng)) mask |= 1 << 2;
-            if (_isIn(account, lat + 1, west)) mask |= 1 << 3;
+            if (_isIn(countryId, lat + 1, east)) mask |= 1 << 1;
+            if (_isIn(countryId, lat + 1, lng)) mask |= 1 << 2;
+            if (_isIn(countryId, lat + 1, west)) mask |= 1 << 3;
         }
         if (lat > 0) {
-            if (_isIn(account, lat - 1, west)) mask |= 1 << 5;
-            if (_isIn(account, lat - 1, lng)) mask |= 1 << 6;
-            if (_isIn(account, lat - 1, east)) mask |= 1 << 7;
+            if (_isIn(countryId, lat - 1, west)) mask |= 1 << 5;
+            if (_isIn(countryId, lat - 1, lng)) mask |= 1 << 6;
+            if (_isIn(countryId, lat - 1, east)) mask |= 1 << 7;
         }
     }
 
@@ -223,11 +228,11 @@ contract GaiaSquares is ERC721, IGaiaSquares {
     }
 
     function _isIn(
-        address account,
+        uint256 countryId,
         uint16 lat,
         uint16 lng
     ) private view returns (bool) {
-        return _ownerOf(_squareIdUnchecked(lat, lng)) == account;
+        return _countryOfSquare[_squareIdUnchecked(lat, lng)] == countryId;
     }
 
     function _squareId(uint16 lat, uint16 lng) private pure returns (uint256) {

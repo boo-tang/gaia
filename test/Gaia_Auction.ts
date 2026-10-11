@@ -1046,7 +1046,7 @@ describe("GaiaAuction: settleShape", function () {
     );
   });
 
-  it("settles a 100-square shape for less than 5.2M gas", async function () {
+  it("settles a 100-square shape for less than 7.6M gas", async function () {
     const { auctionAs1, minBid, end } = await loadFixture(deploySettle);
     const publicClient = await hre.viem.getPublicClient();
 
@@ -1062,7 +1062,7 @@ describe("GaiaAuction: settleShape", function () {
 
     const hash = await auctionAs1.write.settleShape([1n, 0n]);
     const { gasUsed } = await publicClient.waitForTransactionReceipt({ hash });
-    expect(gasUsed < 5_200_000n).to.equal(true);
+    expect(gasUsed < 7_600_000n).to.equal(true);
   });
 });
 
