@@ -85,6 +85,8 @@ For Alice's block:
 3. Settlement mints the four **square NFTs** into `accountOf(1)`, not to Alice.
 4. The auction keeps Country 1 until the last mint chunk finishes, then sends Country 1 to Alice.
 
+A country account cannot bid. If Alice already owns a country and bids through its box (`execute` on the account), `bidOnShape` reverts with `CountryAccountCannotBid`. The final transfer would send the new country into a box, which `OwnershipLoop` blocks (see below), so the land would stay in the auction. Alice bids from her wallet instead.
+
 After Alice and Bob settle, and before Carol:
 
 ```

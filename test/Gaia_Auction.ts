@@ -4,9 +4,9 @@ import {
 } from "@nomicfoundation/hardhat-toolbox-viem/network-helpers";
 import { expect } from "chai";
 import hre from "hardhat";
-import { getAddress } from "viem";
+import { encodeFunctionData, getAddress } from "viem";
 
-import { deployLand, squareId } from "./helpers/land";
+import { deployAccount, deployLand, squareId } from "./helpers/land";
 
 describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
   async function deployAll() {
@@ -648,9 +648,11 @@ describe("GaiaAuction: settleShape", function () {
   async function deploySettle() {
     const [owner, bidder1, bidder2] = await hre.viem.getWalletClients();
 
-    const { countries, squares } = await deployLand(owner.account.address);
+    const land = await deployLand(owner.account.address);
+    const { countries, squares } = land;
 
-    const now = Math.floor(Date.now() / 1000);
+    // Chain time, not Date.now(): earlier tests move the clock forward.
+    const now = await time.latest();
     const start = BigInt(now - 10);
     const end = BigInt(now + 3600);
     const minBid = 1000n;
@@ -686,6 +688,7 @@ describe("GaiaAuction: settleShape", function () {
     );
 
     return {
+      land,
       owner,
       bidder1,
       bidder2,
@@ -841,6 +844,73 @@ describe("GaiaAuction: settleShape", function () {
     const countryId = await auction.read.shapeCountryId([1n]);
     expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(
       getAddress(bidder.address)
+    );
+  });
+
+  // bidder1 owns country 1 (row 50, created by an issuer) and its account is deployed.
+  async function deployWithCountryAccount() {
+    const fixture = await deploySettle();
+    const { land, owner, bidder1, countries } = fixture;
+    await countries.write.grantRole([
+      await countries.read.ISSUER_ROLE(),
+      owner.account.address,
+    ]);
+    await countries.write.createCountry([
+      bidder1.account.address,
+      [
+        { lat: 50, lng: 10 },
+        { lat: 50, lng: 11 },
+      ],
+    ]);
+    const account = await deployAccount(land, 1n);
+    const accountAs1 = await hre.viem.getContractAt(
+      "GaiaCountryAccount",
+      account,
+      { client: { wallet: bidder1 } }
+    );
+    return { ...fixture, account, accountAs1 };
+  }
+
+  it("rejects a bid from a country account", async function () {
+    const { auction, accountAs1, minBid } = await loadFixture(
+      deployWithCountryAccount
+    );
+    const shape = [
+      { lat: 35, lng: 10 },
+      { lat: 35, lng: 11 },
+    ];
+    const value = minBid * BigInt(shape.length);
+    const data = encodeFunctionData({
+      abi: auction.abi,
+      functionName: "bidOnShape",
+      args: [shape],
+    });
+    await expect(
+      accountAs1.write.execute([auction.address, value, data, 0], { value })
+    ).to.be.rejectedWith("CountryAccountCannotBid");
+    expect(await auction.read.shapeBidder([1n])).to.equal(
+      "0x0000000000000000000000000000000000000000"
+    );
+  });
+
+  it("settles a wallet bid from the owner of a country", async function () {
+    const { auction, auctionAs1, bidder1, countries, minBid, end } =
+      await loadFixture(deployWithCountryAccount);
+    const shape = [
+      { lat: 35, lng: 10 },
+      { lat: 35, lng: 11 },
+    ];
+    await auctionAs1.write.bidOnShape([shape], {
+      value: minBid * BigInt(shape.length),
+    });
+
+    await time.increaseTo(end + 1n);
+
+    await expect(auctionAs1.write.settleShape([1n, 0n])).to.be.fulfilled;
+    const countryId = await auction.read.shapeCountryId([1n]);
+    expect(countryId).to.equal(2n);
+    expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(
+      getAddress(bidder1.account.address)
     );
   });
 

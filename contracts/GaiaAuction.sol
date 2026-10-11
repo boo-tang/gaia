@@ -126,6 +126,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     error InvalidCoordinates();
     error OverlapWouldInvalidateShape(uint256 shapeId);
     error ProceedsTransferFailed();
+    error CountryAccountCannotBid();
 
     // --- Modifiers ---
     modifier onlyDuringAuction() {
@@ -182,6 +183,12 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     function bidOnShape(
         Loc[] calldata locs
     ) external payable override onlyDuringAuction {
+        // GaiaCountries does not let a country go to a country account (OwnershipLoop), so a
+        // winning account could never get its country. An account exists only after its
+        // country is created, so this check at bid time covers every case.
+        if (countries.countryOfAccount(msg.sender) != 0) {
+            revert CountryAccountCannotBid();
+        }
         uint256 requiredTotal = _validateAndComputeTotal(locs);
         if (msg.value < requiredTotal) {
             revert InsufficientValue(msg.value, requiredTotal);
