@@ -1,8 +1,8 @@
 import { expect } from "chai";
 import { encodeFunctionData, getAddress } from "viem";
 
-import { loadFixture, time, viem } from "./helpers/setup";
-import { deployAccount, deployLand, squareId } from "./helpers/land";
+import { coverage, loadFixture, time, viem } from "./helpers/setup";
+import { deployAccount, deployLand, executeAs, squareId } from "./helpers/land";
 
 describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
   async function deployAll() {
@@ -859,16 +859,11 @@ describe("GaiaAuction: settleShape", function () {
       ],
     ]);
     const account = await deployAccount(land, 1n);
-    const accountAs1 = await viem.getContractAt(
-      "GaiaCountryAccount",
-      account,
-      { client: { wallet: bidder1 } }
-    );
-    return { ...fixture, account, accountAs1 };
+    return { ...fixture, account };
   }
 
   it("rejects a bid from a country account", async function () {
-    const { auction, accountAs1, minBid } = await loadFixture(
+    const { land, auction, bidder1, account, minBid } = await loadFixture(
       deployWithCountryAccount
     );
     const shape = [
@@ -882,7 +877,7 @@ describe("GaiaAuction: settleShape", function () {
       args: [shape],
     });
     await expect(
-      accountAs1.write.execute([auction.address, value, data, 0], { value })
+      executeAs(land, bidder1, account, auction, data, value)
     ).to.be.rejectedWith("CountryAccountCannotBid");
     expect(await auction.read.shapeBidder([1n])).to.equal(
       "0x0000000000000000000000000000000000000000"
@@ -1113,6 +1108,7 @@ describe("GaiaAuction: settleShape", function () {
   });
 
   it("settles a 100-square shape for less than 7.6M gas", async function () {
+    if (coverage) this.skip();
     const { auctionAs1, minBid, end } = await loadFixture(deploySettle);
     const publicClient = await viem.getPublicClient();
 

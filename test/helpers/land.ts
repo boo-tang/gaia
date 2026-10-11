@@ -1,5 +1,5 @@
 import { viem } from "./setup";
-import { encodeFunctionData, zeroHash } from "viem";
+import { type Abi, type Hex, encodeFunctionData, zeroHash } from "viem";
 
 export const squareId = (lat: number, lng: number) =>
   BigInt(lat) * 36000n + BigInt(lng);
@@ -37,22 +37,46 @@ export async function deployAccount(land: Land, countryId: bigint) {
   return land.countries.read.accountOf([countryId]);
 }
 
+type Wallet = Awaited<ReturnType<typeof viem.getWalletClients>>[number];
+
+/// Makes a country account (controlled by `wallet`) call `target` with `data` and `value`.
+/// The account bubbles up the reverts of `target`, so its ABI is extended with the errors of
+/// `target` for viem to name them in the error message. Hardhat's stack traces name them too,
+/// but not under --coverage.
+export async function executeAs(
+  land: Land,
+  wallet: Wallet,
+  account: `0x${string}`,
+  target: { address: `0x${string}`; abi: Abi },
+  data: Hex,
+  value = 0n
+) {
+  const abi = [
+    ...land.accountImpl.abi,
+    ...target.abi.filter((item) => item.type === "error"),
+  ];
+  return wallet.writeContract({
+    address: account,
+    abi,
+    functionName: "execute",
+    args: [target.address, value, data, 0],
+    value,
+  });
+}
+
 /// Makes a country account (controlled by `wallet`) call transferFrom on GaiaSquares.
 export async function accountTransferSquare(
   land: Land,
-  wallet: Awaited<ReturnType<typeof viem.getWalletClients>>[number],
+  wallet: Wallet,
   account: `0x${string}`,
   to: `0x${string}`,
   lat: number,
   lng: number
 ) {
-  const asOwner = await viem.getContractAt("GaiaCountryAccount", account, {
-    client: { wallet },
-  });
   const data = encodeFunctionData({
     abi: land.squares.abi,
     functionName: "transferFrom",
     args: [account, to, squareId(lat, lng)],
   });
-  return asOwner.write.execute([land.squares.address, 0n, data, 0]);
+  return executeAs(land, wallet, account, land.squares, data);
 }

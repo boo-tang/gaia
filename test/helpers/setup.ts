@@ -1,6 +1,6 @@
 import { use } from "chai";
 import chaiAsPromised from "chai-as-promised";
-import { network } from "hardhat";
+import hre, { network } from "hardhat";
 
 use(chaiAsPromised);
 
@@ -9,3 +9,6 @@ use(chaiAsPromised);
 export const { viem, networkHelpers, provider } = await network.getOrCreate();
 export const loadFixture = networkHelpers.loadFixture.bind(networkHelpers);
 export const time = networkHelpers.time;
+
+// True under `hardhat test --coverage`. The instrumented contracts use more gas than the real ones.
+export const coverage = hre.globalOptions.coverage === true;
