@@ -112,8 +112,14 @@ contract GaiaSquares is ERC721, IGaiaSquares {
         if (from == address(0) && toCountry == 0) revert NotACountryAccount();
         if (fromCountry != toCountry) _countryOfSquare[tokenId] = toCountry;
 
-        // GaiaCountries records the change first. If a check below fails, the transaction
-        // reverts, so the order does not change the result.
+        // Check consent before the source country records the removal: the removal of its last
+        // square burns it, and the consent check reads its owner.
+        if (toCountry != 0 && from != address(0)) {
+            _requireConsent(auth, from, fromCountry, toCountry);
+        }
+
+        // GaiaCountries records each change before the shape check. If a shape check fails, the
+        // transaction reverts, so the order does not change the result.
         if (fromCountry != 0) {
             if (auth != from) revert TransferNotByAccount();
             uint256 countBefore = IGaiaCountries(countries).recordSquareChange(
@@ -125,7 +131,6 @@ contract GaiaSquares is ERC721, IGaiaSquares {
         }
 
         if (toCountry != 0) {
-            if (from != address(0)) _requireConsent(auth, from, fromCountry, toCountry);
             uint256 countBefore = IGaiaCountries(countries).recordSquareChange(
                 toCountry,
                 true

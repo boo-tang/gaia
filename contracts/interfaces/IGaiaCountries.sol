@@ -41,7 +41,8 @@ interface IGaiaCountries is IERC721 {
     ) external;
 
     /// @notice Records that a square entered (`added`) or left the country, and returns the
-    ///         square count before the change.
+    ///         square count before the change. When the last square leaves, the country is
+    ///         burned.
     /// @dev GaiaSquares only.
     function recordSquareChange(
         uint256 countryId,

@@ -1,7 +1,7 @@
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox-viem/network-helpers";
 import { expect } from "chai";
 import hre from "hardhat";
-import { encodeFunctionData, getAddress, zeroAddress } from "viem";
+import { encodeFunctionData, getAddress, parseEther, zeroAddress } from "viem";
 
 import {
   accountTransferSquare,
@@ -264,27 +264,6 @@ describe("GaiaSquares", function () {
       ).to.be.rejectedWith("ShapeBroken");
     });
 
-    it("leaves an empty country after the last square is split off", async function () {
-      const { land, alice, asIssuer } = await loadFixture(deploy);
-      await asIssuer.write.createCountry([
-        alice.account.address,
-        [{ lat: 10, lng: 10 }],
-      ]);
-      const account = await deployAccount(land, 1n);
-      await accountTransferSquare(
-        land,
-        alice,
-        account,
-        alice.account.address,
-        10,
-        10
-      );
-      expect(await land.countries.read.squareCount([1n])).to.equal(0n);
-      expect(getAddress(await land.countries.read.ownerOf([1n]))).to.equal(
-        getAddress(alice.account.address)
-      );
-    });
-
     it("lets only the country owner act through the account", async function () {
       const { land, bob, account } = await loadFixture(withBlock);
       await expect(
@@ -329,6 +308,133 @@ describe("GaiaSquares", function () {
       await expect(
         asBob.write.transferFrom([account, bob.account.address, squareId(10, 11)])
       ).to.be.rejectedWith("TransferNotByAccount");
+    });
+  });
+
+  describe("empty country", function () {
+    // Alice: country 1 = one square at (10,10). Its account holds 1 ETH.
+    async function withSingle() {
+      const f = await deploy();
+      await f.asIssuer.write.createCountry([
+        f.alice.account.address,
+        [{ lat: 10, lng: 10 }],
+      ]);
+      const account = await deployAccount(f.land, 1n);
+      await f.alice.sendTransaction({ to: account, value: parseEther("1") });
+      return { ...f, account };
+    }
+
+    it("burns the country when the last square is split off", async function () {
+      const { land, alice, account } = await loadFixture(withSingle);
+      const versionBefore = await land.countries.read.compositionVersion([1n]);
+      await accountTransferSquare(
+        land,
+        alice,
+        account,
+        alice.account.address,
+        10,
+        10
+      );
+
+      await expect(land.countries.read.ownerOf([1n])).to.be.rejectedWith(
+        "ERC721NonexistentToken"
+      );
+      expect(await land.countries.read.squareCount([1n])).to.equal(0n);
+      expect(await land.squares.read.countryOf([10, 10])).to.equal(0n);
+      // The account stays registered, so country NFTs still cannot go into it.
+      expect(await land.countries.read.countryOfAccount([account])).to.equal(
+        1n
+      );
+
+      const burns = await land.countries.getEvents.Transfer(
+        { to: zeroAddress, tokenId: 1n },
+        { fromBlock: 0n }
+      );
+      expect(burns).to.have.lengthOf(1);
+      expect(getAddress(burns[0].args.from!)).to.equal(
+        getAddress(alice.account.address)
+      );
+      const changes = await land.countries.getEvents.CountryCompositionChanged(
+        { countryId: 1n },
+        { fromBlock: 0n }
+      );
+      const last = changes[changes.length - 1];
+      expect(last.args.version).to.equal(versionBefore + 1n);
+      expect(last.args.squareCount).to.equal(0n);
+    });
+
+    it("blocks the account, growth and merges after the burn", async function () {
+      const { land, alice, account, asIssuer, squaresAs } = await loadFixture(
+        withSingle
+      );
+      await accountTransferSquare(
+        land,
+        alice,
+        account,
+        alice.account.address,
+        10,
+        10
+      );
+
+      await expect(
+        accountTransferSquare(land, alice, account, alice.account.address, 10, 10)
+      ).to.be.rejectedWith("ERC721NonexistentToken");
+      await expect(
+        asIssuer.write.addSquares([
+          1n,
+          alice.account.address,
+          [{ lat: 10, lng: 11 }],
+        ])
+      ).to.be.rejectedWith("UnknownCountry");
+      const asAlice = await squaresAs(alice);
+      await expect(
+        asAlice.write.transferFrom([
+          alice.account.address,
+          account,
+          squareId(10, 10),
+        ])
+      ).to.be.rejectedWith("ERC721NonexistentToken");
+    });
+
+    it("locks ETH that is left in the account at the burn", async function () {
+      const { land, alice, account } = await loadFixture(withSingle);
+      await accountTransferSquare(
+        land,
+        alice,
+        account,
+        alice.account.address,
+        10,
+        10
+      );
+      const asOwner = await hre.viem.getContractAt(
+        "GaiaCountryAccount",
+        account,
+        { client: { wallet: alice } }
+      );
+      await expect(
+        asOwner.write.execute([alice.account.address, parseEther("1"), "0x", 0])
+      ).to.be.rejectedWith("ERC721NonexistentToken");
+      const publicClient = await hre.viem.getPublicClient();
+      expect(await publicClient.getBalance({ address: account })).to.equal(
+        parseEther("1")
+      );
+    });
+
+    it("burns the source country when its last square moves to another country of the same owner", async function () {
+      const { land, alice, account, asIssuer } = await loadFixture(withSingle);
+      // Country 2 (Alice) at (11,10), above country 1.
+      await asIssuer.write.createCountry([
+        alice.account.address,
+        [{ lat: 11, lng: 10 }],
+      ]);
+      const otherAccount = await land.countries.read.accountOf([2n]);
+
+      await accountTransferSquare(land, alice, account, otherAccount, 10, 10);
+      expect(await land.squares.read.countryOf([10, 10])).to.equal(2n);
+      expect(await land.countries.read.squareCount([2n])).to.equal(2n);
+      await expect(land.countries.read.ownerOf([1n])).to.be.rejectedWith(
+        "ERC721NonexistentToken"
+      );
     });
   });
 
@@ -438,14 +544,14 @@ describe("GaiaSquares", function () {
   });
 
   describe("land sent to an account before its country exists", function () {
-    /// Alice owns Country 1 with square (10, 10). Before Country 2 exists, she sends that square
-    /// to the account address of Country 2.
+    /// Alice owns Country 1 with squares (10, 9) and (10, 10). Before Country 2 exists, she
+    /// sends (10, 10) to the account address of Country 2.
     async function withParked() {
       const base = await deploy();
       const { land, alice, asIssuer } = base;
       await asIssuer.write.createCountry([
         alice.account.address,
-        [{ lat: 10, lng: 10 }],
+        row(10, 9, 10),
       ]);
       const account1 = await deployAccount(land, 1n);
       const futureAccount = await land.countries.read.accountOf([2n]);
@@ -475,7 +581,7 @@ describe("GaiaSquares", function () {
       ).to.equal(getAddress(bob.account.address));
       expect(await land.countries.read.squareCount([2n])).to.equal(1n);
       expect(await land.countries.read.compositionVersion([2n])).to.equal(1n);
-      expect(await land.countries.read.squareCount([1n])).to.equal(0n);
+      expect(await land.countries.read.squareCount([1n])).to.equal(1n);
     });
 
     it("does not let a parked square connect land in the new country", async function () {

@@ -103,6 +103,9 @@ contract GaiaCountries is ERC721, AccessControl, IGaiaCountries {
         _squareCount[countryId] = newCount;
         uint256 version = ++_compositionVersion[countryId];
         emit CountryCompositionChanged(countryId, version, newCount);
+        // An empty country is burned. Its account stays registered, so the ownership-loop guard
+        // still applies. Nobody can control the account after the burn.
+        if (newCount == 0) _burn(countryId);
     }
 
     // -------- Admin --------

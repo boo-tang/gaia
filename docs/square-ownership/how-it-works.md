@@ -172,7 +172,9 @@ Each removal must leave Country 1 connected and without holes. If Alice removed 
 
 Each successful move bumps `compositionVersion(1)`. That number is the “edition” of the land group.
 
-The last square of a country can also be split out. The country then has 0 squares. The country NFT continues to exist. There is no burn.
+The last square of a country can also be split out. The country then has 0 squares, and the country NFT is burned in the same transaction. After the burn, nobody can control `accountOf(1)`. Its address stays registered as a country account, so no country NFT can go into it.
+
+**Warning:** empty the account before you split the last square. ETH, tokens and NFTs that stay in the account after the burn are locked forever.
 
 Users cannot create a new country to split into. Only an issuer can call `createCountry`.
 
@@ -223,7 +225,7 @@ Carol cannot push her squares into Dana's country, and Dana cannot pull them. Th
 2. Carol sells or sends the three standalone NFTs to Dana's wallet.
 3. Dana merges them from her wallet into `accountOf(1)`: `(13,21)` first (it touches `(12,21)`), then `(14,21)` and `(13,20)`.
 
-Country 3 then has 0 squares. Carol still holds the empty Country 3 NFT.
+Country 3 then has 0 squares. The last split burns the Country 3 NFT. Carol must take any other assets out of `accountOf(3)` before that split.
 
 After:
 
