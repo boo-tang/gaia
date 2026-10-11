@@ -208,6 +208,33 @@ The market binds the price to two values that Dana gives with her purchase: `com
 
 A person can also sell by sending the country NFT in a wallet. Same effect. The market is the safe way, because it checks both values.
 
+## Account policy: no approvals, no signatures
+
+The sale check works only if every asset that leaves the account goes through `execute`. Two other paths can take assets out without a change of `state`: an approval that the account gave before the sale, and a signature of the account (for example, a permit or an off-chain order). The account closes both paths.
+
+- **The account never signs.** `isValidSignature` always returns "not valid" (`0xffffffff`), also for a signature from the country owner. The account is ERC-6551 compliant, but no app can accept a signature from it.
+- **The account blocks the standard approval functions.** `execute` reverts with `ApprovalNotAllowed` when the call is one of these:
+
+  | Function | Used by |
+  | --- | --- |
+  | `approve(address,uint256)` | ERC-20 and ERC-721 |
+  | `setApprovalForAll(address,bool)` | ERC-721 and ERC-1155 |
+  | `increaseAllowance(address,uint256)` | Some ERC-20 tokens |
+  | `approve(address,address,uint160,uint48)` | Permit2 |
+  | `approve(address,uint256,uint256)` | ERC-6909 |
+  | `setOperator(address,bool)` | ERC-6909 |
+
+What Alice cannot do from `accountOf(1)`:
+
+- Give an approval to an app. For example: a token swap, a loan, a marketplace listing of an NFT in the account, or Permit2.
+- Sign as the country. For example: "Sign in with Ethereum", an off-chain vote, or an off-chain order.
+
+What Alice can still do from the account: send ETH, tokens and NFTs, and make calls that need no approval (for example, an airdrop claim, wrapping ETH, or an on-chain vote). The country NFT is in her wallet, so she can list and sell the country itself anywhere.
+
+**Workaround:** to use an asset in an app, Alice first sends it from the account to her wallet with one `execute`. Then she uses any app from her wallet. This changes `state`, so a buyer sees it.
+
+**Known limit:** the account does not block non-standard delegation functions in other contracts (for example, `approveAndCall` or a custom operator function). An approval that such a function gives can take assets out after a sale. A buyer must not rely on the sale check for assets of such contracts.
+
 ## Merge: grow a country
 
 Dana holds Country 1 (the bottom row that Alice kept). Carol holds Country 3 (the bar). They touch at `(12,21)` / `(13,21)`.

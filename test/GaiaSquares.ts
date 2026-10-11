@@ -271,7 +271,7 @@ describe("GaiaSquares", function () {
       ).to.be.rejectedWith("NotOwner");
     });
 
-    it("ignores operator approvals on squares in a country, also after a country sale", async function () {
+    it("blocks operator approvals on squares in a country, also after a country sale", async function () {
       const { land, alice, bob, carol, account, squaresAs } =
         await loadFixture(withBlock);
       const asAccountOwner = await hre.viem.getContractAt(
@@ -279,7 +279,9 @@ describe("GaiaSquares", function () {
         account,
         { client: { wallet: alice } }
       );
-      await asAccountOwner.write.execute([
+      // The account blocks the approval, so Bob is not an operator. GaiaSquares also rejects a
+      // transfer by an operator (TransferNotByAccount), but an account cannot make one.
+      await expect(asAccountOwner.write.execute([
         land.squares.address,
         0n,
         encodeFunctionData({
@@ -288,12 +290,12 @@ describe("GaiaSquares", function () {
           args: [bob.account.address, true],
         }),
         0,
-      ]);
+      ])).to.be.rejectedWith("ApprovalNotAllowed");
 
       const asBob = await squaresAs(bob);
       await expect(
         asBob.write.transferFrom([account, bob.account.address, squareId(10, 11)])
-      ).to.be.rejectedWith("TransferNotByAccount");
+      ).to.be.rejectedWith("ERC721InsufficientApproval");
 
       const countriesAsAlice = await hre.viem.getContractAt(
         "GaiaCountries",
@@ -307,7 +309,7 @@ describe("GaiaSquares", function () {
       ]);
       await expect(
         asBob.write.transferFrom([account, bob.account.address, squareId(10, 11)])
-      ).to.be.rejectedWith("TransferNotByAccount");
+      ).to.be.rejectedWith("ERC721InsufficientApproval");
     });
   });
 

@@ -1,7 +1,7 @@
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox-viem/network-helpers";
 import { expect } from "chai";
 import hre from "hardhat";
-import { getAddress, parseEther } from "viem";
+import { encodeFunctionData, getAddress, parseEther } from "viem";
 
 import {
   accountTransferSquare,
@@ -257,6 +257,78 @@ describe("GaiaCountryMarket", function () {
       await expect(
         (await marketAs(bob)).write.buy([1n, version, state], { value: price })
       ).to.be.rejectedWith("AccountStateChanged");
+    });
+
+    it("leaves no approved address that can take assets out after the sale", async function () {
+      const { land, market, marketAs, alice, bob, carol, version } =
+        await loadFixture(withListing);
+      const account = await deployAccount(land, 1n);
+      const token = await hre.viem.deployContract("MockERC20");
+      await token.write.mint([account, 100n]);
+      const asOwner = await hre.viem.getContractAt(
+        "GaiaCountryAccount",
+        account,
+        { client: { wallet: alice } }
+      );
+
+      // Before the sale, the seller tries to approve Carol for the token and the squares.
+      await expect(
+        asOwner.write.execute([
+          token.address,
+          0n,
+          encodeFunctionData({
+            abi: token.abi,
+            functionName: "approve",
+            args: [carol.account.address, 100n],
+          }),
+          0,
+        ])
+      ).to.be.rejectedWith("ApprovalNotAllowed");
+      await expect(
+        asOwner.write.execute([
+          land.squares.address,
+          0n,
+          encodeFunctionData({
+            abi: land.squares.abi,
+            functionName: "setApprovalForAll",
+            args: [carol.account.address, true],
+          }),
+          0,
+        ])
+      ).to.be.rejectedWith("ApprovalNotAllowed");
+
+      const state = await market.read.accountState([1n]);
+      expect(state).to.equal(0n);
+      await (await marketAs(bob)).write.buy([1n, version, state], {
+        value: price,
+      });
+
+      // After the sale, Carol cannot take the token or a square out of the account.
+      expect(await token.read.allowance([account, carol.account.address])).to.equal(0n);
+      expect(
+        await land.squares.read.isApprovedForAll([account, carol.account.address])
+      ).to.equal(false);
+      const tokenAsCarol = await hre.viem.getContractAt("MockERC20", token.address, {
+        client: { wallet: carol },
+      });
+      await expect(
+        tokenAsCarol.write.transferFrom([account, carol.account.address, 100n])
+      ).to.be.rejectedWith("ERC20InsufficientAllowance");
+      const squaresAsCarol = await hre.viem.getContractAt(
+        "GaiaSquares",
+        land.squares.address,
+        { client: { wallet: carol } }
+      );
+      await expect(
+        squaresAsCarol.write.transferFrom([
+          account,
+          carol.account.address,
+          squareId(10, 12),
+        ])
+      ).to.be.rejected;
+
+      expect(await token.read.balanceOf([account])).to.equal(100n);
+      expect(await land.countries.read.squareCount([1n])).to.equal(3n);
     });
 
     it("rejects the purchase after the seller transfers the country", async function () {
