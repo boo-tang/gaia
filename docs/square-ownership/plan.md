@@ -5,9 +5,8 @@ This plan is for the next agent. It starts from branch `boo/gaia-countries`, com
 ## Read first
 
 1. [how-it-works.md](how-it-works.md): plain-language model, with map examples.
-2. [implementation-review.md](implementation-review.md): review of the first version of this code. Its defects are in this plan.
-3. Linear tickets (team Boo_tang, project "Gaia: Post-auction & production readiness"): BOO-16, BOO-33, BOO-35, BOO-36. They were updated on 9 October 2026 with the decisions below.
-4. Contracts: `GaiaCountries.sol`, `GaiaSquares.sol`, `GaiaCountryAccount.sol`, `GaiaAuction.sol` (`settleShape`, `_orderForSettlement`).
+2. Linear tickets (team Boo_tang, project "Gaia: Post-auction & production readiness"): BOO-16, BOO-33, BOO-35, BOO-36. They were updated on 9 October 2026 with the decisions below.
+3. Contracts: `GaiaCountries.sol`, `GaiaSquares.sol`, `GaiaCountryAccount.sol`, `GaiaAuction.sol` (`settleShape`, `_orderForSettlement`).
 
 ## Rules for the work
 
