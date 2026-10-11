@@ -223,6 +223,9 @@ The sale check works only if every asset that leaves the account goes through `e
   | `approve(address,address,uint160,uint48)` | Permit2 |
   | `approve(address,uint256,uint256)` | ERC-6909 |
   | `setOperator(address,bool)` | ERC-6909 |
+  | `approveAndCall(address,uint256)` | ERC-1363 |
+  | `approveAndCall(address,uint256,bytes)` | ERC-1363 |
+  | `authorizeOperator(address)` | ERC-777 |
 
 What Alice cannot do from `accountOf(1)`:
 
@@ -233,7 +236,7 @@ What Alice can still do from the account: send ETH, tokens and NFTs, and make ca
 
 **Workaround:** to use an asset in an app, Alice first sends it from the account to her wallet with one `execute`. Then she uses any app from her wallet. This changes `state`, so a buyer sees it.
 
-**Known limit:** the account does not block non-standard delegation functions in other contracts (for example, `approveAndCall` or a custom operator function). An approval that such a function gives can take assets out after a sale. A buyer must not rely on the sale check for assets of such contracts.
+**Known limit:** the account does not block non-standard delegation functions in other contracts (for example, a custom operator or allowance function of one token). An approval that such a function gives can take assets out after a sale. A buyer must not rely on the sale check for assets of such contracts.
 
 ## Merge: grow a country
 

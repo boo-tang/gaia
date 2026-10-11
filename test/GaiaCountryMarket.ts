@@ -325,7 +325,7 @@ describe("GaiaCountryMarket", function () {
           carol.account.address,
           squareId(10, 12),
         ])
-      ).to.be.rejected;
+      ).to.be.rejectedWith("ERC721InsufficientApproval");
 
       expect(await token.read.balanceOf([account])).to.equal(100n);
       expect(await land.countries.read.squareCount([1n])).to.equal(3n);

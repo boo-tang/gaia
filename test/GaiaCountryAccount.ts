@@ -31,6 +31,9 @@ const approvalAbi = parseAbi([
   "function approve(address token, address spender, uint160 amount, uint48 expiration)",
   "function approve(address spender, uint256 id, uint256 amount)",
   "function setOperator(address spender, bool approved)",
+  "function approveAndCall(address spender, uint256 amount)",
+  "function approveAndCall(address spender, uint256 amount, bytes data)",
+  "function authorizeOperator(address operator)",
 ]);
 
 describe("GaiaCountryAccount", function () {
@@ -137,6 +140,33 @@ describe("GaiaCountryAccount", function () {
           abi: approvalAbi,
           functionName: "setOperator",
           args: [zeroAddress, true],
+        }),
+      },
+      {
+        name: "approveAndCall(address,uint256)",
+        selector: "0x3177029f",
+        data: encodeFunctionData({
+          abi: approvalAbi,
+          functionName: "approveAndCall",
+          args: [zeroAddress, 1n],
+        }),
+      },
+      {
+        name: "approveAndCall(address,uint256,bytes)",
+        selector: "0xcae9ca51",
+        data: encodeFunctionData({
+          abi: approvalAbi,
+          functionName: "approveAndCall",
+          args: [zeroAddress, 1n, "0x"],
+        }),
+      },
+      {
+        name: "authorizeOperator(address)",
+        selector: "0x959b8c3f",
+        data: encodeFunctionData({
+          abi: approvalAbi,
+          functionName: "authorizeOperator",
+          args: [zeroAddress],
         }),
       },
     ];

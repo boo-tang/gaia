@@ -25,10 +25,12 @@ import {IERC6551Executable} from "erc6551/interfaces/IERC6551Executable.sol";
  *      - `execute` reverts with `ApprovalNotAllowed` for the standard approval functions:
  *        `approve(address,uint256)`, `setApprovalForAll(address,bool)`,
  *        `increaseAllowance(address,uint256)`, Permit2 `approve(address,address,uint160,uint48)`,
- *        and ERC-6909 `approve(address,uint256,uint256)` and `setOperator(address,bool)`.
+ *        ERC-6909 `approve(address,uint256,uint256)` and `setOperator(address,bool)`, ERC-1363
+ *        `approveAndCall(address,uint256)` and `approveAndCall(address,uint256,bytes)`, and
+ *        ERC-777 `authorizeOperator(address)`.
  *      Known limit: the account does not block non-standard delegation functions (for example,
- *      `approveAndCall` or a custom operator function). An approval that such a function gives
- *      can take assets out without a change of `state`.
+ *      a custom operator or allowance function of one token). An approval that such a function
+ *      gives can take assets out without a change of `state`.
  *      To use an asset in an app, the owner first sends it to a wallet with one `execute`.
  */
 contract GaiaCountryAccount is
@@ -148,6 +150,9 @@ contract GaiaCountryAccount is
             selector == 0x39509351 || // increaseAllowance(address,uint256)
             selector == 0x87517c45 || // approve(address,address,uint160,uint48), Permit2
             selector == 0x426a8493 || // approve(address,uint256,uint256), ERC-6909
-            selector == 0x558a7297; // setOperator(address,bool), ERC-6909
+            selector == 0x558a7297 || // setOperator(address,bool), ERC-6909
+            selector == 0x3177029f || // approveAndCall(address,uint256), ERC-1363
+            selector == 0xcae9ca51 || // approveAndCall(address,uint256,bytes), ERC-1363
+            selector == 0x959b8c3f; // authorizeOperator(address), ERC-777
     }
 }
