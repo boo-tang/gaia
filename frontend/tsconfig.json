@@ -15,5 +15,8 @@
   },
   "include": [
     "src"
-  ]
+  ],
+  // The root config excludes "frontend". Without this override, the exclude is inherited and
+  // no file is checked.
+  "exclude": []
 }

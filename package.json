@@ -4,7 +4,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "serve": "vite preview"
+    "serve": "vite preview",
+    "typecheck": "tsc --noEmit -p frontend/tsconfig.json"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^0.15.2",
