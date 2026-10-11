@@ -85,6 +85,19 @@ For Alice's block:
 3. Settlement mints the four **square NFTs** into `accountOf(1)`, not to Alice.
 4. The auction keeps Country 1 until the last mint chunk finishes, then sends Country 1 to Alice.
 
+### Bid rules
+
+All of these values are constructor parameters. Nobody can change them after deployment.
+
+- **Next bid on a square.** The first bid is `minBidPerSquareWei`. After that, the next bid is the current bid plus the larger of `minBidPerSquareWei` and `minBidIncrementBps` of the current bid. Example with 0.001 ETH and 5%: at 0.01 ETH, the next bid is 0.011 ETH (the absolute step is larger). At 1 ETH, the next bid is 1.05 ETH (the percentage is larger).
+- **Jump bid.** `bidOnShape(locs, floorPerSquare)`. Each square gets the larger of its next bid and `floorPerSquare`. With `floorPerSquare = 0`, each square gets the next bid. Value above the required total goes to `pendingReturns`.
+- **Soft close, for the whole auction.** A bid with less than `extensionWindow` seconds left moves `endTime` to the bid time plus `extensionWindow`. This applies to all squares, not only the squares in the bid. A bid with exactly `extensionWindow` seconds left does not move it. A bid at `endTime` is accepted. A bid after `endTime` reverts.
+- **Cap.** `endTime` never goes past `maxEndTime`. After `maxEndTime`, no bid is accepted.
+
+Why one end for the whole auction: when Bob takes some of Alice's squares near the end, Alice can still bid on other squares that suit her. If each square closed at its own time, she could lose a square after the squares she wants as a replacement have closed.
+
+Settlement and `withdrawProceeds` wait for the current `endTime`. Read `endTime()` from the auction every time. Do not keep a copy. The leftover-square sale must also read it when it runs.
+
 A country account cannot bid. If Alice already owns a country and bids through its box (`execute` on the account), `bidOnShape` reverts with `CountryAccountCannotBid`. The final transfer would send the new country into a box, which `OwnershipLoop` blocks (see below), so the land would stay in the auction. Alice bids from her wallet instead.
 
 After Alice and Bob settle, and before Carol:

@@ -1,5 +1,12 @@
 import { useMemo } from 'react';
-import { useAccount, useChainId, useConfig, useReadContracts, useWriteContract } from 'wagmi';
+import {
+  useAccount,
+  useChainId,
+  useConfig,
+  useReadContract,
+  useReadContracts,
+  useWriteContract,
+} from 'wagmi';
 import { readContracts } from 'wagmi/actions';
 
 import { gaiaAuctionAbi } from './abis';
@@ -9,7 +16,10 @@ import { Loc } from '../types';
 export interface AuctionConfig {
   startTime: bigint;
   endTime: bigint;
+  maxEndTime: bigint;
+  extensionWindow: bigint;
   minBidPerSquareWei: bigint;
+  minBidIncrementBps: bigint;
   minShapeSquares: bigint;
   maxShapeSquares: bigint;
   maxShapeAspectRatio: bigint;
@@ -20,7 +30,8 @@ export const useAuctionAddress = () => {
   return addresses.GaiaAuction[chainId];
 };
 
-// Auction parameters are immutable on-chain; fetch once and reuse everywhere.
+// All auction parameters are immutable on-chain except `endTime`: a bid near the end moves it
+// (soft close, up to `maxEndTime`). Fetch the immutable ones once and poll `endTime`.
 export const useAuctionConfig = () => {
   const address = useAuctionAddress();
   const contract = { address, abi: gaiaAuctionAbi } as const;
@@ -28,8 +39,10 @@ export const useAuctionConfig = () => {
   const { data, isLoading, error } = useReadContracts({
     contracts: [
       { ...contract, functionName: 'startTime' },
-      { ...contract, functionName: 'endTime' },
+      { ...contract, functionName: 'maxEndTime' },
+      { ...contract, functionName: 'extensionWindow' },
       { ...contract, functionName: 'minBidPerSquareWei' },
+      { ...contract, functionName: 'minBidIncrementBps' },
       { ...contract, functionName: 'minShapeSquares' },
       { ...contract, functionName: 'maxShapeSquares' },
       { ...contract, functionName: 'maxShapeAspectRatio' },
@@ -37,14 +50,39 @@ export const useAuctionConfig = () => {
     query: { staleTime: Infinity },
   });
 
-  const config: AuctionConfig | undefined = useMemo(() => {
-    if (!data || data.some((d) => d.status !== 'success')) return undefined;
-    const [startTime, endTime, minBidPerSquareWei, minShapeSquares, maxShapeSquares, maxShapeAspectRatio] =
-      data.map((d) => d.result as bigint);
-    return { startTime, endTime, minBidPerSquareWei, minShapeSquares, maxShapeSquares, maxShapeAspectRatio };
-  }, [data]);
+  const endTimeRead = useReadContract({
+    ...contract,
+    functionName: 'endTime',
+    query: { refetchInterval: 5_000 },
+  });
+  const endTime = endTimeRead.data as bigint | undefined;
 
-  return { config, isLoading, error };
+  const config: AuctionConfig | undefined = useMemo(() => {
+    if (!data || data.some((d) => d.status !== 'success') || endTime === undefined) return undefined;
+    const [
+      startTime,
+      maxEndTime,
+      extensionWindow,
+      minBidPerSquareWei,
+      minBidIncrementBps,
+      minShapeSquares,
+      maxShapeSquares,
+      maxShapeAspectRatio,
+    ] = data.map((d) => d.result as bigint);
+    return {
+      startTime,
+      endTime,
+      maxEndTime,
+      extensionWindow,
+      minBidPerSquareWei,
+      minBidIncrementBps,
+      minShapeSquares,
+      maxShapeSquares,
+      maxShapeAspectRatio,
+    };
+  }, [data, endTime]);
+
+  return { config, isLoading: isLoading || endTimeRead.isLoading, error: error ?? endTimeRead.error };
 };
 
 export const usePendingReturns = () => {
@@ -94,12 +132,13 @@ export const useBidOnShape = () => {
   const address = useAuctionAddress();
   const { writeContractAsync, ...rest } = useWriteContract();
 
-  const bidOnShape = (locs: Loc[], value: bigint) =>
+  // `floorPerSquare` > 0 is a jump bid: each square gets at least this amount.
+  const bidOnShape = (locs: Loc[], value: bigint, floorPerSquare = 0n) =>
     writeContractAsync({
       address,
       abi: gaiaAuctionAbi,
       functionName: 'bidOnShape',
-      args: [locs],
+      args: [locs, floorPerSquare],
       value,
     });
 

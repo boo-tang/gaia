@@ -47,6 +47,12 @@ export const AuctionStatus = () => {
       <span>
         {hasEnded ? 'Auction ended' : `${hasStarted ? 'Ends' : 'Starts'} in ${formatDuration(secondsRemaining)}`}
       </span>
+      {!hasEnded && config.extensionWindow > 0n && (
+        <span className="auction-status-note">
+          A bid in the last {formatDuration(Number(config.extensionWindow))} extends the auction (latest end:{' '}
+          {new Date(Number(config.maxEndTime) * 1000).toLocaleString()})
+        </span>
+      )}
       {!!pendingReturn && pendingReturn > 0n && (
         <button onClick={onWithdraw} disabled={isWithdrawing}>
           {isWithdrawing ? 'Withdrawing…' : `Withdraw ${formatEther(pendingReturn)} ETH`}

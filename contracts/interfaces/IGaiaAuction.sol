@@ -7,8 +7,16 @@ interface IGaiaAuction {
     /// @notice Highest bid per location
     /// @dev Implementers may expose views for current highest bid and bidder
 
-    /// @notice Bids on a convex shape of locations; `msg.value` must cover the sum of next bids
-    function bidOnShape(Loc[] calldata locs) external payable;
+    /// @notice Bids on a convex shape of locations. Each square gets the larger of its next bid
+    ///         and `floorPerSquare`; `msg.value` must cover the sum. The excess goes to
+    ///         `pendingReturns`. A bid with less than `extensionWindow` seconds left extends the
+    ///         auction (see GaiaAuction).
+    /// @param locs The squares, sorted by latitude, then west to east.
+    /// @param floorPerSquare Minimum amount per square (a jump bid). 0 bids the minimum.
+    function bidOnShape(
+        Loc[] calldata locs,
+        uint256 floorPerSquare
+    ) external payable;
 
     /// @notice Withdraws refunds for outbid amounts and overpayments
     function withdraw() external returns (bool);

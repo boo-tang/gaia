@@ -32,7 +32,7 @@ npx hardhat node
 
 Deploy compiled contracts
 
-`ignition/modules/Gaia.ts` deploys the country account implementation, `GaiaCountries`, `GaiaSquares` and `GaiaAuction`. It needs a parameters file (`admin`, `registry`, `treasury`, `startTime`, `endTime`, `minBidPerSquareWei`, `minShapeSquares`, `maxShapeSquares`, `maxShapeAspectRatio`) and an ERC-6551 registry at `registry`. A local deployment script is not ready yet.
+`ignition/modules/Gaia.ts` deploys the country account implementation, `GaiaCountries`, `GaiaSquares` and `GaiaAuction`. It needs a parameters file (`admin`, `registry`, `treasury`, `startTime`, `endTime`, `maxEndTime`, `extensionWindow`, `minBidPerSquareWei`, `minBidIncrementBps`, `minShapeSquares`, `maxShapeSquares`, `maxShapeAspectRatio`) and an ERC-6551 registry at `registry`. A local deployment script is not ready yet.
 
 ```
 npx hardhat ignition deploy ignition/modules/Gaia.ts --network localhost --parameters <parameters.json>

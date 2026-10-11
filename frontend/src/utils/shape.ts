@@ -136,11 +136,30 @@ export const validateShape = (locs: Loc[], limits: ShapeLimits): ShapeValidation
   return { valid: true };
 };
 
-// Mirrors GaiaAuction.sol's _nextBid: the minimum amount required to become the highest bidder
-// on a square currently at `currentAmount`.
-export const nextBidFor = (currentAmount: bigint, minBidPerSquareWei: bigint): bigint =>
-  currentAmount < minBidPerSquareWei ? minBidPerSquareWei : currentAmount + minBidPerSquareWei;
+export interface BidRules {
+  minBidPerSquareWei: bigint;
+  minBidIncrementBps: bigint;
+}
 
-// Sum of nextBidFor across all squares, given their current highest bids (same order as `locs`).
-export const computeBidTotal = (currentAmounts: bigint[], minBidPerSquareWei: bigint): bigint =>
-  currentAmounts.reduce((sum, amount) => sum + nextBidFor(amount, minBidPerSquareWei), 0n);
+// Mirrors GaiaAuction.sol's _nextBid: the minimum amount required to become the highest bidder
+// on a square currently at `currentAmount`. The step is the larger of the absolute minimum and
+// the percentage of the current bid.
+export const nextBidFor = (currentAmount: bigint, rules: BidRules): bigint => {
+  if (currentAmount < rules.minBidPerSquareWei) return rules.minBidPerSquareWei;
+  const relative = (currentAmount * rules.minBidIncrementBps) / 10_000n;
+  return currentAmount + (relative > rules.minBidPerSquareWei ? relative : rules.minBidPerSquareWei);
+};
+
+// Mirrors GaiaAuction.sol's _bidAmount: the next bid, or `floorPerSquare` if that is larger.
+export const bidAmountFor = (currentAmount: bigint, rules: BidRules, floorPerSquare = 0n): bigint => {
+  const next = nextBidFor(currentAmount, rules);
+  return floorPerSquare > next ? floorPerSquare : next;
+};
+
+// Sum of bidAmountFor across all squares, given their current highest bids (same order as `locs`).
+export const computeBidTotal = (
+  currentAmounts: bigint[],
+  rules: BidRules,
+  floorPerSquare = 0n,
+): bigint =>
+  currentAmounts.reduce((sum, amount) => sum + bidAmountFor(amount, rules, floorPerSquare), 0n);

@@ -13,7 +13,10 @@ const GaiaModule = buildModule('GaiaModule', (m) => {
   const treasury = m.getParameter<string>('treasury');
   const startTime = m.getParameter<bigint>('startTime');
   const endTime = m.getParameter<bigint>('endTime');
+  const maxEndTime = m.getParameter<bigint>('maxEndTime');
+  const extensionWindow = m.getParameter<bigint>('extensionWindow');
   const minBidPerSquareWei = m.getParameter<bigint>('minBidPerSquareWei');
+  const minBidIncrementBps = m.getParameter<bigint>('minBidIncrementBps');
   const minShapeSquares = m.getParameter<bigint>('minShapeSquares');
   const maxShapeSquares = m.getParameter<bigint>('maxShapeSquares');
   const maxShapeAspectRatio = m.getParameter<bigint>('maxShapeAspectRatio');
@@ -31,7 +34,10 @@ const GaiaModule = buildModule('GaiaModule', (m) => {
     treasury,
     startTime,
     endTime,
+    maxEndTime,
+    extensionWindow,
     minBidPerSquareWei,
+    minBidIncrementBps,
     minShapeSquares,
     maxShapeSquares,
     maxShapeAspectRatio,

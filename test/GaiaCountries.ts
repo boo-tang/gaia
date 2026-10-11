@@ -272,7 +272,10 @@ describe("GaiaCountries", function () {
         admin.account.address,
         now - 10n,
         now + 3600n,
+        now + 3600n,
+        0n,
         1000n,
+        0n,
         1n,
         1000n,
         10n,
@@ -282,7 +285,7 @@ describe("GaiaCountries", function () {
         auction.address,
         { client: { wallet: alice } }
       );
-      await auctionAsAlice.write.bidOnShape([[{ lat: 7, lng: 7 }]], {
+      await auctionAsAlice.write.bidOnShape([[{ lat: 7, lng: 7 }], 0n], {
         value: 1000n,
       });
 

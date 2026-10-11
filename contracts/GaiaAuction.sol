@@ -18,6 +18,17 @@ import {IGaiaAuction} from "./interfaces/IGaiaAuction.sol";
  *   - A bid that partially overlaps an existing active shape is accepted only if each affected
  *     shape's remaining squares are either zero (full takeover) or still form a valid shape.
  *
+ * Bid rules (anti-sniping):
+ *   - Soft close, global: a bid with less than `extensionWindow` seconds left moves `endTime` for the
+ *     whole auction to `block.timestamp + extensionWindow`. A bid with exactly `extensionWindow`
+ *     seconds left does not move it. `endTime` never goes past `maxEndTime`.
+ *   - A bid at `endTime` is accepted. A bid after `endTime` reverts.
+ *   - Next bid on a square: the larger of `current + minBidPerSquareWei` and
+ *     `current + current * minBidIncrementBps / 10000`. The first bid is `minBidPerSquareWei`.
+ *   - Jump bid: a bidder can set `floorPerSquare`. Each square then gets the larger of its next bid
+ *     and `floorPerSquare`.
+ *   - All these values are constructor parameters and do not change after deployment.
+ *
  * Longitude wraps: square 35999 and square 0 are neighbours. Shape checks use longitudes
  * normalised relative to the first square of the shape (see _normLng), so a shape can cross the
  * antimeridian. Sort order: lat ascending, then lng west to east within a row, continuing across
@@ -30,8 +41,14 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
 
     // --- Auction config ---
     uint64 public immutable startTime;
-    uint64 public immutable endTime;
+    // Current end. A bid in the last `extensionWindow` seconds moves it, up to `maxEndTime`.
+    uint64 public endTime;
+    uint64 public immutable maxEndTime;
+    uint64 public immutable extensionWindow;
+    // First bid on a square, and the minimum absolute increase of each later bid.
     uint256 public immutable minBidPerSquareWei;
+    // Minimum relative increase of a bid, in basis points (500 = 5%).
+    uint256 public immutable minBidIncrementBps;
     uint256 public immutable minShapeSquares;
     uint256 public immutable maxShapeSquares;
     // max(width, height) <= min(width, height) * maxShapeAspectRatio
@@ -105,6 +122,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint256 totalSquares
     );
     event ProceedsWithdrawn(address indexed treasury, uint256 amount);
+    event AuctionExtended(uint64 endTime);
 
     // --- Errors ---
     error AuctionAlreadyEnded();
@@ -145,7 +163,10 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         address treasury_,
         uint64 startTime_,
         uint64 endTime_,
+        uint64 maxEndTime_,
+        uint64 extensionWindow_,
         uint256 minBidPerSquareWei_,
+        uint256 minBidIncrementBps_,
         uint256 minShapeSquares_,
         uint256 maxShapeSquares_,
         uint256 maxShapeAspectRatio_
@@ -155,6 +176,8 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             "zero address"
         );
         require(startTime_ < endTime_, "invalid time window");
+        require(maxEndTime_ >= endTime_, "invalid max end time");
+        require(minBidIncrementBps_ <= 10_000, "invalid bid increment");
         require(
             minShapeSquares_ >= 1 && minShapeSquares_ <= maxShapeSquares_,
             "invalid shape bounds"
@@ -170,7 +193,10 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         treasury = treasury_;
         startTime = startTime_;
         endTime = endTime_;
+        maxEndTime = maxEndTime_;
+        extensionWindow = extensionWindow_;
         minBidPerSquareWei = minBidPerSquareWei_;
+        minBidIncrementBps = minBidIncrementBps_;
         minShapeSquares = minShapeSquares_;
         maxShapeSquares = maxShapeSquares_;
         maxShapeAspectRatio = maxShapeAspectRatio_;
@@ -181,7 +207,8 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
 
     /// @inheritdoc IGaiaAuction
     function bidOnShape(
-        Loc[] calldata locs
+        Loc[] calldata locs,
+        uint256 floorPerSquare
     ) external payable override onlyDuringAuction {
         // GaiaCountries does not let a country go to a country account (OwnershipLoop), so a
         // winning account could never get its country. An account exists only after its
@@ -189,7 +216,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         if (countries.countryOfAccount(msg.sender) != 0) {
             revert CountryAccountCannotBid();
         }
-        uint256 requiredTotal = _validateAndComputeTotal(locs);
+        uint256 requiredTotal = _validateAndComputeTotal(locs, floorPerSquare);
         if (msg.value < requiredTotal) {
             revert InsufficientValue(msg.value, requiredTotal);
         }
@@ -220,7 +247,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
                 }
             }
 
-            uint256 nextAmount = _nextBid(current.amount);
+            uint256 nextAmount = _bidAmount(current.amount, floorPerSquare);
             proceedsIncrease += nextAmount - current.amount;
             highestBids[loc.lat][loc.lng] = Bid({
                 bidder: msg.sender,
@@ -236,6 +263,8 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             }
         }
         proceeds += proceedsIncrease;
+
+        _extendIfClosing();
     }
 
     /// @inheritdoc IGaiaAuction
@@ -408,7 +437,8 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     /// Validates shape via calldata and computes the total bid required.
     /// Reverts on any shape-validity failure.
     function _validateAndComputeTotal(
-        Loc[] calldata locs
+        Loc[] calldata locs,
+        uint256 floorPerSquare
     ) internal view returns (uint256 requiredTotal) {
         uint256 len = locs.length;
         if (len == 0) revert EmptyShape();
@@ -433,7 +463,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
 
         {
             Bid memory cur0 = highestBids[locs[0].lat][refLng];
-            requiredTotal = _nextBid(cur0.amount);
+            requiredTotal = _bidAmount(cur0.amount, floorPerSquare);
         }
 
         for (uint256 i = 1; i < len; ) {
@@ -443,7 +473,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
 
             {
                 Bid memory current = highestBids[lat][lng];
-                requiredTotal += _nextBid(current.amount);
+                requiredTotal += _bidAmount(current.amount, floorPerSquare);
             }
 
             lng = _normLng(lng, refLng);
@@ -816,8 +846,36 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         _validateShapeMem(remaining);
     }
 
+    /// Soft close: a bid with less than `extensionWindow` seconds left moves `endTime` to
+    /// `block.timestamp + extensionWindow`, but not past `maxEndTime`. The caller makes sure that
+    /// `block.timestamp <= endTime`.
+    function _extendIfClosing() internal {
+        uint64 end = endTime;
+        if (end - block.timestamp >= extensionWindow) return;
+        uint256 newEnd = block.timestamp + extensionWindow;
+        if (newEnd > maxEndTime) newEnd = maxEndTime;
+        if (newEnd <= end) return;
+        endTime = uint64(newEnd);
+        emit AuctionExtended(uint64(newEnd));
+    }
+
+    /// Amount a bid puts on a square: the next bid, or `floorPerSquare` if that is larger.
+    function _bidAmount(
+        uint256 current,
+        uint256 floorPerSquare
+    ) internal view returns (uint256) {
+        uint256 next = _nextBid(current);
+        return floorPerSquare > next ? floorPerSquare : next;
+    }
+
+    /// Minimum next bid: `minBidPerSquareWei` for an unbid square. Else the larger of
+    /// `current + minBidPerSquareWei` and `current + current * minBidIncrementBps / 10000`.
     function _nextBid(uint256 current) internal view returns (uint256) {
         if (current < minBidPerSquareWei) return minBidPerSquareWei;
-        return current + minBidPerSquareWei;
+        uint256 relative = (current * minBidIncrementBps) / 10_000;
+        uint256 step = relative > minBidPerSquareWei
+            ? relative
+            : minBidPerSquareWei;
+        return current + step;
     }
 }

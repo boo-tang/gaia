@@ -4,6 +4,7 @@ import {
   sortLocs,
   validateShape,
   nextBidFor,
+  bidAmountFor,
   computeBidTotal,
 } from "../frontend/src/utils/shape";
 
@@ -235,19 +236,29 @@ describe("utils/shape (mirrors GaiaAuction.sol shape validation)", function () {
   });
 });
 
-describe("utils/shape bid totals (mirrors GaiaAuction.sol._nextBid)", function () {
+describe("utils/shape bid totals (mirrors GaiaAuction.sol._nextBid and _bidAmount)", function () {
   const minBid = 1000n;
+  const rules = { minBidPerSquareWei: minBid, minBidIncrementBps: 500n };
 
   it("nextBidFor requires minBid for an unbid square", function () {
-    expect(nextBidFor(0n, minBid)).to.equal(minBid);
+    expect(nextBidFor(0n, rules)).to.equal(minBid);
   });
 
-  it("nextBidFor requires current + minBid for an already-bid square", function () {
-    expect(nextBidFor(minBid, minBid)).to.equal(minBid + minBid);
+  it("nextBidFor adds minBid when it is larger than the percentage", function () {
+    expect(nextBidFor(minBid, rules)).to.equal(minBid + minBid);
   });
 
-  it("computeBidTotal sums nextBidFor across squares", function () {
-    const total = computeBidTotal([0n, minBid, 0n], minBid);
-    expect(total).to.equal(minBid + (minBid + minBid) + minBid);
+  it("nextBidFor adds the percentage when it is larger than minBid", function () {
+    expect(nextBidFor(100_000n, rules)).to.equal(105_000n);
+  });
+
+  it("bidAmountFor uses floorPerSquare only when it is above the next bid", function () {
+    expect(bidAmountFor(0n, rules, 5000n)).to.equal(5000n);
+    expect(bidAmountFor(10_000n, rules, 5000n)).to.equal(11_000n);
+  });
+
+  it("computeBidTotal sums bidAmountFor across squares", function () {
+    expect(computeBidTotal([0n, minBid, 0n], rules)).to.equal(minBid + (minBid + minBid) + minBid);
+    expect(computeBidTotal([0n, 10_000n], rules, 5000n)).to.equal(5000n + 11_000n);
   });
 });
