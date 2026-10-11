@@ -211,6 +211,10 @@ contract GaiaCountries is ERC721, AccessControl, IGaiaCountries {
 
     /// A country can never be owned by a country account (its own or another's, deployed or not):
     /// that would create an ownership cycle and nobody could control the country again.
+    /// Accepted gap: the guard knows only registered accounts. The owner of a country can send it
+    /// to the account of a country that does not exist yet. When that country is created, the
+    /// first country is in its account. No cycle is possible, and the owner of the new country
+    /// can move the first country out with `execute`.
     function _update(
         address to,
         uint256 tokenId,

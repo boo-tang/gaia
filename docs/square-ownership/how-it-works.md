@@ -293,6 +293,15 @@ Bob could then move Alice's title (and her land) without a sale.
 
 It does **not** block a transfer to a normal wallet, a marketplace, or the auction (the auction holds the country during settlement).
 
+Known gap, accepted: the guard knows only **registered** accounts. `accountOf(next country id)` is public before that country exists. Alice can send her own Country 1 there:
+
+```
+  Alice sends Country 1  →  accountOf(3)   (Country 3 does not exist yet)
+  Bob wins Country 3                       (its account is that address)
+```
+
+Country 1 is now inside Country 3, and Bob controls it. Only Alice can do this to Country 1, so it is the same as a gift to the next country owner. Bob is not blocked: he can use Country 3 as normal, and he can move Country 1 out with `execute`. If Country 3 is burned while Country 1 is still in its account, Country 1 is locked forever, as any other asset in a dead account.
+
 ## What is not a country
 
 Unclaimed cells have no square NFT.

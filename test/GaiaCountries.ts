@@ -1,7 +1,7 @@
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox-viem/network-helpers";
 import { expect } from "chai";
 import hre from "hardhat";
-import { getAddress, zeroAddress } from "viem";
+import { encodeFunctionData, getAddress, zeroAddress } from "viem";
 
 import { deployAccount, deployLand } from "./helpers/land";
 
@@ -408,6 +408,46 @@ describe("GaiaCountries", function () {
       ]);
       expect(getAddress(await countries.read.ownerOf([1n]))).to.equal(
         getAddress(plain.address)
+      );
+    });
+
+    it("does not block a country parked at the account of a future country", async function () {
+      const { countries, land, asIssuer, asAlice, alice, bob } =
+        await loadFixture(withTwoCountries);
+      // Accepted gap: the guard knows only registered accounts. Only the owner can send their own
+      // country there, and the owner of the new country can move it out.
+      const futureAccount = await countries.read.accountOf([3n]);
+      await asAlice.write.transferFrom([
+        alice.account.address,
+        futureAccount,
+        1n,
+      ]);
+      await asIssuer.write.createCountry([
+        bob.account.address,
+        [{ lat: 30, lng: 30 }],
+      ]);
+      expect(getAddress(await countries.read.ownerOf([1n]))).to.equal(
+        getAddress(futureAccount)
+      );
+
+      await deployAccount(land, 3n);
+      const asBobAccount = await hre.viem.getContractAt(
+        "GaiaCountryAccount",
+        futureAccount,
+        { client: { wallet: bob } }
+      );
+      await asBobAccount.write.execute([
+        countries.address,
+        0n,
+        encodeFunctionData({
+          abi: countries.abi,
+          functionName: "transferFrom",
+          args: [futureAccount, bob.account.address, 1n],
+        }),
+        0,
+      ]);
+      expect(getAddress(await countries.read.ownerOf([1n]))).to.equal(
+        getAddress(bob.account.address)
       );
     });
   });
