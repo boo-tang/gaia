@@ -76,6 +76,7 @@ describe("GaiaCountryMarket", function () {
       const listing = await market.read.listingOf([1n]);
       expect(getAddress(listing.seller)).to.equal(getAddress(alice.account.address));
       expect(listing.price).to.equal(price);
+      expect(listing.version).to.equal(3n);
     });
 
     it("accepts an operator approval for all countries", async function () {
@@ -173,18 +174,41 @@ describe("GaiaCountryMarket", function () {
       ).to.be.rejectedWith("WrongPrice");
     });
 
-    it("rejects the purchase after a split", async function () {
+    it("makes the listing outdated after a split", async function () {
       const { land, marketAs, alice, bob, version } = await loadFixture(
         withListing
       );
       const account = await deployAccount(land, 1n);
       await accountTransferSquare(land, alice, account, alice.account.address, 10, 12);
+      const newVersion = await land.countries.read.compositionVersion([1n]);
+      await expect(
+        (await marketAs(bob)).write.buy([1n, newVersion, 1n], { value: price })
+      ).to.be.rejectedWith("ListingOutdated");
+    });
+
+    it("rejects a buyer who saw an older version than the listing", async function () {
+      const { land, market, marketAs, alice, bob, version } = await loadFixture(
+        withListing
+      );
+      const account = await deployAccount(land, 1n);
+      await accountTransferSquare(land, alice, account, alice.account.address, 10, 12);
+      // The seller lists again for the smaller country. The approval was not used, so it stays.
+      await (await marketAs(alice)).write.list([1n, price]);
+      const newVersion = await land.countries.read.compositionVersion([1n]);
+      expect((await market.read.listingOf([1n])).version).to.equal(newVersion);
+
       await expect(
         (await marketAs(bob)).write.buy([1n, version, 1n], { value: price })
       ).to.be.rejectedWith("CompositionChanged");
+      await (await marketAs(bob)).write.buy([1n, newVersion, 1n], {
+        value: price,
+      });
+      expect(getAddress(await land.countries.read.ownerOf([1n]))).to.equal(
+        getAddress(bob.account.address)
+      );
     });
 
-    it("rejects the purchase after a merge", async function () {
+    it("makes the listing outdated after a merge", async function () {
       const { land, market, marketAs, countriesAs, alice, bob } =
         await loadFixture(deploy);
       const account = await deployAccount(land, 1n);
@@ -205,8 +229,10 @@ describe("GaiaCountryMarket", function () {
         squareId(10, 12),
       ]);
       await expect(
-        (await marketAs(bob)).write.buy([1n, version, state], { value: price })
-      ).to.be.rejectedWith("CompositionChanged");
+        (await marketAs(bob)).write.buy([1n, version + 1n, state], {
+          value: price,
+        })
+      ).to.be.rejectedWith("ListingOutdated");
     });
 
     it("rejects the purchase after the account sends assets out", async function () {

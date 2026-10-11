@@ -12,21 +12,29 @@ import {IGaiaCountries} from "./interfaces/IGaiaCountries.sol";
  *         and the state of its account that they saw. If either value changed, the purchase
  *         reverts. Assets that arrive in the account after that are not checked.
  * @dev Needs no role on other contracts. The seller approves this contract for the country.
+ *      A listing records the composition version at the time of listing. When a square enters
+ *      or leaves the country, the listing is not valid any more. The seller must list again.
  *      A listing stays stored when the seller transfers the country. It cannot be bought while
- *      the seller is not the owner. If the country comes back to the seller, the listing is
- *      valid again. The seller can cancel it.
+ *      the seller is not the owner. If the country comes back to the seller with the same
+ *      squares, the listing is valid again. The seller can cancel it.
  */
 contract GaiaCountryMarket is ReentrancyGuard {
     struct Listing {
         address seller;
         uint256 price;
+        uint256 version;
     }
 
     IGaiaCountries public immutable countries;
 
     mapping(uint256 => Listing) private _listings;
 
-    event Listed(uint256 indexed countryId, address indexed seller, uint256 price);
+    event Listed(
+        uint256 indexed countryId,
+        address indexed seller,
+        uint256 price,
+        uint256 version
+    );
     event Cancelled(uint256 indexed countryId, address indexed seller);
     event Sold(
         uint256 indexed countryId,
@@ -41,6 +49,7 @@ contract GaiaCountryMarket is ReentrancyGuard {
     error NotSeller();
     error SellerNotOwner();
     error WrongPrice();
+    error ListingOutdated();
     error CompositionChanged();
     error AccountStateChanged();
     error PaymentFailed();
@@ -57,8 +66,9 @@ contract GaiaCountryMarket is ReentrancyGuard {
             countries.getApproved(countryId) != address(this) &&
             !countries.isApprovedForAll(owner, address(this))
         ) revert MarketNotApproved();
-        _listings[countryId] = Listing(owner, price);
-        emit Listed(countryId, owner, price);
+        uint256 version = countries.compositionVersion(countryId);
+        _listings[countryId] = Listing(owner, price, version);
+        emit Listed(countryId, owner, price, version);
     }
 
     function cancel(uint256 countryId) external {
@@ -81,9 +91,11 @@ contract GaiaCountryMarket is ReentrancyGuard {
         if (listing.seller == address(0)) revert NotListed();
         if (countries.ownerOf(countryId) != listing.seller) revert SellerNotOwner();
         if (msg.value != listing.price) revert WrongPrice();
-        if (countries.compositionVersion(countryId) != expectedVersion) {
-            revert CompositionChanged();
-        }
+        uint256 version = countries.compositionVersion(countryId);
+        // The seller set the price for the squares at the time of listing.
+        if (version != listing.version) revert ListingOutdated();
+        // The buyer agreed to the squares that they saw.
+        if (version != expectedVersion) revert CompositionChanged();
         if (accountState(countryId) != expectedState) revert AccountStateChanged();
 
         delete _listings[countryId];
