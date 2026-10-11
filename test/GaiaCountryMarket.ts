@@ -1,7 +1,7 @@
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox-viem/network-helpers";
 import { expect } from "chai";
 import hre from "hardhat";
-import { encodeFunctionData, getAddress, parseEther } from "viem";
+import { encodeFunctionData, getAddress, parseEther, zeroAddress } from "viem";
 
 import {
   accountTransferSquare,
@@ -79,14 +79,15 @@ describe("GaiaCountryMarket", function () {
       expect(listing.version).to.equal(3n);
     });
 
-    it("accepts an operator approval for all countries", async function () {
+    it("rejects a listing with only an operator approval for all countries", async function () {
       const { market, marketAs, countriesAs, alice } = await loadFixture(deploy);
       await (await countriesAs(alice)).write.setApprovalForAll([
         market.address,
         true,
       ]);
-      await (await marketAs(alice)).write.list([1n, price]);
-      expect((await market.read.listingOf([1n])).price).to.equal(price);
+      await expect(
+        (await marketAs(alice)).write.list([1n, price])
+      ).to.be.rejectedWith("MarketNotApproved");
     });
 
     it("rejects a listing by a different address than the owner", async function () {
@@ -329,6 +330,52 @@ describe("GaiaCountryMarket", function () {
 
       expect(await token.read.balanceOf([account])).to.equal(100n);
       expect(await land.countries.read.squareCount([1n])).to.equal(3n);
+    });
+
+    it("does not make a listing valid again when the country comes back to the seller", async function () {
+      const { land, market, marketAs, countriesAs, alice, carol, bob, version } =
+        await loadFixture(withListing);
+      // Alice also has an operator approval for all countries. It must not keep the listing.
+      await (await countriesAs(alice)).write.setApprovalForAll([
+        market.address,
+        true,
+      ]);
+      await (await countriesAs(alice)).write.transferFrom([
+        alice.account.address,
+        carol.account.address,
+        1n,
+      ]);
+      await (await countriesAs(carol)).write.transferFrom([
+        carol.account.address,
+        alice.account.address,
+        1n,
+      ]);
+      expect(getAddress(await land.countries.read.ownerOf([1n]))).to.equal(
+        getAddress(alice.account.address)
+      );
+      expect(await land.countries.read.compositionVersion([1n])).to.equal(version);
+
+      await expect(
+        (await marketAs(bob)).write.buy([1n, version, 0n], { value: price })
+      ).to.be.rejectedWith("MarketNotApproved");
+
+      // A new approval and a new listing work.
+      await (await countriesAs(alice)).write.approve([market.address, 1n]);
+      await (await marketAs(alice)).write.list([1n, price]);
+      await (await marketAs(bob)).write.buy([1n, version, 0n], { value: price });
+      expect(getAddress(await land.countries.read.ownerOf([1n]))).to.equal(
+        getAddress(bob.account.address)
+      );
+    });
+
+    it("rejects the purchase after the seller revokes the approval", async function () {
+      const { marketAs, countriesAs, alice, bob, version } = await loadFixture(
+        withListing
+      );
+      await (await countriesAs(alice)).write.approve([zeroAddress, 1n]);
+      await expect(
+        (await marketAs(bob)).write.buy([1n, version, 0n], { value: price })
+      ).to.be.rejectedWith("MarketNotApproved");
     });
 
     it("rejects the purchase after the seller transfers the country", async function () {

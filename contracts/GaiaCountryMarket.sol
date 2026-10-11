@@ -11,12 +11,16 @@ import {IGaiaCountries} from "./interfaces/IGaiaCountries.sol";
  *         squares, ETH, tokens and NFTs. The buyer gives the composition version of the country
  *         and the state of its account that they saw. If either value changed, the purchase
  *         reverts. Assets that arrive in the account after that are not checked.
- * @dev Needs no role on other contracts. The seller approves this contract for the country.
- *      A listing records the composition version at the time of listing. When a square enters
- *      or leaves the country, the listing is not valid any more. The seller must list again.
- *      A listing stays stored when the seller transfers the country. It cannot be bought while
- *      the seller is not the owner. If the country comes back to the seller with the same
- *      squares, the listing is valid again. The seller can cancel it.
+ * @dev Needs no role on other contracts. The seller approves this contract for the country
+ *      with `approve(market, countryId)`. An operator approval for all countries
+ *      (`setApprovalForAll`) is not accepted.
+ *      A listing is valid only while:
+ *      - the seller owns the country,
+ *      - this contract has the approval for this country. ERC-721 clears that approval on each
+ *        transfer, so a listing cannot become valid again when the country comes back to the
+ *        seller. The seller must approve and list again.
+ *      - the composition version is the same as at the time of listing. When a square enters or
+ *        leaves the country, the seller must list again.
  */
 contract GaiaCountryMarket is ReentrancyGuard {
     struct Listing {
@@ -62,10 +66,7 @@ contract GaiaCountryMarket is ReentrancyGuard {
     function list(uint256 countryId, uint256 price) external {
         address owner = countries.ownerOf(countryId);
         if (msg.sender != owner) revert NotCountryOwner();
-        if (
-            countries.getApproved(countryId) != address(this) &&
-            !countries.isApprovedForAll(owner, address(this))
-        ) revert MarketNotApproved();
+        if (countries.getApproved(countryId) != address(this)) revert MarketNotApproved();
         uint256 version = countries.compositionVersion(countryId);
         _listings[countryId] = Listing(owner, price, version);
         emit Listed(countryId, owner, price, version);
@@ -90,6 +91,8 @@ contract GaiaCountryMarket is ReentrancyGuard {
         Listing memory listing = _listings[countryId];
         if (listing.seller == address(0)) revert NotListed();
         if (countries.ownerOf(countryId) != listing.seller) revert SellerNotOwner();
+        // Cleared by every transfer of the country, and by a revoke of the seller.
+        if (countries.getApproved(countryId) != address(this)) revert MarketNotApproved();
         if (msg.value != listing.price) revert WrongPrice();
         uint256 version = countries.compositionVersion(countryId);
         // The seller set the price for the squares at the time of listing.

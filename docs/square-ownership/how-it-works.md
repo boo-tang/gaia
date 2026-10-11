@@ -314,7 +314,7 @@ A standalone square has an NFT but `countryOf = 0`. Do not use `countryOf == 0` 
 
 ## Quick picture of a market sale
 
-1. Dana approves `GaiaCountryMarket` for Country 1 and lists it for 10 ETH. The listing records version `7`. If a square enters or leaves Country 1, the listing is not valid any more, and Dana must list again.
+1. Dana approves `GaiaCountryMarket` for Country 1 only (`approve(market, 1)`; an approval for all her countries is not accepted) and lists it for 10 ETH. The listing records version `7`. If a square enters or leaves Country 1, the listing is not valid any more, and Dana must list again. If Country 1 leaves Dana's wallet, ERC-721 clears the approval, so the listing is not valid any more, also when the country comes back to her.
 2. A buyer reads version `7` and account state `4`, and calls `buy(1, 7, 4)` with 10 ETH. (The state of an account that is not deployed is `0`.)
 3. The market checks that Dana still owns Country 1, `compositionVersion(1) == 7` and `accountOf(1).state() == 4`.
 4. It transfers Country NFT 1 to the buyer and pays Dana.
