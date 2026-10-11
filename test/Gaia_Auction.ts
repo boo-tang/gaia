@@ -1,16 +1,12 @@
-import {
-  loadFixture,
-  time,
-} from "@nomicfoundation/hardhat-toolbox-viem/network-helpers";
 import { expect } from "chai";
-import hre from "hardhat";
 import { encodeFunctionData, getAddress } from "viem";
 
+import { loadFixture, time, viem } from "./helpers/setup";
 import { deployAccount, deployLand, squareId } from "./helpers/land";
 
 describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
   async function deployAll() {
-    const [owner] = await hre.viem.getWalletClients();
+    const [owner] = await viem.getWalletClients();
 
     const { countries } = await deployLand(owner.account.address);
 
@@ -18,7 +14,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
     const start = BigInt(now - 10);
     const end = BigInt(now + 3600);
     const minBid = 1000n;
-    const auction = await hre.viem.deployContract(
+    const auction = await viem.deployContract(
       "contracts/GaiaAuction.sol:GaiaAuction",
       [
         countries.address,
@@ -204,7 +200,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
 
 describe("GaiaAuction: totals and refunds", function () {
   async function deployAll() {
-    const [owner, other] = await hre.viem.getWalletClients();
+    const [owner, other] = await viem.getWalletClients();
 
     const { countries } = await deployLand(owner.account.address);
 
@@ -212,7 +208,7 @@ describe("GaiaAuction: totals and refunds", function () {
     const start = BigInt(now - 10);
     const end = BigInt(now + 3600);
     const minBid = 1000n;
-    const auction = await hre.viem.deployContract(
+    const auction = await viem.deployContract(
       "contracts/GaiaAuction.sol:GaiaAuction",
       [
         countries.address,
@@ -265,7 +261,7 @@ describe("GaiaAuction: totals and refunds", function () {
     await auction.write.bidOnShape([shape], { value: minBid * 2n });
 
     // Second bidder (other) must pay next step per square (minBid + minBid)
-    const auctionAsOther = await hre.viem.getContractAt(
+    const auctionAsOther = await viem.getContractAt(
       "contracts/GaiaAuction.sol:GaiaAuction",
       auction.address,
       { client: { wallet: other } }
@@ -296,7 +292,7 @@ describe("GaiaAuction: totals and refunds", function () {
 
     await auction.write.bidOnShape([shape], { value: minBid * 2n });
 
-    const auctionAsOther = await hre.viem.getContractAt(
+    const auctionAsOther = await viem.getContractAt(
       "contracts/GaiaAuction.sol:GaiaAuction",
       auction.address,
       { client: { wallet: other } }
@@ -348,7 +344,7 @@ describe("GaiaAuction: totals and refunds", function () {
 
 describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
   async function deployBounded() {
-    const [owner] = await hre.viem.getWalletClients();
+    const [owner] = await viem.getWalletClients();
 
     const { countries } = await deployLand(owner.account.address);
 
@@ -357,7 +353,7 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
     const end = BigInt(now + 3600);
     const minBid = 1000n;
     // minShapeSquares=2, maxShapeSquares=6, maxShapeAspectRatio=3
-    const auction = await hre.viem.deployContract(
+    const auction = await viem.deployContract(
       "contracts/GaiaAuction.sol:GaiaAuction",
       [
         countries.address,
@@ -471,7 +467,7 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
 
 describe("GaiaAuction: anti-griefing overlap rules", function () {
   async function deployAntiGrief() {
-    const [owner, bidder1, bidder2] = await hre.viem.getWalletClients();
+    const [owner, bidder1, bidder2] = await viem.getWalletClients();
 
     const { countries } = await deployLand(owner.account.address);
 
@@ -480,7 +476,7 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
     const end = BigInt(now + 3600);
     const minBid = 1000n;
     // minShapeSquares=2 so single-square remainders are invalid
-    const auction = await hre.viem.deployContract(
+    const auction = await viem.deployContract(
       "contracts/GaiaAuction.sol:GaiaAuction",
       [
         countries.address,
@@ -500,12 +496,12 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
     ]);
     await countries.write.addAuction([auction.address]);
 
-    const auctionAs1 = await hre.viem.getContractAt(
+    const auctionAs1 = await viem.getContractAt(
       "contracts/GaiaAuction.sol:GaiaAuction",
       auction.address,
       { client: { wallet: bidder1 } }
     );
-    const auctionAs2 = await hre.viem.getContractAt(
+    const auctionAs2 = await viem.getContractAt(
       "contracts/GaiaAuction.sol:GaiaAuction",
       auction.address,
       { client: { wallet: bidder2 } }
@@ -646,7 +642,7 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
 
 describe("GaiaAuction: settleShape", function () {
   async function deploySettle() {
-    const [owner, bidder1, bidder2] = await hre.viem.getWalletClients();
+    const [owner, bidder1, bidder2] = await viem.getWalletClients();
 
     const land = await deployLand(owner.account.address);
     const { countries, squares } = land;
@@ -656,7 +652,7 @@ describe("GaiaAuction: settleShape", function () {
     const start = BigInt(now - 10);
     const end = BigInt(now + 3600);
     const minBid = 1000n;
-    const auction = await hre.viem.deployContract(
+    const auction = await viem.deployContract(
       "contracts/GaiaAuction.sol:GaiaAuction",
       [
         countries.address,
@@ -676,12 +672,12 @@ describe("GaiaAuction: settleShape", function () {
     ]);
     await countries.write.addAuction([auction.address]);
 
-    const auctionAs1 = await hre.viem.getContractAt(
+    const auctionAs1 = await viem.getContractAt(
       "contracts/GaiaAuction.sol:GaiaAuction",
       auction.address,
       { client: { wallet: bidder1 } }
     );
-    const auctionAs2 = await hre.viem.getContractAt(
+    const auctionAs2 = await viem.getContractAt(
       "contracts/GaiaAuction.sol:GaiaAuction",
       auction.address,
       { client: { wallet: bidder2 } }
@@ -829,7 +825,7 @@ describe("GaiaAuction: settleShape", function () {
       deploySettle
     );
 
-    const bidder = await hre.viem.deployContract("ContractBidder");
+    const bidder = await viem.deployContract("ContractBidder");
     const shape = [
       { lat: 35, lng: 10 },
       { lat: 35, lng: 11 },
@@ -863,7 +859,7 @@ describe("GaiaAuction: settleShape", function () {
       ],
     ]);
     const account = await deployAccount(land, 1n);
-    const accountAs1 = await hre.viem.getContractAt(
+    const accountAs1 = await viem.getContractAt(
       "GaiaCountryAccount",
       account,
       { client: { wallet: bidder1 } }
@@ -1118,7 +1114,7 @@ describe("GaiaAuction: settleShape", function () {
 
   it("settles a 100-square shape for less than 7.6M gas", async function () {
     const { auctionAs1, minBid, end } = await loadFixture(deploySettle);
-    const publicClient = await hre.viem.getPublicClient();
+    const publicClient = await viem.getPublicClient();
 
     const shape = [];
     for (let lat = 70; lat < 80; lat++) {
@@ -1138,16 +1134,16 @@ describe("GaiaAuction: settleShape", function () {
 
 describe("GaiaAuction: shapes that cross the antimeridian", function () {
   async function deployAntimeridian() {
-    const [owner, bidder1, bidder2] = await hre.viem.getWalletClients();
+    const [owner, bidder1, bidder2] = await viem.getWalletClients();
 
     const { countries, squares } = await deployLand(owner.account.address);
 
-    const publicClient = await hre.viem.getPublicClient();
+    const publicClient = await viem.getPublicClient();
     const now = (await publicClient.getBlock()).timestamp;
     const start = now - 10n;
     const end = now + 3600n;
     const minBid = 1000n;
-    const auction = await hre.viem.deployContract(
+    const auction = await viem.deployContract(
       "contracts/GaiaAuction.sol:GaiaAuction",
       [
         countries.address,
@@ -1167,12 +1163,12 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
     ]);
     await countries.write.addAuction([auction.address]);
 
-    const auctionAs1 = await hre.viem.getContractAt(
+    const auctionAs1 = await viem.getContractAt(
       "contracts/GaiaAuction.sol:GaiaAuction",
       auction.address,
       { client: { wallet: bidder1 } }
     );
-    const auctionAs2 = await hre.viem.getContractAt(
+    const auctionAs2 = await viem.getContractAt(
       "contracts/GaiaAuction.sol:GaiaAuction",
       auction.address,
       { client: { wallet: bidder2 } }
@@ -1355,8 +1351,8 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
 describe("GaiaAuction: treasury proceeds", function () {
   async function deployProceeds() {
     const [owner, bidder1, bidder2, treasury] =
-      await hre.viem.getWalletClients();
-    const publicClient = await hre.viem.getPublicClient();
+      await viem.getWalletClients();
+    const publicClient = await viem.getPublicClient();
 
     const { countries } = await deployLand(owner.account.address);
 
@@ -1364,7 +1360,7 @@ describe("GaiaAuction: treasury proceeds", function () {
     const start = now - 10n;
     const end = now + 3600n;
     const minBid = 1000n;
-    const auction = await hre.viem.deployContract(
+    const auction = await viem.deployContract(
       "contracts/GaiaAuction.sol:GaiaAuction",
       [
         countries.address,
@@ -1378,12 +1374,12 @@ describe("GaiaAuction: treasury proceeds", function () {
       ]
     );
 
-    const auctionAs1 = await hre.viem.getContractAt(
+    const auctionAs1 = await viem.getContractAt(
       "contracts/GaiaAuction.sol:GaiaAuction",
       auction.address,
       { client: { wallet: bidder1 } }
     );
-    const auctionAs2 = await hre.viem.getContractAt(
+    const auctionAs2 = await viem.getContractAt(
       "contracts/GaiaAuction.sol:GaiaAuction",
       auction.address,
       { client: { wallet: bidder2 } }

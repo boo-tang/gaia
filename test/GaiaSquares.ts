@@ -1,8 +1,7 @@
-import { loadFixture } from "@nomicfoundation/hardhat-toolbox-viem/network-helpers";
 import { expect } from "chai";
-import hre from "hardhat";
 import { encodeFunctionData, getAddress, parseEther, zeroAddress } from "viem";
 
+import { loadFixture, viem } from "./helpers/setup";
 import {
   accountTransferSquare,
   deployAccount,
@@ -18,21 +17,21 @@ const row = (lat: number, from: number, to: number) => {
 
 describe("GaiaSquares", function () {
   async function deploy() {
-    const [admin, issuer, alice, bob, carol] = await hre.viem.getWalletClients();
+    const [admin, issuer, alice, bob, carol] = await viem.getWalletClients();
     const land = await deployLand(admin.account.address);
     await land.countries.write.grantRole([
       await land.countries.read.ISSUER_ROLE(),
       issuer.account.address,
     ]);
-    const asIssuer = await hre.viem.getContractAt(
+    const asIssuer = await viem.getContractAt(
       "GaiaCountries",
       land.countries.address,
       { client: { wallet: issuer } }
     );
     const squaresAs = async (
-      wallet: Awaited<ReturnType<typeof hre.viem.getWalletClients>>[number]
+      wallet: Awaited<ReturnType<typeof viem.getWalletClients>>[number]
     ) =>
-      hre.viem.getContractAt("GaiaSquares", land.squares.address, {
+      viem.getContractAt("GaiaSquares", land.squares.address, {
         client: { wallet },
       });
     return { land, admin, issuer, alice, bob, carol, asIssuer, squaresAs };
@@ -41,7 +40,7 @@ describe("GaiaSquares", function () {
   describe("minting", function () {
     it("mints squares into the country's counterfactual account", async function () {
       const { land, alice, asIssuer } = await loadFixture(deploy);
-      const publicClient = await hre.viem.getPublicClient();
+      const publicClient = await viem.getPublicClient();
       const shape = row(10, 10, 13);
       await asIssuer.write.createCountry([alice.account.address, shape]);
 
@@ -274,7 +273,7 @@ describe("GaiaSquares", function () {
     it("blocks operator approvals on squares in a country, also after a country sale", async function () {
       const { land, alice, bob, carol, account, squaresAs } =
         await loadFixture(withBlock);
-      const asAccountOwner = await hre.viem.getContractAt(
+      const asAccountOwner = await viem.getContractAt(
         "GaiaCountryAccount",
         account,
         { client: { wallet: alice } }
@@ -297,7 +296,7 @@ describe("GaiaSquares", function () {
         asBob.write.transferFrom([account, bob.account.address, squareId(10, 11)])
       ).to.be.rejectedWith("ERC721InsufficientApproval");
 
-      const countriesAsAlice = await hre.viem.getContractAt(
+      const countriesAsAlice = await viem.getContractAt(
         "GaiaCountries",
         land.countries.address,
         { client: { wallet: alice } }
@@ -408,7 +407,7 @@ describe("GaiaSquares", function () {
         10,
         10
       );
-      const asOwner = await hre.viem.getContractAt(
+      const asOwner = await viem.getContractAt(
         "GaiaCountryAccount",
         account,
         { client: { wallet: alice } }
@@ -416,7 +415,7 @@ describe("GaiaSquares", function () {
       await expect(
         asOwner.write.execute([alice.account.address, parseEther("1"), "0x", 0])
       ).to.be.rejectedWith("ERC721NonexistentToken");
-      const publicClient = await hre.viem.getPublicClient();
+      const publicClient = await viem.getPublicClient();
       expect(await publicClient.getBalance({ address: account })).to.equal(
         parseEther("1")
       );

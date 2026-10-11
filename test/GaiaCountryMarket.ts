@@ -1,8 +1,7 @@
-import { loadFixture } from "@nomicfoundation/hardhat-toolbox-viem/network-helpers";
 import { expect } from "chai";
-import hre from "hardhat";
 import { encodeFunctionData, getAddress, parseEther, zeroAddress } from "viem";
 
+import { loadFixture, viem } from "./helpers/setup";
 import {
   accountTransferSquare,
   deployAccount,
@@ -19,33 +18,33 @@ const row = (lat: number, from: number, to: number) => {
 describe("GaiaCountryMarket", function () {
   // Alice owns country 1 (row 10, columns 10-12) and lists it for 2 ETH.
   async function deploy() {
-    const [admin, issuer, alice, bob, carol] = await hre.viem.getWalletClients();
-    const publicClient = await hre.viem.getPublicClient();
+    const [admin, issuer, alice, bob, carol] = await viem.getWalletClients();
+    const publicClient = await viem.getPublicClient();
     const land = await deployLand(admin.account.address);
     await land.countries.write.grantRole([
       await land.countries.read.ISSUER_ROLE(),
       issuer.account.address,
     ]);
-    const asIssuer = await hre.viem.getContractAt(
+    const asIssuer = await viem.getContractAt(
       "GaiaCountries",
       land.countries.address,
       { client: { wallet: issuer } }
     );
     await asIssuer.write.createCountry([alice.account.address, row(10, 10, 12)]);
 
-    const market = await hre.viem.deployContract("GaiaCountryMarket", [
+    const market = await viem.deployContract("GaiaCountryMarket", [
       land.countries.address,
     ]);
     const marketAs = (
-      wallet: Awaited<ReturnType<typeof hre.viem.getWalletClients>>[number]
+      wallet: Awaited<ReturnType<typeof viem.getWalletClients>>[number]
     ) =>
-      hre.viem.getContractAt("GaiaCountryMarket", market.address, {
+      viem.getContractAt("GaiaCountryMarket", market.address, {
         client: { wallet },
       });
     const countriesAs = (
-      wallet: Awaited<ReturnType<typeof hre.viem.getWalletClients>>[number]
+      wallet: Awaited<ReturnType<typeof viem.getWalletClients>>[number]
     ) =>
-      hre.viem.getContractAt("GaiaCountries", land.countries.address, {
+      viem.getContractAt("GaiaCountries", land.countries.address, {
         client: { wallet },
       });
     return {
@@ -219,7 +218,7 @@ describe("GaiaCountryMarket", function () {
       const version = await land.countries.read.compositionVersion([1n]);
       const state = 1n;
 
-      const squaresAsAlice = await hre.viem.getContractAt(
+      const squaresAsAlice = await viem.getContractAt(
         "GaiaSquares",
         land.squares.address,
         { client: { wallet: alice } }
@@ -244,7 +243,7 @@ describe("GaiaCountryMarket", function () {
       await alice.sendTransaction({ to: account, value: parseEther("1") });
       const state = await market.read.accountState([1n]);
 
-      const asOwner = await hre.viem.getContractAt(
+      const asOwner = await viem.getContractAt(
         "GaiaCountryAccount",
         account,
         { client: { wallet: alice } }
@@ -264,9 +263,9 @@ describe("GaiaCountryMarket", function () {
       const { land, market, marketAs, alice, bob, carol, version } =
         await loadFixture(withListing);
       const account = await deployAccount(land, 1n);
-      const token = await hre.viem.deployContract("MockERC20");
+      const token = await viem.deployContract("MockERC20");
       await token.write.mint([account, 100n]);
-      const asOwner = await hre.viem.getContractAt(
+      const asOwner = await viem.getContractAt(
         "GaiaCountryAccount",
         account,
         { client: { wallet: alice } }
@@ -309,13 +308,13 @@ describe("GaiaCountryMarket", function () {
       expect(
         await land.squares.read.isApprovedForAll([account, carol.account.address])
       ).to.equal(false);
-      const tokenAsCarol = await hre.viem.getContractAt("MockERC20", token.address, {
+      const tokenAsCarol = await viem.getContractAt("MockERC20", token.address, {
         client: { wallet: carol },
       });
       await expect(
         tokenAsCarol.write.transferFrom([account, carol.account.address, 100n])
       ).to.be.rejectedWith("ERC20InsufficientAllowance");
-      const squaresAsCarol = await hre.viem.getContractAt(
+      const squaresAsCarol = await viem.getContractAt(
         "GaiaSquares",
         land.squares.address,
         { client: { wallet: carol } }

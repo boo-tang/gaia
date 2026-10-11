@@ -1,38 +1,51 @@
-import { HardhatUserConfig, task } from "hardhat/config";
-import "@nomicfoundation/hardhat-toolbox-viem";
-import * as fs from "fs-extra";
-import * as path from "path";
+import { defineConfig, overrideTask } from "hardhat/config";
+import hardhatIgnitionViem from "@nomicfoundation/hardhat-ignition-viem";
+import hardhatMocha from "@nomicfoundation/hardhat-mocha";
+import hardhatNetworkHelpers from "@nomicfoundation/hardhat-network-helpers";
+import hardhatVerify from "@nomicfoundation/hardhat-verify";
+import hardhatViem from "@nomicfoundation/hardhat-viem";
+import fs from "fs-extra";
+import path from "node:path";
 
-// Extend the existing 'compile' task
-task("compile", async (taskArgs, hre, runSuper) => {
-  const result = await runSuper(taskArgs); // Run the original compile task first
-  const artifactsDir = path.join(__dirname, "artifacts");
-  const frontendDir = path.join(__dirname, "frontend");
+// Copies the artifacts to the frontend after every build (`compile` is an alias of `build`).
+const copyArtifactsToFrontend = overrideTask("build")
+  .setInlineAction(async (taskArgs, hre, runSuper) => {
+    const result = await runSuper(taskArgs);
+    const frontendArtifacts = path.join(hre.config.paths.root, "frontend", "artifacts");
+    fs.removeSync(frontendArtifacts);
+    fs.copySync(hre.config.paths.artifacts, frontendArtifacts);
+    console.log("Artifacts copied to frontend directory");
+    return result;
+  })
+  .build();
 
-  // Ensure the frontend directory exists
-  if (!fs.existsSync(frontendDir)) {
-    fs.mkdirSync(frontendDir, { recursive: true });
-  }
-
-  // Copy artifacts to the frontend directory
-  fs.copySync(artifactsDir, path.join(frontendDir, "artifacts"));
-  console.log("Artifacts copied to frontend directory");
-
-  return result;
-});
-
-const config: HardhatUserConfig = {
+export default defineConfig({
+  plugins: [
+    hardhatViem,
+    hardhatMocha,
+    hardhatNetworkHelpers,
+    hardhatIgnitionViem,
+    hardhatVerify,
+  ],
+  tasks: [copyArtifactsToFrontend],
   solidity: {
     version: "0.8.24",
+    // Compiles the reference ERC-6551 registry so tests can deploy it.
+    npmFilesToBuild: ["erc6551/ERC6551Registry.sol"],
     settings: {
       optimizer: { enabled: true, runs: 200 },
     },
   },
+  // 1337 is the chain ID of wagmi's `localhost` chain, which the frontend uses. `default` runs
+  // tests and scripts in-process; `node` is the chain `hardhat node` serves.
   networks: {
-    hardhat: {
+    default: {
+      type: "edr-simulated",
+      chainId: 1337,
+    },
+    node: {
+      type: "edr-simulated",
       chainId: 1337,
     },
   },
-};
-
-export default config;
+});

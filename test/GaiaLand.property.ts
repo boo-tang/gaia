@@ -1,7 +1,6 @@
-import { loadFixture } from "@nomicfoundation/hardhat-toolbox-viem/network-helpers";
-import hre from "hardhat";
 import { encodeFunctionData, getAddress } from "viem";
 
+import { loadFixture, viem, provider } from "./helpers/setup";
 import {
   accountTransferSquare,
   deployAccount,
@@ -46,7 +45,7 @@ const MAX_LAT = 18000;
 const MAX_LNG = 36000;
 
 type Address = `0x${string}`;
-type Wallet = Awaited<ReturnType<typeof hre.viem.getWalletClients>>[number];
+type Wallet = Awaited<ReturnType<typeof viem.getWalletClients>>[number];
 
 const PLACES = [
   { name: "ordinary", lat0: 9000, lng0: 18000 },
@@ -395,13 +394,13 @@ class LandModel {
 // -------- Test --------
 
 async function deploy() {
-  const [admin, issuer, alice, bob, carol] = await hre.viem.getWalletClients();
+  const [admin, issuer, alice, bob, carol] = await viem.getWalletClients();
   const land = await deployLand(admin.account.address);
   await land.countries.write.grantRole([
     await land.countries.read.ISSUER_ROLE(),
     issuer.account.address,
   ]);
-  const asIssuer = await hre.viem.getContractAt(
+  const asIssuer = await viem.getContractAt(
     "GaiaCountries",
     land.countries.address,
     { client: { wallet: issuer } },
@@ -413,12 +412,12 @@ async function deploy() {
     Awaited<ReturnType<typeof countriesFor>>
   >();
   async function squaresFor(wallet: Wallet) {
-    return hre.viem.getContractAt("GaiaSquares", land.squares.address, {
+    return viem.getContractAt("GaiaSquares", land.squares.address, {
       client: { wallet },
     });
   }
   async function countriesFor(wallet: Wallet) {
-    return hre.viem.getContractAt("GaiaCountries", land.countries.address, {
+    return viem.getContractAt("GaiaCountries", land.countries.address, {
       client: { wallet },
     });
   }
@@ -623,7 +622,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     // A raw eth_call: viem retries a read that reverts, and that is slow.
     let reverted = false;
     try {
-      await hre.network.provider.request({
+      await provider.request({
         method: "eth_call",
         params: [
           {
@@ -645,7 +644,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     const account = accountOf(id);
     const formerOwner = model.countries.get(id)!.lastOwner;
     await ensureDeployed(account);
-    const asOwner = await hre.viem.getContractAt(
+    const asOwner = await viem.getContractAt(
       "GaiaCountryAccount",
       account,
       {
@@ -916,7 +915,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         // Authority follows the new owner.
         const account = accountOf(id);
         await ensureDeployed(account);
-        const asOld = await hre.viem.getContractAt(
+        const asOld = await viem.getContractAt(
           "GaiaCountryAccount",
           account,
           {

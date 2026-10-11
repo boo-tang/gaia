@@ -1,4 +1,4 @@
-import hre from "hardhat";
+import { viem } from "./setup";
 import { encodeFunctionData, zeroHash } from "viem";
 
 export const squareId = (lat: number, lng: number) =>
@@ -7,14 +7,14 @@ export const squareId = (lat: number, lng: number) =>
 /// Deploys the ERC-6551 registry, the country account implementation, GaiaCountries and
 /// GaiaSquares, and links them. `admin` must be the default wallet.
 export async function deployLand(admin: `0x${string}`) {
-  const registry = await hre.viem.deployContract("ERC6551Registry");
-  const accountImpl = await hre.viem.deployContract("GaiaCountryAccount");
-  const countries = await hre.viem.deployContract("GaiaCountries", [
+  const registry = await viem.deployContract("ERC6551Registry");
+  const accountImpl = await viem.deployContract("GaiaCountryAccount");
+  const countries = await viem.deployContract("GaiaCountries", [
     admin,
     registry.address,
     accountImpl.address,
   ]);
-  const squares = await hre.viem.deployContract("GaiaSquares", [
+  const squares = await viem.deployContract("GaiaSquares", [
     countries.address,
   ]);
   await countries.write.setSquares([squares.address]);
@@ -25,7 +25,7 @@ type Land = Awaited<ReturnType<typeof deployLand>>;
 
 /// Deploys the account of a country through the registry and returns its address.
 export async function deployAccount(land: Land, countryId: bigint) {
-  const publicClient = await hre.viem.getPublicClient();
+  const publicClient = await viem.getPublicClient();
   const chainId = BigInt(await publicClient.getChainId());
   await land.registry.write.createAccount([
     land.accountImpl.address,
@@ -40,13 +40,13 @@ export async function deployAccount(land: Land, countryId: bigint) {
 /// Makes a country account (controlled by `wallet`) call transferFrom on GaiaSquares.
 export async function accountTransferSquare(
   land: Land,
-  wallet: Awaited<ReturnType<typeof hre.viem.getWalletClients>>[number],
+  wallet: Awaited<ReturnType<typeof viem.getWalletClients>>[number],
   account: `0x${string}`,
   to: `0x${string}`,
   lat: number,
   lng: number
 ) {
-  const asOwner = await hre.viem.getContractAt("GaiaCountryAccount", account, {
+  const asOwner = await viem.getContractAt("GaiaCountryAccount", account, {
     client: { wallet },
   });
   const data = encodeFunctionData({

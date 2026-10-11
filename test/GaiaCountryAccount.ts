@@ -1,6 +1,4 @@
-import { loadFixture } from "@nomicfoundation/hardhat-toolbox-viem/network-helpers";
 import { expect } from "chai";
-import hre from "hardhat";
 import {
   encodeFunctionData,
   getAddress,
@@ -11,6 +9,7 @@ import {
   zeroAddress,
 } from "viem";
 
+import { loadFixture, viem } from "./helpers/setup";
 import {
   accountTransferSquare,
   deployAccount,
@@ -40,14 +39,14 @@ describe("GaiaCountryAccount", function () {
   // Alice owns country 1 (row 10, columns 10-12). Its account is deployed and holds 1 ETH and
   // 100 tokens.
   async function deploy() {
-    const [admin, issuer, alice, bob] = await hre.viem.getWalletClients();
-    const publicClient = await hre.viem.getPublicClient();
+    const [admin, issuer, alice, bob] = await viem.getWalletClients();
+    const publicClient = await viem.getPublicClient();
     const land = await deployLand(admin.account.address);
     await land.countries.write.grantRole([
       await land.countries.read.ISSUER_ROLE(),
       issuer.account.address,
     ]);
-    const asIssuer = await hre.viem.getContractAt(
+    const asIssuer = await viem.getContractAt(
       "GaiaCountries",
       land.countries.address,
       { client: { wallet: issuer } }
@@ -55,10 +54,10 @@ describe("GaiaCountryAccount", function () {
     await asIssuer.write.createCountry([alice.account.address, row(10, 10, 12)]);
 
     const account = await deployAccount(land, 1n);
-    const asAlice = await hre.viem.getContractAt("GaiaCountryAccount", account, {
+    const asAlice = await viem.getContractAt("GaiaCountryAccount", account, {
       client: { wallet: alice },
     });
-    const token = await hre.viem.deployContract("MockERC20");
+    const token = await viem.deployContract("MockERC20");
     await token.write.mint([account, 100n]);
     await alice.sendTransaction({ to: account, value: parseEther("1") });
     return { land, account, asAlice, token, alice, bob, publicClient };

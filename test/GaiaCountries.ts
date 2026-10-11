@@ -1,26 +1,25 @@
-import { loadFixture } from "@nomicfoundation/hardhat-toolbox-viem/network-helpers";
 import { expect } from "chai";
-import hre from "hardhat";
 import { encodeFunctionData, getAddress, zeroAddress } from "viem";
 
+import { loadFixture, viem } from "./helpers/setup";
 import { deployAccount, deployLand } from "./helpers/land";
 
 describe("GaiaCountries", function () {
   async function deployCountries() {
-    const [admin, issuer, alice, bob] = await hre.viem.getWalletClients();
-    const publicClient = await hre.viem.getPublicClient();
+    const [admin, issuer, alice, bob] = await viem.getWalletClients();
+    const publicClient = await viem.getPublicClient();
 
     const land = await deployLand(admin.account.address);
     const { countries } = land;
     const issuerRole = await countries.read.ISSUER_ROLE();
     await countries.write.grantRole([issuerRole, issuer.account.address]);
 
-    const asIssuer = await hre.viem.getContractAt(
+    const asIssuer = await viem.getContractAt(
       "GaiaCountries",
       countries.address,
       { client: { wallet: issuer } }
     );
-    const asAlice = await hre.viem.getContractAt(
+    const asAlice = await viem.getContractAt(
       "GaiaCountries",
       countries.address,
       { client: { wallet: alice } }
@@ -117,7 +116,7 @@ describe("GaiaCountries", function () {
 
     it("rejects a square contract that belongs to another countries contract", async function () {
       const { admin, land } = await loadFixture(deployCountries);
-      const other = await hre.viem.deployContract("GaiaCountries", [
+      const other = await viem.deployContract("GaiaCountries", [
         admin.account.address,
         land.registry.address,
         land.accountImpl.address,
@@ -129,7 +128,7 @@ describe("GaiaCountries", function () {
 
     it("cannot create countries before the square contract is linked", async function () {
       const { admin, land, alice } = await loadFixture(deployCountries);
-      const other = await hre.viem.deployContract("GaiaCountries", [
+      const other = await viem.deployContract("GaiaCountries", [
         admin.account.address,
         land.registry.address,
         land.accountImpl.address,
@@ -268,7 +267,7 @@ describe("GaiaCountries", function () {
         await loadFixture(deployCountries);
 
       const now = BigInt((await publicClient.getBlock()).timestamp);
-      const auction = await hre.viem.deployContract("GaiaAuction", [
+      const auction = await viem.deployContract("GaiaAuction", [
         countries.address,
         admin.account.address,
         now - 10n,
@@ -278,7 +277,7 @@ describe("GaiaCountries", function () {
         1000n,
         10n,
       ]);
-      const auctionAsAlice = await hre.viem.getContractAt(
+      const auctionAsAlice = await viem.getContractAt(
         "GaiaAuction",
         auction.address,
         { client: { wallet: alice } }
@@ -400,7 +399,7 @@ describe("GaiaCountries", function () {
       const { countries, asAlice, alice } = await loadFixture(
         withTwoCountries
       );
-      const plain = await hre.viem.deployContract("ContractBidder");
+      const plain = await viem.deployContract("ContractBidder");
       await asAlice.write.transferFrom([
         alice.account.address,
         plain.address,
@@ -431,7 +430,7 @@ describe("GaiaCountries", function () {
       );
 
       await deployAccount(land, 3n);
-      const asBobAccount = await hre.viem.getContractAt(
+      const asBobAccount = await viem.getContractAt(
         "GaiaCountryAccount",
         futureAccount,
         { client: { wallet: bob } }
