@@ -238,7 +238,7 @@ describe("utils/shape (mirrors GaiaAuction.sol shape validation)", function () {
   });
 });
 
-describe("utils/shape bid totals (mirrors GaiaAuction.sol._nextBid, _bidAmount and _squareCost)", function () {
+describe("utils/shape bid totals (mirrors GaiaAuction.sol._nextBid, _bidAmount and _takeSquares)", function () {
   const minBid = 1000n;
   const rules = { minBidPerSquareWei: minBid, minBidIncrementBps: 500n };
 

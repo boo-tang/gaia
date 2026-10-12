@@ -158,6 +158,19 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         bool latHasAdjacent;
     }
 
+    // Result of writing the squares of a bid (see _takeSquares).
+    struct Taken {
+        // New amount of each square, in bid order.
+        uint256[] amounts;
+        // ETH that the bid spends: the full amount of each new square plus the increase of each
+        // raised own square.
+        uint256 paid;
+        // Sum of the increases of all amounts.
+        uint256 proceedsIncrease;
+        // IDs of the shapes that owned squares of the bid before it, each once.
+        uint256[] affected;
+    }
+
     // --- Events ---
     /// One event per bid. `squares` are the squares of the new shape in bid order, each packed as
     /// `(uint32(lat) << 16) | lng`. `amounts` are their amounts after the bid (also for own
@@ -291,17 +304,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         if (countries.countryOfAccount(msg.sender) != 0) {
             revert CountryAccountCannotBid();
         }
-        uint256 requiredTotal = _validateAndComputeTotal(
-            squares,
-            floorPerSquare,
-            raiseOwnSquares
-        );
-        if (msg.value < requiredTotal) {
-            revert InsufficientValue(msg.value, requiredTotal);
-        }
-
-        // Revert if any affected active shape would be left in an invalid state.
-        _validateOverlaps(squares);
+        _validateShape(squares);
 
         uint256 newShapeId = _nextShapeId;
         unchecked {
@@ -309,26 +312,33 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         }
         shapeBidder[newShapeId] = msg.sender;
 
-        if (msg.value != requiredTotal) {
-            pendingReturns[msg.sender] += msg.value - requiredTotal;
-        }
-
-        (uint256[] memory amounts, uint256 proceedsIncrease) = _takeSquares(
+        // Writes the squares first. A revert below undoes the writes.
+        Taken memory t = _takeSquares(
             squares,
             newShapeId,
             floorPerSquare,
             raiseOwnSquares
         );
+        if (msg.value < t.paid) {
+            revert InsufficientValue(msg.value, t.paid);
+        }
+
+        // Revert if any affected active shape would be left in an invalid state.
+        _validateOverlaps(t.affected, squares);
+
+        if (msg.value != t.paid) {
+            pendingReturns[msg.sender] += msg.value - t.paid;
+        }
         _shapeSquares[newShapeId] = squares;
-        proceeds += proceedsIncrease;
-        // requiredTotal is the full amount of each new square plus the increase of each raised
-        // own square, so the sum of `activeBids` stays equal to `proceeds`.
-        activeBids[msg.sender] += requiredTotal;
-        emit ShapeBid(newShapeId, msg.sender, squares, amounts, requiredTotal);
+        proceeds += t.proceedsIncrease;
+        // `paid` is the full amount of each new square plus the increase of each raised own
+        // square, so the sum of `activeBids` stays equal to `proceeds`.
+        activeBids[msg.sender] += t.paid;
+        emit ShapeBid(newShapeId, msg.sender, squares, t.amounts, t.paid);
 
         // Soft close: only a bid that raises the amount of a square extends the auction. Thus a
         // free re-bid on own squares cannot move `endTime`.
-        if (proceedsIncrease != 0) {
+        if (t.proceedsIncrease != 0) {
             _extendIfClosing();
         }
     }
@@ -549,13 +559,9 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         }
     }
 
-    /// Validates shape via calldata and computes the total bid required.
-    /// Reverts on any shape-validity failure.
-    function _validateAndComputeTotal(
-        uint32[] calldata squares,
-        uint256 floorPerSquare,
-        bool raiseOwnSquares
-    ) internal view returns (uint256 requiredTotal) {
+    /// The shape validator, for a new bid and for the remainder of each affected shape. Reverts
+    /// on any shape-validity failure. `squares` are packed `(uint32(lat) << 16) | lng`.
+    function _validateShape(uint32[] memory squares) internal view {
         uint256 len = squares.length;
         if (len == 0) revert EmptyShape();
         if (len < minShapeSquares) revert ShapeTooSmall(len, minShapeSquares);
@@ -577,20 +583,11 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         s.isFirstLat = true;
         s.latHasAdjacent = true;
 
-        requiredTotal = _squareCost(
-            squares[0],
-            floorPerSquare,
-            raiseOwnSquares
-        );
-
         for (uint256 i = 1; i < len; ) {
             uint32 square = squares[i];
             uint16 lat = uint16(square >> 16);
             uint16 lng = uint16(square);
             if (lng >= LOC_MAX_LNG) revert InvalidCoordinates();
-
-            requiredTotal += _squareCost(square, floorPerSquare, raiseOwnSquares);
-
             lng = _normLng(lng, refLng);
 
             if (lat == s.currentLat) {
@@ -689,140 +686,22 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         );
     }
 
-    /// Same shape validity checks as _validateAndComputeTotal but operates on a memory array
-    /// and does not compute a bid total. Used for simulating affected shape remainders.
-    function _validateShapeMem(
-        Loc[] memory locs
-    ) internal view {
-        uint256 len = locs.length;
-        if (len == 0) revert EmptyShape();
-        if (len < minShapeSquares) revert ShapeTooSmall(len, minShapeSquares);
-        if (len > maxShapeSquares) revert ShapeTooLarge(len, maxShapeSquares);
-
-        uint16 refLng = locs[0].lng;
-
-        ShapeState memory s;
-        s.currentLat = locs[0].lat;
-        s.prevLngInLat = LNG_ORIGIN;
-        s.longitudeRangeStart = LNG_ORIGIN;
-        s.longitudeRangeEnd = LNG_ORIGIN;
-        s.globalMinLng = LNG_ORIGIN;
-        s.globalMaxLng = LNG_ORIGIN;
-        s.prevLongitudeRangeStart = LNG_ORIGIN;
-        s.prevLongitudeRangeEnd = LNG_ORIGIN;
-        s.isFirstLat = true;
-        s.latHasAdjacent = true;
-
-        for (uint256 i = 1; i < len; ) {
-            uint16 lat = locs[i].lat;
-            uint16 lng = _normLng(locs[i].lng, refLng);
-
-            if (lat == s.currentLat) {
-                if (lng != s.prevLngInLat + 1) revert GapBetweenLongitudes();
-                s.prevLngInLat = lng;
-                s.longitudeRangeEnd = lng;
-                if (lng > s.globalMaxLng) s.globalMaxLng = lng;
-
-                if (!s.isFirstLat && !s.latHasAdjacent) {
-                    if (
-                        lng >= s.prevLongitudeRangeStart &&
-                        lng <= s.prevLongitudeRangeEnd
-                    ) {
-                        s.latHasAdjacent = true;
-                    }
-                }
-            } else {
-                if (lat < s.currentLat) revert Unsorted();
-                if (lat != s.currentLat + 1) revert NonConsecutiveLatitudes();
-
-                if (!s.isFirstLat) {
-                    if (!s.latHasAdjacent) revert NoLatAdjacency();
-                    if (
-                        s.longitudeRangeEnd < s.prevLongitudeRangeEnd &&
-                        !s.rightDirectionFlipped
-                    ) {
-                        s.rightDirectionFlipped = true;
-                    } else if (
-                        s.rightDirectionFlipped &&
-                        s.longitudeRangeEnd > s.prevLongitudeRangeEnd
-                    ) {
-                        revert NotConvexEnd();
-                    }
-                }
-
-                s.prevLongitudeRangeStart = s.longitudeRangeStart;
-                s.prevLongitudeRangeEnd = s.longitudeRangeEnd;
-                s.currentLat = lat;
-                s.prevLngInLat = lng;
-                s.longitudeRangeStart = lng;
-                s.longitudeRangeEnd = lng;
-
-                if (lng < s.globalMinLng) s.globalMinLng = lng;
-                if (lng > s.globalMaxLng) s.globalMaxLng = lng;
-
-                if (
-                    lng > s.prevLongitudeRangeStart &&
-                    !s.leftDirectionFlipped
-                ) {
-                    s.leftDirectionFlipped = true;
-                } else if (
-                    s.leftDirectionFlipped &&
-                    lng < s.prevLongitudeRangeStart
-                ) {
-                    revert NotConvexStart();
-                }
-
-                s.isFirstLat = false;
-                s.latHasAdjacent = false;
-                if (
-                    lng >= s.prevLongitudeRangeStart &&
-                    lng <= s.prevLongitudeRangeEnd
-                ) {
-                    s.latHasAdjacent = true;
-                }
-            }
-
-            unchecked {
-                i++;
-            }
-        }
-
-        if (!s.isFirstLat) {
-            if (!s.latHasAdjacent) revert NoLatAdjacency();
-            if (
-                s.longitudeRangeEnd < s.prevLongitudeRangeEnd &&
-                !s.rightDirectionFlipped
-            ) {
-                s.rightDirectionFlipped = true;
-            } else if (
-                s.rightDirectionFlipped &&
-                s.longitudeRangeEnd > s.prevLongitudeRangeEnd
-            ) {
-                revert NotConvexEnd();
-            }
-        }
-
-        _checkAspectRatio(
-            locs[0].lat,
-            locs[len - 1].lat,
-            s.globalMinLng,
-            s.globalMaxLng
-        );
-    }
-
-    /// Moves the squares to `newShapeId`. Returns the new amount of each square and the sum of the
-    /// increases. A square of a different bidder: the previous bidder gets a refund. Own square: no
-    /// refund, and the amount goes up only if `raiseOwnSquares` is true. The refunds go to
+    /// Moves the squares to `newShapeId`. A square of a different bidder: the previous bidder gets
+    /// a refund, and the bid pays the full new amount. Own square: no refund, and the amount goes
+    /// up only if `raiseOwnSquares` is true; the bid pays only the increase. The refunds go to
     /// `pendingReturns` and out of `activeBids` once for each run of consecutive squares with the
-    /// same previous bidder, not once for each square.
+    /// same previous bidder, not once for each square. Also collects the IDs of the shapes that
+    /// owned the squares before.
     function _takeSquares(
         uint32[] calldata squares,
         uint256 newShapeId,
         uint256 floorPerSquare,
         bool raiseOwnSquares
-    ) internal returns (uint256[] memory amounts, uint256 proceedsIncrease) {
+    ) internal returns (Taken memory t) {
         uint256 len = squares.length;
-        amounts = new uint256[](len);
+        t.amounts = new uint256[](len);
+        t.affected = new uint256[](len);
+        uint256 affectedCount = 0;
         address refundTo;
         uint256 refund;
         for (uint256 i = 0; i < len; ) {
@@ -839,13 +718,23 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
                 }
                 refund += current.amount;
                 amount = _bidAmount(current.amount, floorPerSquare);
+                t.paid += amount;
             } else if (raiseOwnSquares) {
                 amount = _bidAmount(current.amount, floorPerSquare);
+                t.paid += amount - current.amount;
             }
-            proceedsIncrease += amount - current.amount;
-            amounts[i] = amount;
+            t.proceedsIncrease += amount - current.amount;
+            t.amounts[i] = amount;
+            if (current.shapeId != 0) {
+                affectedCount = _addAffected(
+                    t.affected,
+                    affectedCount,
+                    current.shapeId
+                );
+            }
 
-            // `msg.value` covers the sum of the amounts, so each amount fits in 128 bits.
+            // `msg.value` covers the sum of the amounts, so each amount fits in 128 bits. If it
+            // does not, the bid reverts with InsufficientValue.
             _squares[square] = Square({
                 amount: uint128(amount),
                 shapeId: uint128(newShapeId)
@@ -856,6 +745,30 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             }
         }
         _refund(refundTo, refund);
+
+        uint256[] memory affected = t.affected;
+        assembly {
+            mstore(affected, affectedCount)
+        }
+    }
+
+    /// Adds `shapeId` to the first `count` entries of `affected` if it is not there yet. Returns
+    /// the new count.
+    function _addAffected(
+        uint256[] memory affected,
+        uint256 count,
+        uint256 shapeId
+    ) internal pure returns (uint256) {
+        for (uint256 j = 0; j < count; ) {
+            if (affected[j] == shapeId) return count;
+            unchecked {
+                j++;
+            }
+        }
+        affected[count] = shapeId;
+        unchecked {
+            return count + 1;
+        }
     }
 
     /// Moves `amount` of the current bids of `bidder` to its refunds. No-op for address(0) (a
@@ -899,40 +812,13 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         if (longer > shorter * maxShapeAspectRatio) revert AspectRatioExceeded();
     }
 
-    /// Collects unique active shape ids affected by the incoming bid and validates each remainder.
+    /// Validates the remainder of each affected shape.
     function _validateOverlaps(
+        uint256[] memory affected,
         uint32[] calldata squares
     ) internal view {
-        uint256 len = squares.length;
-        uint256[] memory affected = new uint256[](len);
-        uint256 affectedCount = 0;
-
-        for (uint256 i = 0; i < len; ) {
-            uint256 sid = _squares[squares[i]].shapeId;
-            if (sid != 0) {
-                bool found = false;
-                for (uint256 j = 0; j < affectedCount; ) {
-                    if (affected[j] == sid) {
-                        found = true;
-                        break;
-                    }
-                    unchecked {
-                        j++;
-                    }
-                }
-                if (!found) {
-                    affected[affectedCount] = sid;
-                    unchecked {
-                        affectedCount++;
-                    }
-                }
-            }
-            unchecked {
-                i++;
-            }
-        }
-
-        for (uint256 i = 0; i < affectedCount; ) {
+        uint256 count = affected.length;
+        for (uint256 i = 0; i < count; ) {
             _validateShapeRemainder(affected[i], squares);
             unchecked {
                 i++;
@@ -952,9 +838,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint256 removeLen = removing.length;
         uint16 refLng = uint16(stored[0]);
 
-        Loc[] memory remaining = new Loc[](
-            storedLen
-        );
+        uint32[] memory remaining = new uint32[](storedLen);
         uint256 remainCount = 0;
         uint256 rIdx = 0;
 
@@ -997,10 +881,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
                 continue;
             }
 
-            remaining[remainCount] = Loc({
-                lat: sLat,
-                lng: sLng
-            });
+            remaining[remainCount] = square;
             unchecked {
                 remainCount++;
                 i++;
@@ -1019,7 +900,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         }
 
         // The remainder must itself be a valid shape (contiguous, convex, within bounds).
-        _validateShapeMem(remaining);
+        _validateShape(remaining);
     }
 
     /// True if `account` has `DEFAULT_ADMIN_ROLE` in `countries`.
@@ -1048,21 +929,6 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         if (newEnd <= end) return;
         endTime = uint64(newEnd);
         emit AuctionExtended(uint64(newEnd));
-    }
-
-    /// ETH that a bid spends on one square. A square of a different bidder, or with no bid: the
-    /// full `_bidAmount`. Own square: 0, or only the increase if `raiseOwnSquares` is true.
-    function _squareCost(
-        uint32 square,
-        uint256 floorPerSquare,
-        bool raiseOwnSquares
-    ) internal view returns (uint256) {
-        Square memory current = _squares[square];
-        if (shapeBidder[current.shapeId] != msg.sender) {
-            return _bidAmount(current.amount, floorPerSquare);
-        }
-        if (!raiseOwnSquares) return 0;
-        return _bidAmount(current.amount, floorPerSquare) - current.amount;
     }
 
     /// Amount a bid puts on a square: the next bid, or `floorPerSquare` if that is larger.

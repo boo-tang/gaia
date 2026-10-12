@@ -1,8 +1,8 @@
 import { LNG_COLUMNS } from '../constants';
 import { Loc } from '../types';
 
-// Mirrors GaiaAuction.sol's shape-validity rules (contracts/GaiaAuction.sol: _validateShapeMem /
-// _validateAndComputeTotal) so the client can give live feedback before submitting a bid.
+// Mirrors GaiaAuction.sol's shape-validity rules (contracts/GaiaAuction.sol: _validateShape)
+// so the client can give live feedback before submitting a bid.
 // Operates on chain (uint16) coordinates, sorted lat asc then lng west to east within each row.
 // Longitude wraps, so a row can be e.g. 35998, 35999, 0, 1.
 
@@ -166,7 +166,7 @@ export interface CurrentBid {
   own: boolean;
 }
 
-// Mirrors GaiaAuction.sol's _squareCost: the ETH that a bid spends on one square. A square of a
+// Mirrors GaiaAuction.sol's _takeSquares (the `paid` part): the ETH that a bid spends on one square. A square of a
 // different bidder, or with no bid: bidAmountFor. Own square: 0, or only the increase if
 // `raiseOwnSquares` is true.
 export const squareCostFor = (
