@@ -57,6 +57,13 @@ interface IGaiaAuction {
         uint16 lng
     ) external view returns (uint256);
 
+    /// @notice Returns the bidder of the shape; address(0) for an unknown shape.
+    function shapeBidder(uint256 shapeId) external view returns (address);
+
+    /// @notice Returns the number of squares that the shape still holds (squares that later bids
+    ///         did not take).
+    function shapeLiveSquares(uint256 shapeId) external view returns (uint256);
+
     /// @notice Returns the current highest bidder and amount of the square. The bidder is the
     ///         bidder of the shape that owns the square. (address(0), 0) if the square has no bid.
     function highestBids(

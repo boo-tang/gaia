@@ -144,6 +144,31 @@ describe("GaiaAuction: gas", function () {
     }
   });
 
+  // K shapes of 10 rows x 100 columns (1000 squares, the maximum) are stacked from south to
+  // north. The new bid takes the 5 west columns of all of them, so each remainder (950
+  // squares) is valid and each remainder check reads a full shape. Then a second bid takes the
+  // next 5 columns: the remainder check of a shape that lost squares before.
+  describe("bid that takes a little of K shapes of 1000 squares", function () {
+    const rows = 10;
+    const cols = 100;
+    const taken = 5;
+    for (const k of [1, 2, 5]) {
+      it(`${k} shapes`, async function () {
+        const f = await loadFixture(deployGas);
+        for (let i = 0; i < k; i++) {
+          await bid(f, f.asAlice, rect(100 + i * rows, 100, rows, cols), minBid * BigInt(rows * cols));
+        }
+        const first = rect(100, 100, k * rows, taken);
+        const gas = await bid(f, f.asBob, first, 2n * minBid * BigInt(first.length));
+        log(`large K=${k} (bid ${first.length} squares)`, gas);
+        const second = rect(100, 100 + taken, k * rows, taken);
+        const again = await bid(f, f.asBob, second, 2n * minBid * BigInt(second.length));
+        log(`large K=${k} again (bid ${second.length} squares)`, again);
+        await expectActiveBidsEqualProceeds(f);
+      });
+    }
+  });
+
   describe("re-bid on own squares", function () {
     for (const raise of [false, true]) {
       it(`10 x 10, raiseOwnSquares = ${raise}`, async function () {

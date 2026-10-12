@@ -688,6 +688,70 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
       auctionAs2.write.bidOnShape([pack(bobShape), 0n, false], { value: minBid * 3n })
     ).to.be.rejectedWith("NoLatAdjacency");
   });
+
+  // Rectangle of `rows` x `cols` squares with its south-west square at (lat, lng), in bid order.
+  const rect = (lat: number, lng: number, rows: number, cols: number) => {
+    const locs = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) locs.push({ lat: lat + r, lng: lng + c });
+    }
+    return locs;
+  };
+
+  it("tracks the squares that each shape still holds", async function () {
+    const { auction, auctionAs1, auctionAs2, minBid } = await loadFixture(deployAntiGrief);
+    const row = rect(80, 10, 1, 4);
+    await auctionAs1.write.bidOnShape([pack(row), 0n, false], { value: minBid * 4n });
+    expect(await auction.read.shapeLiveSquares([1n])).to.equal(4n);
+
+    await auctionAs2.write.bidOnShape([pack(row.slice(0, 2)), 0n, false], { value: minBid * 4n });
+    expect(await auction.read.shapeLiveSquares([1n])).to.equal(2n);
+    expect(await auction.read.shapeLiveSquares([2n])).to.equal(2n);
+
+    // Full takeover of the rest: no remainder check, and the shape holds no squares.
+    await auctionAs2.write.bidOnShape([pack(row.slice(2)), 0n, false], { value: minBid * 4n });
+    expect(await auction.read.shapeLiveSquares([1n])).to.equal(0n);
+    expect(await auction.read.shapeLiveSquares([3n])).to.equal(2n);
+  });
+
+  it("checks a remainder without the squares that the shape lost before", async function () {
+    const { auctionAs1, auctionAs2, minBid } = await loadFixture(deployAntiGrief);
+    const row = rect(80, 10, 1, 6);
+    await auctionAs1.write.bidOnShape([pack(row), 0n, false], { value: minBid * 6n });
+    // Bob takes lng 10 and 11. Alice keeps 12 to 15.
+    await auctionAs2.write.bidOnShape([pack(row.slice(0, 2)), 0n, false], { value: minBid * 4n });
+
+    // Taking 13 would leave 12, 14, 15.
+    await expect(
+      auctionAs2.write.bidOnShape([pack([{ lat: 80, lng: 13 }, { lat: 81, lng: 13 }]), 0n, false], {
+        value: minBid * 3n,
+      })
+    ).to.be.rejectedWith("GapBetweenLongitudes");
+    // Taking 12 and 13 leaves 14 and 15. The lost squares 10 and 11 are not part of the remainder.
+    await expect(
+      auctionAs2.write.bidOnShape([pack(row.slice(2, 4)), 0n, false], { value: minBid * 4n })
+    ).to.be.fulfilled;
+  });
+
+  // 10 x 30 = 300 squares: the record of lost squares uses two 256-bit words.
+  it("checks the remainder of a shape with more than 256 squares after earlier takeovers", async function () {
+    const { auction, auctionAs1, auctionAs2, minBid } = await loadFixture(deployAntiGrief);
+    await auctionAs1.write.bidOnShape([pack(rect(100, 10, 10, 30)), 0n, false], {
+      value: minBid * 300n,
+    });
+    // West and east 2 columns.
+    await auctionAs2.write.bidOnShape([pack(rect(100, 10, 10, 2)), 0n, false], { value: minBid * 40n });
+    await auctionAs2.write.bidOnShape([pack(rect(100, 38, 10, 2)), 0n, false], { value: minBid * 40n });
+    expect(await auction.read.shapeLiveSquares([1n])).to.equal(260n);
+
+    // A middle column splits the remainder.
+    await expect(
+      auctionAs2.write.bidOnShape([pack(rect(100, 26, 10, 1)), 0n, false], { value: minBid * 20n })
+    ).to.be.rejectedWith("GapBetweenLongitudes");
+    // The new west column of the remainder leaves a valid 10 x 25 rectangle.
+    await auctionAs2.write.bidOnShape([pack(rect(100, 12, 10, 1)), 0n, false], { value: minBid * 20n });
+    expect(await auction.read.shapeLiveSquares([1n])).to.equal(250n);
+  });
 });
 
 describe("GaiaAuction: settleShape", function () {

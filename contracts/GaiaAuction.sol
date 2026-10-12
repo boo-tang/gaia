@@ -102,7 +102,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     uint256 public immutable maxShapeAspectRatio;
 
     // --- Per-square bid state ---
-    // One storage slot per square. The bidder is `shapeBidder[shapeId]`. shapeId 0: no bid.
+    // One storage slot per square. The bidder is the bidder of the shape. shapeId 0: no bid.
     struct Square {
         uint128 amount;
         uint128 shapeId;
@@ -125,7 +125,17 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     // --- Per-shape state ---
     // shapeId 0 is a sentinel for "no active shape"; valid ids start at 1.
     uint256 private _nextShapeId;
-    mapping(uint256 => address) public shapeBidder;
+    // Bidder of the shape and the number of squares that the shape still holds, in one slot.
+    struct Shape {
+        address bidder;
+        uint32 liveSquares;
+    }
+    mapping(uint256 => Shape) private _shapes;
+    // Squares that a shape lost in a partial takeover: bit (i % 256) of word (i / 256) is set when
+    // stored square i went to a later bid that left a remainder. The remainder check then does
+    // not read these squares again. The squares of a full takeover are not marked: no later bid
+    // can affect a shape that holds no squares.
+    mapping(uint256 => mapping(uint256 => uint256)) private _lostSquares;
     // Original sorted squares of the bid, packed as `(uint32(lat) << 16) | lng`. Squares may later
     // be overtaken by newer bids.
     mapping(uint256 => uint32[]) private _shapeSquares;
@@ -167,8 +177,23 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint256 paid;
         // Sum of the increases of all amounts.
         uint256 proceedsIncrease;
-        // IDs of the shapes that owned squares of the bid before it, each once.
+        // IDs of the shapes that owned squares of the bid before it, each once. 0 for a shape
+        // that the bid takes completely (no remainder to check).
         uint256[] affected;
+        // Number of squares that the bid takes from each affected shape.
+        uint256[] takenCounts;
+    }
+
+    // State of the merge scan in _validateShapeRemainder.
+    struct RemainderScan {
+        // Next square of the bid, and its sort key in the frame of the shape.
+        uint256 rIdx;
+        uint256 rKey;
+        // Number of squares in the buffer.
+        uint256 remainCount;
+        uint16 refLng;
+        // First storage slot of the shape's square data.
+        uint256 base;
     }
 
     // --- Events ---
@@ -310,7 +335,10 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         unchecked {
             _nextShapeId = newShapeId + 1;
         }
-        shapeBidder[newShapeId] = msg.sender;
+        _shapes[newShapeId] = Shape({
+            bidder: msg.sender,
+            liveSquares: uint32(squares.length)
+        });
 
         // Writes the squares first. A revert below undoes the writes.
         Taken memory t = _takeSquares(
@@ -389,7 +417,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint256 shapeId,
         uint256 maxSquares
     ) external override onlyAfterAuction {
-        address winner = shapeBidder[shapeId];
+        address winner = _shapes[shapeId].bidder;
         if (winner == address(0)) revert UnknownShape();
 
         uint32[] storage stored = _shapeSquares[shapeId];
@@ -513,7 +541,21 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint16 lng
     ) external view override returns (address bidder, uint256 amount) {
         Square memory square = _squares[_key(lat, lng)];
-        return (shapeBidder[square.shapeId], square.amount);
+        return (_shapes[square.shapeId].bidder, square.amount);
+    }
+
+    /// @inheritdoc IGaiaAuction
+    function shapeBidder(
+        uint256 shapeId
+    ) external view override returns (address) {
+        return _shapes[shapeId].bidder;
+    }
+
+    /// @inheritdoc IGaiaAuction
+    function shapeLiveSquares(
+        uint256 shapeId
+    ) external view override returns (uint256) {
+        return _shapes[shapeId].liveSquares;
     }
 
     // --- Internal helpers ---
@@ -701,13 +743,14 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint256 len = squares.length;
         t.amounts = new uint256[](len);
         t.affected = new uint256[](len);
+        t.takenCounts = new uint256[](len);
         uint256 affectedCount = 0;
         address refundTo;
         uint256 refund;
         for (uint256 i = 0; i < len; ) {
             uint32 square = squares[i];
             Square memory current = _squares[square];
-            address previous = shapeBidder[current.shapeId];
+            address previous = _shapes[current.shapeId].bidder;
             uint256 amount = current.amount;
 
             if (previous != msg.sender) {
@@ -726,11 +769,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             t.proceedsIncrease += amount - current.amount;
             t.amounts[i] = amount;
             if (current.shapeId != 0) {
-                affectedCount = _addAffected(
-                    t.affected,
-                    affectedCount,
-                    current.shapeId
-                );
+                affectedCount = _addAffected(t, affectedCount, current.shapeId);
             }
 
             // `msg.value` covers the sum of the amounts, so each amount fits in 128 bits. If it
@@ -746,27 +785,46 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         }
         _refund(refundTo, refund);
 
+        // Update the live square count of each affected shape. A shape that holds no squares
+        // after the bid needs no remainder check.
+        for (uint256 k = 0; k < affectedCount; ) {
+            Shape storage shape = _shapes[t.affected[k]];
+            uint32 live = shape.liveSquares - uint32(t.takenCounts[k]);
+            shape.liveSquares = live;
+            if (live == 0) t.affected[k] = 0;
+            unchecked {
+                k++;
+            }
+        }
+
         uint256[] memory affected = t.affected;
         assembly {
             mstore(affected, affectedCount)
         }
     }
 
-    /// Adds `shapeId` to the first `count` entries of `affected` if it is not there yet. Returns
-    /// the new count.
+    /// Counts one square taken from `shapeId`. Adds `shapeId` to the first `count` entries of
+    /// `t.affected` if it is not there yet, and returns the new count. The squares of one shape
+    /// are often consecutive in the bid, so the last entry is checked first.
     function _addAffected(
-        uint256[] memory affected,
+        Taken memory t,
         uint256 count,
         uint256 shapeId
     ) internal pure returns (uint256) {
-        for (uint256 j = 0; j < count; ) {
-            if (affected[j] == shapeId) return count;
-            unchecked {
-                j++;
-            }
-        }
-        affected[count] = shapeId;
+        uint256[] memory affected = t.affected;
         unchecked {
+            if (count != 0 && affected[count - 1] == shapeId) {
+                t.takenCounts[count - 1]++;
+                return count;
+            }
+            for (uint256 j = 0; j < count; j++) {
+                if (affected[j] == shapeId) {
+                    t.takenCounts[j]++;
+                    return count;
+                }
+            }
+            affected[count] = shapeId;
+            t.takenCounts[count] = 1;
             return count + 1;
         }
     }
@@ -812,95 +870,160 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         if (longer > shorter * maxShapeAspectRatio) revert AspectRatioExceeded();
     }
 
-    /// Validates the remainder of each affected shape.
+    /// Validates the remainder of each affected shape (0 entries: full takeover, no check). All
+    /// checks use one memory buffer.
     function _validateOverlaps(
         uint256[] memory affected,
         uint32[] calldata squares
-    ) internal view {
+    ) internal {
         uint256 count = affected.length;
+        uint256 capacity = 0;
         for (uint256 i = 0; i < count; ) {
-            _validateShapeRemainder(affected[i], squares);
+            if (affected[i] != 0) {
+                uint256 storedLen = _shapeSquares[affected[i]].length;
+                if (storedLen > capacity) capacity = storedLen;
+            }
+            unchecked {
+                i++;
+            }
+        }
+        if (capacity == 0) return;
+
+        uint32[] memory buffer = new uint32[](capacity);
+        for (uint256 i = 0; i < count; ) {
+            if (affected[i] != 0) {
+                // Restore the full length of the buffer after the previous check.
+                assembly {
+                    mstore(buffer, capacity)
+                }
+                _validateShapeRemainder(affected[i], squares, buffer);
+            }
             unchecked {
                 i++;
             }
         }
     }
 
-    /// Simulates removing `removing` from shapeId's effective squares and validates the remainder.
-    /// Uses a merge scan (both stored and removing are sorted by lat asc, lng west to east within
-    /// lat). Longitudes are compared in the stored shape's normalised frame.
+    /// Validates the squares that `shapeId` keeps after the bid. Reads the stored squares of the
+    /// shape, skips the squares that it lost before (_lostSquares), and removes the squares of the
+    /// bid with a merge scan (both lists are sorted by lat, then west to east). Longitudes are
+    /// compared in the stored shape's normalised frame. Marks the squares of the bid in
+    /// _lostSquares. The caller makes sure that the shape keeps at least one square.
     function _validateShapeRemainder(
         uint256 shapeId,
-        uint32[] calldata removing
-    ) internal view {
-        uint32[] storage stored = _shapeSquares[shapeId];
-        uint256 storedLen = stored.length;
-        uint256 removeLen = removing.length;
-        uint16 refLng = uint16(stored[0]);
-
-        uint32[] memory remaining = new uint32[](storedLen);
-        uint256 remainCount = 0;
-        uint256 rIdx = 0;
-
-        for (uint256 i = 0; i < storedLen; ) {
-            uint32 square = stored[i];
-            uint16 sLat = uint16(square >> 16);
-            uint16 sLng = uint16(square);
-
-            // Skip squares already overtaken by a more recent bid.
-            if (_squares[square].shapeId != shapeId) {
-                unchecked {
-                    i++;
-                }
-                continue;
+        uint32[] calldata removing,
+        uint32[] memory buffer
+    ) internal {
+        RemainderScan memory c;
+        uint256 storedLen;
+        {
+            uint32[] storage stored = _shapeSquares[shapeId];
+            storedLen = stored.length;
+            c.refLng = uint16(stored[0]);
+            uint256 base;
+            assembly {
+                mstore(0, stored.slot)
+                base := keccak256(0, 32)
             }
+            c.base = base;
+        }
+        c.rKey = removing.length != 0
+            ? _frameKey(removing[0], c.refLng)
+            : type(uint256).max;
+        mapping(uint256 => uint256) storage lost = _lostSquares[shapeId];
 
-            // Advance removing pointer past entries sorted before (sLat, sLng).
-            uint16 sNorm = _normLng(sLng, refLng);
-            while (rIdx < removeLen) {
-                uint32 r = removing[rIdx];
-                uint16 rLat = uint16(r >> 16);
-                if (
-                    rLat < sLat ||
-                    (rLat == sLat && _normLng(uint16(r), refLng) < sNorm)
-                ) {
-                    unchecked {
-                        rIdx++;
-                    }
-                } else {
-                    break;
-                }
-            }
-
-            // Check if this square is consumed by the incoming bid.
-            if (rIdx < removeLen && removing[rIdx] == square) {
-                unchecked {
-                    rIdx++;
-                    i++;
-                }
-                continue;
-            }
-
-            remaining[remainCount] = square;
-            unchecked {
-                remainCount++;
-                i++;
-            }
+        // One bitmap word covers 256 stored squares.
+        for (uint256 from = 0; from < storedLen; from += 256) {
+            uint256 word = lost[from >> 8];
+            uint256 newWord = _scanBlock(
+                from,
+                storedLen,
+                word,
+                c,
+                removing,
+                buffer
+            );
+            if (newWord != word) lost[from >> 8] = newWord;
         }
 
-        if (remainCount == 0) return; // Full takeover is permitted.
-
-        if (remainCount < minShapeSquares) {
+        if (c.remainCount < minShapeSquares) {
             revert OverlapWouldInvalidateShape(shapeId);
         }
 
-        // Trim the pre-allocated array to the actual count.
+        uint256 remainCount = c.remainCount;
         assembly {
-            mstore(remaining, remainCount)
+            mstore(buffer, remainCount)
         }
 
         // The remainder must itself be a valid shape (contiguous, convex, within bounds).
-        _validateShape(remaining);
+        _validateShape(buffer);
+    }
+
+    /// Scans the stored squares from `from` (a multiple of 256) to the end of its bitmap word or
+    /// to `storedLen`. The square data of the shape starts at storage slot `c.base`; eight packed
+    /// squares share one slot. Appends each kept square to `buffer`. Returns `lostWord` with the
+    /// bits of the squares that the bid takes set.
+    function _scanBlock(
+        uint256 from,
+        uint256 storedLen,
+        uint256 lostWord,
+        RemainderScan memory c,
+        uint32[] calldata removing,
+        uint32[] memory buffer
+    ) internal view returns (uint256 newWord) {
+        newWord = lostWord;
+        uint256 to = from + 256 < storedLen ? from + 256 : storedLen;
+        uint256 base = c.base;
+        uint256 data;
+        for (uint256 i = from; i < to; ) {
+            if (i & 7 == 0) {
+                assembly {
+                    data := sload(add(base, shr(3, i)))
+                }
+            }
+            if (lostWord & (1 << (i & 255)) == 0) {
+                uint32 square = uint32(data >> ((i & 7) << 5));
+                uint256 sKey = _frameKey(square, c.refLng);
+                while (c.rKey < sKey) _nextRemoving(c, removing);
+                if (c.rKey == sKey) {
+                    // The bid takes this square.
+                    newWord |= 1 << (i & 255);
+                    _nextRemoving(c, removing);
+                } else {
+                    buffer[c.remainCount] = square;
+                    unchecked {
+                        c.remainCount++;
+                    }
+                }
+            }
+            unchecked {
+                i++;
+            }
+        }
+    }
+
+    /// Moves the merge scan to the next square of the bid.
+    function _nextRemoving(
+        RemainderScan memory c,
+        uint32[] calldata removing
+    ) internal pure {
+        uint256 rIdx;
+        unchecked {
+            rIdx = c.rIdx + 1;
+        }
+        c.rIdx = rIdx;
+        c.rKey = rIdx < removing.length
+            ? _frameKey(removing[rIdx], c.refLng)
+            : type(uint256).max;
+    }
+
+    /// Sort key of a square in the frame of `refLng`: lat, then normalised lng.
+    function _frameKey(
+        uint32 square,
+        uint16 refLng
+    ) internal pure returns (uint256) {
+        return
+            (uint256(square >> 16) << 16) | _normLng(uint16(square), refLng);
     }
 
     /// True if `account` has `DEFAULT_ADMIN_ROLE` in `countries`.
