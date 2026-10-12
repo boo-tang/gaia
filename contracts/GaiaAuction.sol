@@ -102,12 +102,13 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     uint256 public immutable maxShapeAspectRatio;
 
     // --- Per-square bid state ---
-    struct Bid {
-        address bidder;
-        uint256 amount;
+    // One storage slot per square. The bidder is `shapeBidder[shapeId]`. shapeId 0: no bid.
+    struct Square {
+        uint128 amount;
+        uint128 shapeId;
     }
-    // lat => lng => Bid
-    mapping(uint16 => mapping(uint16 => Bid)) public highestBids;
+    // Packed square ((uint32(lat) << 16) | lng) => current highest bid
+    mapping(uint32 => Square) private _squares;
     // refunds for outbid amounts
     mapping(address => uint256) public pendingReturns;
     // Sum of current highest bids; owed to the treasury. Kept separate from pendingReturns.
@@ -127,8 +128,6 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     mapping(uint256 => address) public shapeBidder;
     // Original sorted locs submitted with the bid. Squares may later be overtaken by newer bids.
     mapping(uint256 => Loc[]) private _shapeLocs;
-    // Current owning shape per square. 0 = no active shape.
-    mapping(uint16 => mapping(uint16 => uint256)) private _squareShapeId;
 
     // --- Per-shape settlement state ---
     // Index into _shapeLocs[shapeId] up to which settlement has progressed.
@@ -309,9 +308,8 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         }
         shapeBidder[newShapeId] = msg.sender;
 
-        uint256 excess = msg.value - requiredTotal;
-        if (excess != 0) {
-            pendingReturns[msg.sender] += excess;
+        if (msg.value != requiredTotal) {
+            pendingReturns[msg.sender] += msg.value - requiredTotal;
         }
 
         uint256 proceedsIncrease = 0;
@@ -319,41 +317,17 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint32[] memory squares = new uint32[](len);
         uint256[] memory amounts = new uint256[](len);
         for (uint256 i = 0; i < len; ) {
-            Loc calldata loc = locs[i];
-            Bid memory current = highestBids[loc.lat][loc.lng];
-            uint256 amount = current.amount;
-
-            if (current.bidder == msg.sender) {
-                // Own square: no refund. The amount goes up only if `raiseOwnSquares` is true,
-                // and the bidder pays only the difference.
-                if (raiseOwnSquares) {
-                    amount = _bidAmount(current.amount, floorPerSquare);
-                    if (amount != current.amount) {
-                        proceedsIncrease += amount - current.amount;
-                        highestBids[loc.lat][loc.lng].amount = amount;
-                    }
-                }
-            } else {
-                if (current.bidder != address(0) && current.amount != 0) {
-                    unchecked {
-                        pendingReturns[current.bidder] += current.amount;
-                    }
-                    activeBids[current.bidder] -= current.amount;
-                }
-
-                amount = _bidAmount(current.amount, floorPerSquare);
-                proceedsIncrease += amount - current.amount;
-                highestBids[loc.lat][loc.lng] = Bid({
-                    bidder: msg.sender,
-                    amount: amount
-                });
-            }
-
-            squares[i] = (uint32(loc.lat) << 16) | loc.lng;
+            uint32 key = _key(locs[i].lat, locs[i].lng);
+            (uint256 amount, uint256 increase) = _takeSquare(
+                key,
+                newShapeId,
+                floorPerSquare,
+                raiseOwnSquares
+            );
+            proceedsIncrease += increase;
+            squares[i] = key;
             amounts[i] = amount;
-
-            _squareShapeId[loc.lat][loc.lng] = newShapeId;
-            _shapeLocs[newShapeId].push(loc);
+            _shapeLocs[newShapeId].push(locs[i]);
 
             unchecked {
                 i++;
@@ -444,7 +418,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
 
         for (uint256 i = cursor; i < end; ) {
             Loc memory loc = stored[i];
-            if (_squareShapeId[loc.lat][loc.lng] == shapeId) {
+            if (_squares[_key(loc.lat, loc.lng)].shapeId == shapeId) {
                 owned[ownedCount] = loc;
                 unchecked {
                     ownedCount++;
@@ -530,7 +504,16 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint16 lat,
         uint16 lng
     ) external view override returns (uint256) {
-        return _squareShapeId[lat][lng];
+        return _squares[_key(lat, lng)].shapeId;
+    }
+
+    /// @inheritdoc IGaiaAuction
+    function highestBids(
+        uint16 lat,
+        uint16 lng
+    ) external view override returns (address bidder, uint256 amount) {
+        Square memory square = _squares[_key(lat, lng)];
+        return (shapeBidder[square.shapeId], square.amount);
     }
 
     // --- Internal helpers ---
@@ -557,7 +540,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             uint256 anchor = rowStart;
             if (lat > 0) {
                 for (uint256 k = rowStart; k < rowEnd; k++) {
-                    if (_squareShapeId[lat - 1][locs[k].lng] == shapeId) {
+                    if (_squares[_key(lat - 1, locs[k].lng)].shapeId == shapeId) {
                         anchor = k;
                         break;
                     }
@@ -837,6 +820,44 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         );
     }
 
+    /// Moves a square to `newShapeId` and returns its new amount and the increase of its amount.
+    /// A square of a different bidder: the previous bidder gets a refund. Own square: no refund,
+    /// and the amount goes up only if `raiseOwnSquares` is true.
+    function _takeSquare(
+        uint32 key,
+        uint256 newShapeId,
+        uint256 floorPerSquare,
+        bool raiseOwnSquares
+    ) internal returns (uint256 amount, uint256 increase) {
+        Square memory current = _squares[key];
+        address previous = shapeBidder[current.shapeId];
+        amount = current.amount;
+
+        if (previous != msg.sender) {
+            if (previous != address(0) && current.amount != 0) {
+                unchecked {
+                    pendingReturns[previous] += current.amount;
+                }
+                activeBids[previous] -= current.amount;
+            }
+            amount = _bidAmount(current.amount, floorPerSquare);
+        } else if (raiseOwnSquares) {
+            amount = _bidAmount(current.amount, floorPerSquare);
+        }
+        increase = amount - current.amount;
+
+        // `msg.value` covers the sum of the amounts, so each amount fits in 128 bits.
+        _squares[key] = Square({
+            amount: uint128(amount),
+            shapeId: uint128(newShapeId)
+        });
+    }
+
+    /// Storage key of a square: `(uint32(lat) << 16) | lng`, the same packing as `ShapeBid`.
+    function _key(uint16 lat, uint16 lng) internal pure returns (uint32) {
+        return (uint32(lat) << 16) | lng;
+    }
+
     /// Maps `lng` into a frame where `refLng` is LNG_ORIGIN, so that the columns on each side of the
     /// antimeridian are consecutive. Inputs must be < LOC_MAX_LNG.
     function _normLng(uint16 lng, uint16 refLng) internal pure returns (uint16) {
@@ -872,7 +893,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint256 affectedCount = 0;
 
         for (uint256 i = 0; i < len; ) {
-            uint256 sid = _squareShapeId[locs[i].lat][locs[i].lng];
+            uint256 sid = _squares[_key(locs[i].lat, locs[i].lng)].shapeId;
             if (sid != 0) {
                 bool found = false;
                 for (uint256 j = 0; j < affectedCount; ) {
@@ -927,7 +948,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             uint16 sLng = stored[i].lng;
 
             // Skip squares already overtaken by a more recent bid.
-            if (_squareShapeId[sLat][sLng] != shapeId) {
+            if (_squares[_key(sLat, sLng)].shapeId != shapeId) {
                 unchecked {
                     i++;
                 }
@@ -1024,8 +1045,8 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint256 floorPerSquare,
         bool raiseOwnSquares
     ) internal view returns (uint256) {
-        Bid memory current = highestBids[lat][lng];
-        if (current.bidder != msg.sender) {
+        Square memory current = _squares[_key(lat, lng)];
+        if (shapeBidder[current.shapeId] != msg.sender) {
             return _bidAmount(current.amount, floorPerSquare);
         }
         if (!raiseOwnSquares) return 0;

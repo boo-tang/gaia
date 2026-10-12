@@ -4,9 +4,6 @@ pragma solidity ^0.8.24;
 import {Loc} from "./GaiaTypes.sol";
 
 interface IGaiaAuction {
-    /// @notice Highest bid per location
-    /// @dev Implementers may expose views for current highest bid and bidder
-
     /// @notice Bids on a convex shape of locations. Each square of a different bidder, or with no
     ///         bid, gets the larger of its next bid and `floorPerSquare`. An own square (the caller
     ///         is its highest bidder) keeps its amount and costs 0, or, if `raiseOwnSquares` is
@@ -59,4 +56,11 @@ interface IGaiaAuction {
         uint16 lat,
         uint16 lng
     ) external view returns (uint256);
+
+    /// @notice Returns the current highest bidder and amount of the square. The bidder is the
+    ///         bidder of the shape that owns the square. (address(0), 0) if the square has no bid.
+    function highestBids(
+        uint16 lat,
+        uint16 lng
+    ) external view returns (address bidder, uint256 amount);
 }
