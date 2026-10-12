@@ -90,7 +90,8 @@ For Alice's block:
 All of these values are constructor parameters. Nobody can change them after deployment.
 
 - **Next bid on a square.** The first bid is `minBidPerSquareWei`. After that, the next bid is the current bid plus the larger of `minBidPerSquareWei` and `minBidIncrementBps` of the current bid. Example with 0.001 ETH and 5%: at 0.01 ETH, the next bid is 0.011 ETH (the absolute step is larger). At 1 ETH, the next bid is 1.05 ETH (the percentage is larger).
-- **Jump bid.** `bidOnShape(locs, floorPerSquare, raiseOwnSquares)`. Each square gets the larger of its next bid and `floorPerSquare`. With `floorPerSquare = 0`, each square gets the next bid. Value above the required total goes to `pendingReturns`.
+- **Squares.** `bidOnShape(squares, floorPerSquare, raiseOwnSquares)`. Each square is one `uint32`: `(lat << 16) | lng`, with `lat < 18000` and `lng < 36000`. Sort the squares by latitude, then west to east. This is the same packing and order as the `ShapeBid` event. Example: `lat` 1, `lng` 2 is `65538`. The frontend packs the squares with `packLocs` (`frontend/src/utils/shape.ts`).
+- **Jump bid.** Each square gets the larger of its next bid and `floorPerSquare`. With `floorPerSquare = 0`, each square gets the next bid. Value above the required total goes to `pendingReturns`.
 - **Own squares.** An own square is a square where the bidder is already the highest bidder. With `raiseOwnSquares = false`, an own square keeps its amount and costs 0. `floorPerSquare` does not apply to it. With `raiseOwnSquares = true`, an own square goes up to its next bid (or `floorPerSquare`, if larger), and the bidder pays only the difference. In both cases, the bidder gets no refund for an own square, and the square moves to the new shape. The old shape must keep zero squares or a valid shape.
   - Example: Alice holds a row of four squares at 0.001 ETH each. Bob takes the east square for 0.002 ETH. Alice bids again on all four squares with `raiseOwnSquares = false`. She pays only for the east square (0.003 ETH). Her three other squares stay at 0.001 ETH.
   - **Merge.** Alice holds two adjacent shapes that together make a valid shape. She bids on the merged shape with `raiseOwnSquares = false` and sends 0 ETH. The auction moves all squares to one new shape, so settlement gives her one country.
@@ -101,6 +102,24 @@ All of these values are constructor parameters. Nobody can change them after dep
 Why one end for the whole auction: when Bob takes some of Alice's squares near the end, Alice can still bid on other squares that suit her. If each square closed at its own time, she could lose a square after the squares she wants as a replacement have closed.
 
 Settlement and `withdrawProceeds` wait for the current `endTime`. Read `endTime()` from the auction every time. Do not keep a copy. The leftover-square sale must also read it when it runs.
+
+### Bid gas
+
+Base does not accept a transaction above 16,777,216 gas (EIP-7825). Measured costs (`test/Gaia_Auction.gas.ts`, run with `GAS_REPORT=1`):
+
+- A new square costs about 28,600 gas. A new 10 x 10 bid costs 3.0M gas. A new 20 x 20 bid costs 11.6M gas.
+- A square that the bid takes from a different bidder costs about 12,000 gas.
+- For each shape that the bid cuts into and that keeps squares, the auction checks the remaining squares. This costs about 40,000 gas plus 1,250 gas for each square of the original shape. When a bid takes all remaining squares of a shape, there is no check.
+- Settlement costs about 70,000 gas for each square. A settlement chunk always continues to the end of its row, so the widest row of a shape must settle in one call.
+
+`maxShapeSquares`, `maxShapeAspectRatio` and a limit on the number of shapes that one bid can cut into must keep each bid and each settlement chunk below the cap. These values are not chosen yet.
+
+How the auction stores bids:
+
+- One storage slot for each square: the amount (128 bits) and the shape ID (128 bits). The bidder of a square is the bidder of its shape. `highestBids(lat, lng)` returns the bidder and the amount.
+- One slot for each shape: the bidder and the number of squares that the shape still holds (`shapeLiveSquares`).
+- The squares of each shape, as in the bid, eight squares in one slot. The list does not get shorter when a later bid takes squares.
+- For each shape, one bit for each square of its list. The bit is set when a later bid takes the square and the shape keeps other squares. The check of the remaining squares then does not read that square again.
 
 ### Pause and cancel
 

@@ -55,6 +55,18 @@ import {IGaiaAuction} from "./interfaces/IGaiaAuction.sol";
  *   - So a bidder can take back a full shape after a partial takeover and pay only for the lost
  *     squares, or merge two adjacent own shapes into one shape with a bid that costs 0.
  *
+ * Input: `bidOnShape` takes each square as one `uint32`, `(uint32(lat) << 16) | lng`, the same
+ * packing as `ShapeBid`. The bounds `lat < LOC_MAX_LAT` and `lng < LOC_MAX_LNG` are checked on the
+ * unpacked values.
+ *
+ * Storage (gas): one slot per square ({uint128 amount, uint128 shapeId}, keyed by the packed
+ * square); the bidder is the bidder of the shape. One slot per shape ({bidder, liveSquares}). The
+ * squares of each shape as in the bid, packed eight per slot; the list does not get shorter. A
+ * bitmap per shape (_lostSquares) marks the squares that the shape lost in a partial takeover, so
+ * the remainder check does not read them again. A bid that takes all remaining squares of a shape
+ * skips the remainder check. The gas of a bid grows with the number of squares, and with the
+ * size of each shape that it cuts into; see test/Gaia_Auction.gas.ts.
+ *
  * Events: each bid emits one `ShapeBid` with the new shape ID, the bidder, all squares of the new
  * shape and their amounts after the bid. A square belongs to the newest shape that contains it,
  * so an indexer can rebuild all shapes and current bids from `ShapeBid` events only.

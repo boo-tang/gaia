@@ -166,9 +166,9 @@ export interface CurrentBid {
   own: boolean;
 }
 
-// Mirrors GaiaAuction.sol's _takeSquares (the `paid` part): the ETH that a bid spends on one square. A square of a
-// different bidder, or with no bid: bidAmountFor. Own square: 0, or only the increase if
-// `raiseOwnSquares` is true.
+// Mirrors GaiaAuction.sol's _takeSquares (the `paid` part): the ETH that a bid spends on one
+// square. A square of a different bidder, or with no bid: bidAmountFor. Own square: 0, or only the
+// increase if `raiseOwnSquares` is true.
 export const squareCostFor = (
   current: CurrentBid,
   rules: BidRules,
