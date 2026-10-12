@@ -196,7 +196,7 @@ Alice can now sell each standalone square as a normal NFT, on any marketplace.
 
 Each removal must leave Country 1 connected and without holes. If Alice removed `(11,22)` and then `(12,21)`, the remaining `(12,22)` and `(11,21)` would touch only at a corner. The second transfer would revert.
 
-Each successful move bumps `compositionVersion(1)`. That number is the “edition” of the land group.
+Each successful move bumps `compositionVersion(1)`. That number is the “edition” of the land group. `GaiaCountries` stores it, together with `squareCount(1)`. Read both from `GaiaCountries`, not from `GaiaSquares`. `GaiaSquares` reports each square that enters or leaves a country to `GaiaCountries`, which also emits `CountryCompositionChanged`.
 
 The last square of a country can also be split out. The country then has 0 squares, and the country NFT is burned in the same transaction. After the burn, nobody can control `accountOf(1)`. Its address stays registered as a country account, so no country NFT can go into it.
 
