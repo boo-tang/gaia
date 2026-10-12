@@ -35,6 +35,10 @@ const westEdgeLng = (locs: Loc[]): number => {
   return west;
 };
 
+// Packs squares as GaiaAuction.bidOnShape takes them and as the ShapeBid event emits them:
+// `(lat << 16) | lng`.
+export const packLocs = (locs: Loc[]): number[] => locs.map((loc) => loc.lat * 65536 + loc.lng);
+
 export const sortLocs = (locs: Loc[]): Loc[] => {
   if (locs.length === 0) return [];
   const west = westEdgeLng(locs);

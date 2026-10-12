@@ -12,6 +12,7 @@ import { readContracts } from 'wagmi/actions';
 import { gaiaAuctionAbi } from './abis';
 import addresses from './addresses';
 import { Loc } from '../types';
+import { packLocs } from '../utils/shape';
 
 export interface AuctionConfig {
   startTime: bigint;
@@ -132,14 +133,15 @@ export const useBidOnShape = () => {
   const address = useAuctionAddress();
   const { writeContractAsync, ...rest } = useWriteContract();
 
-  // `floorPerSquare` > 0 is a jump bid: each square gets at least this amount. With
-  // `raiseOwnSquares`, squares where the caller is already the highest bidder also go up.
+  // `locs` must be sorted (see sortLocs). `floorPerSquare` > 0 is a jump bid: each square gets at
+  // least this amount. With `raiseOwnSquares`, squares where the caller is already the highest
+  // bidder also go up.
   const bidOnShape = (locs: Loc[], value: bigint, floorPerSquare = 0n, raiseOwnSquares = false) =>
     writeContractAsync({
       address,
       abi: gaiaAuctionAbi,
       functionName: 'bidOnShape',
-      args: [locs, floorPerSquare, raiseOwnSquares],
+      args: [packLocs(locs), floorPerSquare, raiseOwnSquares],
       value,
     });
 

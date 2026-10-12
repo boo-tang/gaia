@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { encodeFunctionData, getAddress, zeroAddress } from "viem";
 
 import { loadFixture, viem } from "./helpers/setup";
+import { pack } from "./helpers/auction";
 import { deployAccount, deployLand } from "./helpers/land";
 
 describe("GaiaCountries", function () {
@@ -285,7 +286,7 @@ describe("GaiaCountries", function () {
         auction.address,
         { client: { wallet: alice } }
       );
-      await auctionAsAlice.write.bidOnShape([[{ lat: 7, lng: 7 }], 0n, false], {
+      await auctionAsAlice.write.bidOnShape([pack([{ lat: 7, lng: 7 }]), 0n, false], {
         value: 1000n,
       });
 

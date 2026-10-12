@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Loc} from "./GaiaTypes.sol";
-
 interface IGaiaAuction {
-    /// @notice Bids on a convex shape of locations. Each square of a different bidder, or with no
+    /// @notice Bids on a convex shape of squares. Each square of a different bidder, or with no
     ///         bid, gets the larger of its next bid and `floorPerSquare`. An own square (the caller
     ///         is its highest bidder) keeps its amount and costs 0, or, if `raiseOwnSquares` is
     ///         true, goes up to the same amount and costs only the difference. All squares move
@@ -12,11 +10,13 @@ interface IGaiaAuction {
     ///         `pendingReturns`. A bid that raises at least one amount, with less than
     ///         `extensionWindow` seconds left, extends the auction (see GaiaAuction). Emits one
     ///         `ShapeBid` event with the new shape ID, its squares and their amounts.
-    /// @param locs The squares, sorted by latitude, then west to east.
+    /// @param squares The squares, each packed as `(uint32(lat) << 16) | lng`, with
+    ///        `lat < 18000` and `lng < 36000`. Sorted by latitude, then west to east (the same
+    ///        packing and order as the `ShapeBid` event).
     /// @param floorPerSquare Minimum amount per square (a jump bid). 0 bids the minimum.
     /// @param raiseOwnSquares If true, own squares also go up. If false, they keep their amount.
     function bidOnShape(
-        Loc[] calldata locs,
+        uint32[] calldata squares,
         uint256 floorPerSquare,
         bool raiseOwnSquares
     ) external payable;

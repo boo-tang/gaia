@@ -7,6 +7,7 @@ import {
   bidAmountFor,
   computeBidTotal,
   squareCostFor,
+  packLocs,
 } from "../frontend/src/utils/shape";
 
 const limits = {
@@ -290,5 +291,15 @@ describe("utils/shape bid totals (mirrors GaiaAuction.sol._nextBid, _bidAmount a
 
   it("computeBidTotal is 0 for a re-bid on own squares only", function () {
     expect(computeBidTotal([own(minBid), own(minBid)], rules)).to.equal(0n);
+  });
+});
+
+describe("utils/shape packLocs (mirrors the bidOnShape calldata)", function () {
+  it("packs each square as (lat << 16) | lng, in the same order", function () {
+    expect(packLocs([{ lat: 17999, lng: 35999 }, { lat: 0, lng: 0 }, { lat: 1, lng: 2 }])).to.deep.equal([
+      (17999 << 16) | 35999,
+      0,
+      (1 << 16) | 2,
+    ]);
   });
 });

@@ -3,6 +3,7 @@ import { expect } from "chai";
 import { network } from "hardhat";
 
 import { coverage } from "./helpers/setup";
+import { pack } from "./helpers/auction";
 import { deployLand } from "./helpers/land";
 
 // Own connection on the Prague hardfork, which has no per-transaction gas cap (EIP-7825 starts
@@ -92,7 +93,7 @@ describe("GaiaAuction: gas", function () {
     value: bigint,
     raiseOwnSquares = false
   ) {
-    const hash = await as.write.bidOnShape([locs, 0n, raiseOwnSquares], {
+    const hash = await as.write.bidOnShape([pack(locs), 0n, raiseOwnSquares], {
       value,
       gas: 200_000_000n,
     });
