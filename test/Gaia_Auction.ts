@@ -69,7 +69,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 33, lng: 69 },
       { lat: 33, lng: 71 }, // gap
     ];
-    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejected; // GapBetweenLongitudes
+    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejectedWith("GapBetweenLongitudes");
   });
 
   it("rejects non-consecutive latitudes", async function () {
@@ -80,7 +80,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       // skip 34
       { lat: 35, lng: 69 },
     ];
-    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejected; // NonConsecutiveLatitudes
+    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejectedWith("NonConsecutiveLatitudes");
   });
 
   it("rejects unsorted latitudes (descending)", async function () {
@@ -90,7 +90,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 34, lng: 70 },
       { lat: 33, lng: 69 }, // goes backward
     ];
-    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejected; // Unsorted
+    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejectedWith("Unsorted");
   });
 
   it("rejects when subsequent latitude has no overlapping longitudes with previous", async function () {
@@ -102,7 +102,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 34, lng: 72 },
       { lat: 34, lng: 73 },
     ];
-    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejected; // NoLatAdjacency
+    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejectedWith("NoLatAdjacency");
   });
 
   it("rejects concave start (left boundary)", async function () {
@@ -116,7 +116,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 35, lng: 69 },
       { lat: 35, lng: 70 },
     ];
-    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejected; // NotConvexStart
+    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejectedWith("NotConvexStart");
   });
 
   it("rejects concave end (right boundary)", async function () {
@@ -132,12 +132,12 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 35, lng: 70 },
       { lat: 35, lng: 71 },
     ];
-    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejected; // NotConvexEnd
+    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejectedWith("NotConvexEnd");
   });
 
   it("rejects empty shapes", async function () {
     const { auction } = await loadFixture(deployAll);
-    await expect(auction.write.bidOnShape([[], 0n, false])).to.be.rejected; // EmptyShape
+    await expect(auction.write.bidOnShape([[], 0n, false])).to.be.rejectedWith("EmptyShape");
   });
 
   it("accepts a single cell", async function () {
@@ -188,7 +188,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 33, lng: 69 },
       { lat: 33, lng: 69 },
     ];
-    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejected; // GapBetweenLongitudes
+    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejectedWith("GapBetweenLongitudes");
   });
 
   it("rejects decreasing longitude within a row", async function () {
@@ -197,7 +197,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 33, lng: 70 },
       { lat: 33, lng: 69 },
     ];
-    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejected; // GapBetweenLongitudes
+    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejectedWith("GapBetweenLongitudes");
   });
 });
 
@@ -344,7 +344,7 @@ describe("GaiaAuction: totals and refunds", function () {
     ];
     const total = minBid * 3n;
     await expect(auction.write.bidOnShape([shape, 0n, false], { value: total - 1n })).to.be
-      .rejected; // InsufficientValue
+      .rejectedWith("InsufficientValue");
   });
 });
 
@@ -390,7 +390,7 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
     const shape = [{ lat: 50, lng: 50 }];
     await expect(
       auction.write.bidOnShape([shape, 0n, false], { value: minBid })
-    ).to.be.rejected; // ShapeTooSmall
+    ).to.be.rejectedWith("ShapeTooSmall");
   });
 
   it("rejects a bid exceeding maxShapeSquares", async function () {
@@ -408,7 +408,7 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
     const total = minBid * BigInt(shape.length);
     await expect(
       auction.write.bidOnShape([shape, 0n, false], { value: total })
-    ).to.be.rejected; // ShapeTooLarge
+    ).to.be.rejectedWith("ShapeTooLarge");
   });
 
   it("accepts a bid exactly at maxShapeSquares", async function () {
@@ -439,7 +439,7 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
     const total = minBid * BigInt(shape.length);
     await expect(
       auction.write.bidOnShape([shape, 0n, false], { value: total })
-    ).to.be.rejected; // AspectRatioExceeded
+    ).to.be.rejectedWith("AspectRatioExceeded");
   });
 
   it("rejects a 1-square-thick vertical line exceeding aspect ratio 3:1", async function () {
@@ -454,7 +454,7 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
     const total = minBid * BigInt(shape.length);
     await expect(
       auction.write.bidOnShape([shape, 0n, false], { value: total })
-    ).to.be.rejected; // AspectRatioExceeded
+    ).to.be.rejectedWith("AspectRatioExceeded");
   });
 
   it("accepts a shape just within the aspect ratio", async function () {
@@ -523,7 +523,7 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
   }
 
   // Alice holds a 1×3 row: (80,10), (80,11), (80,12)
-  // Bob bids on just (80,11) — the middle square — leaving Alice with
+  // Bob bids on (80,11) — the middle square — and (81,11), leaving Alice with
   // (80,10) and (80,12) which have a gap: invalid remainder.
   it("rejects a single-square bid that would leave a gap in an existing shape", async function () {
     const { auction, auctionAs2, minBid } = await loadFixture(deployAntiGrief);
@@ -537,10 +537,14 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
       value: minBid * BigInt(aliceShape.length),
     });
 
-    const bobShape = [{ lat: 80, lng: 11 }];
+    // Two squares: a one-square bid fails on minShapeSquares before the remainder check.
+    const bobShape = [
+      { lat: 80, lng: 11 },
+      { lat: 81, lng: 11 },
+    ];
     await expect(
-      auctionAs2.write.bidOnShape([bobShape, 0n, false], { value: minBid * 2n })
-    ).to.be.rejected; // GapBetweenLongitudes in remainder
+      auctionAs2.write.bidOnShape([bobShape, 0n, false], { value: minBid * 3n })
+    ).to.be.rejectedWith("GapBetweenLongitudes");
   });
 
   // Bob bids on the two leftmost squares — leaves Alice with the two rightmost: still a valid 1×2 row.
@@ -625,9 +629,9 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
     ).to.be.fulfilled;
   });
 
-  // Alice has a 1×3 row. Bob bids on just the middle, which would leave a disconnected
-  // row-pair with a gap. Tests that the NoLatAdjacency / GapBetweenLongitudes check fires
-  // for the simulated remainder.
+  // Alice has two rows that touch only at lng 41. Bob takes (100,41), which would leave two
+  // rows that do not touch. Tests that the NoLatAdjacency check fires for the simulated
+  // remainder.
   it("rejects an overlap that would leave a non-contiguous remainder across rows", async function () {
     const { auction, auctionAs2, minBid } = await loadFixture(deployAntiGrief);
 
@@ -635,20 +639,22 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
     const aliceShape = [
       { lat: 100, lng: 40 },
       { lat: 100, lng: 41 },
-      { lat: 100, lng: 42 },
       { lat: 101, lng: 41 },
       { lat: 101, lng: 42 },
-      { lat: 101, lng: 43 },
     ];
     await auction.write.bidOnShape([aliceShape, 0n, false], {
       value: minBid * BigInt(aliceShape.length),
     });
 
-    // Bob takes only (100,41) — the sole overlap cell — breaking adjacency between rows.
-    const bobShape = [{ lat: 100, lng: 41 }];
+    // Bob takes (100,41) — the sole overlap cell — and (99,41) below it, breaking adjacency
+    // between Alice's rows. Two squares: a one-square bid fails on minShapeSquares first.
+    const bobShape = [
+      { lat: 99, lng: 41 },
+      { lat: 100, lng: 41 },
+    ];
     await expect(
-      auctionAs2.write.bidOnShape([bobShape, 0n, false], { value: minBid * 2n })
-    ).to.be.rejected; // NoLatAdjacency in remainder
+      auctionAs2.write.bidOnShape([bobShape, 0n, false], { value: minBid * 3n })
+    ).to.be.rejectedWith("NoLatAdjacency");
   });
 });
 
@@ -1051,7 +1057,7 @@ describe("GaiaAuction: settleShape", function () {
     const shape = [{ lat: 50, lng: 10 }];
     await auctionAs1.write.bidOnShape([shape, 0n, false], { value: minBid });
 
-    await expect(auctionAs1.write.settleShape([1n, 0n])).to.be.rejected; // AuctionNotYetEnded
+    await expect(auctionAs1.write.settleShape([1n, 0n])).to.be.rejectedWith("AuctionNotYetEnded");
   });
 
   it("reverts when settling an unknown shape id", async function () {
@@ -1059,7 +1065,7 @@ describe("GaiaAuction: settleShape", function () {
 
     await time.increaseTo(end + 1n);
 
-    await expect(auctionAs1.write.settleShape([999n, 0n])).to.be.rejected; // UnknownShape
+    await expect(auctionAs1.write.settleShape([999n, 0n])).to.be.rejectedWith("UnknownShape");
   });
 
   it("reverts when settling an already-settled shape", async function () {
@@ -1071,7 +1077,7 @@ describe("GaiaAuction: settleShape", function () {
     await time.increaseTo(end + 1n);
 
     await auctionAs1.write.settleShape([1n, 0n]);
-    await expect(auctionAs1.write.settleShape([1n, 0n])).to.be.rejected; // ShapeAlreadySettled
+    await expect(auctionAs1.write.settleShape([1n, 0n])).to.be.rejectedWith("ShapeAlreadySettled");
   });
 
   it("rejects a bid with lat out of range", async function () {
@@ -1534,7 +1540,7 @@ describe("GaiaAuction: treasury proceeds", function () {
     const f = await loadFixture(deployProceeds);
     await placeBids(f);
 
-    await expect(f.auctionAs1.write.withdrawProceeds()).to.be.rejected; // AuctionNotYetEnded
+    await expect(f.auctionAs1.write.withdrawProceeds()).to.be.rejectedWith("AuctionNotYetEnded");
   });
 });
 

@@ -5,16 +5,17 @@ export const squareId = (lat: number, lng: number) =>
   BigInt(lat) * 36000n + BigInt(lng);
 
 /// Deploys the ERC-6551 registry, the country account implementation, GaiaCountries and
-/// GaiaSquares, and links them. `admin` must be the default wallet.
-export async function deployLand(admin: `0x${string}`) {
-  const registry = await viem.deployContract("ERC6551Registry");
-  const accountImpl = await viem.deployContract("GaiaCountryAccount");
-  const countries = await viem.deployContract("GaiaCountries", [
+/// GaiaSquares, and links them. `admin` must be the default wallet. `v` is the connection to
+/// deploy on (default: the shared connection).
+export async function deployLand(admin: `0x${string}`, v = viem) {
+  const registry = await v.deployContract("ERC6551Registry");
+  const accountImpl = await v.deployContract("GaiaCountryAccount");
+  const countries = await v.deployContract("GaiaCountries", [
     admin,
     registry.address,
     accountImpl.address,
   ]);
-  const squares = await viem.deployContract("GaiaSquares", [
+  const squares = await v.deployContract("GaiaSquares", [
     countries.address,
   ]);
   await countries.write.setSquares([squares.address]);
