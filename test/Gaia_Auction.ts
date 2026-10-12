@@ -2035,6 +2035,65 @@ describe("GaiaAuction: re-bid on own squares", function () {
     expect(await f.countries.read.balanceOf([f.alice])).to.equal(1n);
   });
 
+  it("rebuilds every shape and current bid from ShapeBid events only", async function () {
+    const f = await loadFixture(deployOwn);
+    const row11 = row.map((loc) => ({ lat: 11, lng: loc.lng }));
+
+    await f.asAlice.write.bidOnShape([row, 0n, false], { value: 4n * minBid }); // 1
+    await f.asBob.write.bidOnShape([[lost], 0n, false], { value: 2n * minBid }); // 2: partial takeover
+    await f.asAlice.write.bidOnShape([row11, 0n, false], { value: 4n * minBid }); // 3
+    await f.asAlice.write.bidOnShape([row, 0n, false], { value: 4n * minBid }); // 4: take back, 1000 excess
+    await f.asBob.write.bidOnShape([row11.slice(0, 2), 0n, false], { value: 4n * minBid }); // 5
+    // 6: merge row 10 and the rest of row 11, and raise own squares.
+    await f.asAlice.write.bidOnShape([[...row, ...row11.slice(2)], 0n, true], {
+      value: 10n * minBid,
+    });
+    await f.asBob.write.bidOnShape([[row[0]], 5n * minBid, false], { value: 5n * minBid }); // 7: jump bid
+
+    const events = await f.auction.getEvents.ShapeBid({}, { fromBlock: 0n });
+    expect(events.map((e) => e.args.shapeId)).to.deep.equal([1n, 2n, 3n, 4n, 5n, 6n, 7n]);
+    // Bid 4 spends the next bid on the lost square only; own squares stay at minBid.
+    expect(events[3].args.paid).to.equal(3n * minBid);
+    expect(events[3].args.amounts).to.deep.equal([minBid, minBid, minBid, 3n * minBid]);
+
+    // Rebuild: a square belongs to the newest shape that contains it.
+    const shapeBidders = new Map<bigint, string>();
+    const squareOf = new Map<number, { shapeId: bigint; amount: bigint }>();
+    for (const { args } of events) {
+      const { shapeId, bidder, squares, amounts } = args;
+      if (shapeId === undefined || bidder === undefined || squares === undefined || amounts === undefined) {
+        throw new Error("incomplete ShapeBid event");
+      }
+      shapeBidders.set(shapeId, bidder);
+      squares.forEach((square, i) => squareOf.set(square, { shapeId, amount: amounts[i] }));
+    }
+
+    const shapeSquares = new Map<bigint, number[]>();
+    let total = 0n;
+    for (const [square, { shapeId, amount }] of squareOf) {
+      const lat = square >> 16;
+      const lng = square & 0xffff;
+      expect(await f.auction.read.squareShapeId([lat, lng])).to.equal(shapeId);
+      const [bidder, onChainAmount] = await f.auction.read.highestBids([lat, lng]);
+      expect(getAddress(bidder)).to.equal(getAddress(shapeBidders.get(shapeId) ?? ""));
+      expect(onChainAmount).to.equal(amount);
+      shapeSquares.set(shapeId, [...(shapeSquares.get(shapeId) ?? []), square]);
+      total += amount;
+    }
+    for (const [shapeId, bidder] of shapeBidders) {
+      expect(getAddress(await f.auction.read.shapeBidder([shapeId]))).to.equal(getAddress(bidder));
+    }
+    expect(total).to.equal(await f.auction.read.proceeds());
+    await expectActiveBidsEqualProceeds(f);
+
+    // Current shapes: 1 to 4 are fully overtaken; 5, 6 and 7 hold squares.
+    const pack = (loc: { lat: number; lng: number }) => (loc.lat << 16) | loc.lng;
+    expect([...shapeSquares.keys()].sort()).to.deep.equal([5n, 6n, 7n]);
+    expect(shapeSquares.get(5n)).to.have.members(row11.slice(0, 2).map(pack));
+    expect(shapeSquares.get(6n)).to.have.members([...row.slice(1), ...row11.slice(2)].map(pack));
+    expect(shapeSquares.get(7n)).to.have.members([pack(row[0])]);
+  });
+
   it("rejects a re-bid on own squares that leaves the old shape invalid", async function () {
     const f = await loadFixture(deployOwn);
     await f.asAlice.write.bidOnShape([row, 0n, false], { value: 4n * minBid });

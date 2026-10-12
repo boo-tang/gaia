@@ -13,7 +13,8 @@ interface IGaiaAuction {
     ///         true, goes up to the same amount and costs only the difference. All squares move
     ///         to the new shape. `msg.value` must cover the sum; the excess goes to
     ///         `pendingReturns`. A bid that raises at least one amount, with less than
-    ///         `extensionWindow` seconds left, extends the auction (see GaiaAuction).
+    ///         `extensionWindow` seconds left, extends the auction (see GaiaAuction). Emits one
+    ///         `ShapeBid` event with the new shape ID, its squares and their amounts.
     /// @param locs The squares, sorted by latitude, then west to east.
     /// @param floorPerSquare Minimum amount per square (a jump bid). 0 bids the minimum.
     /// @param raiseOwnSquares If true, own squares also go up. If false, they keep their amount.
