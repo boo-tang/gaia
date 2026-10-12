@@ -10,6 +10,7 @@ import { getSelectedLocations, toggleLocation } from '../../state/locations';
 import { useAuctionConfig } from '../../chain/useGaiaAuction';
 import { fromCoorToUint, fromUintToCoor } from '../../utils/location';
 import { LNG_COLUMNS } from '../../constants';
+import { CurrentBid } from '../../utils/shape';
 import { Loc } from '../../types';
 import { AuctionStatus } from './AuctionStatus';
 import { BidPanel } from './BidPanel';
@@ -56,11 +57,14 @@ export const AuctionView = () => {
     return map;
   }, [bids]);
 
-  const cachedBidAmounts = useMemo(() => {
-    const map = new Map<string, bigint>();
-    bidsByKey.forEach((bid, key) => map.set(key, BigInt(bid.amountWei)));
+  const cachedBids = useMemo(() => {
+    const map = new Map<string, CurrentBid>();
+    bidsByKey.forEach((bid, key) => {
+      const own = !!account.address && bid.bidder.toLowerCase() === account.address.toLowerCase();
+      map.set(key, { amount: BigInt(bid.amountWei), own });
+    });
     return map;
-  }, [bidsByKey]);
+  }, [bidsByKey, account.address]);
 
   const selectedKeys = useMemo(
     () => new Set(selectedLocations.map((loc) => locKey(fromCoorToUint(loc)))),
@@ -99,7 +103,7 @@ export const AuctionView = () => {
   return (
     <>
       <AuctionStatus />
-      {config && <BidPanel config={config} cachedBidAmounts={cachedBidAmounts} />}
+      {config && <BidPanel config={config} cachedBids={cachedBids} />}
       <MapView>
         <GridLayer
           getCellViewModel={getCellViewModel}

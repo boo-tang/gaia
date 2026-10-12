@@ -122,8 +122,8 @@ export const useFetchHighestBids = () => {
       if (result.status !== 'success') {
         throw new Error(`Failed to read highest bid for (${locs[i].lat}, ${locs[i].lng})`);
       }
-      const [, amount] = result.result as [string, bigint];
-      return amount;
+      const [bidder, amount] = result.result as [string, bigint];
+      return { bidder, amount };
     });
   };
 };
@@ -132,13 +132,14 @@ export const useBidOnShape = () => {
   const address = useAuctionAddress();
   const { writeContractAsync, ...rest } = useWriteContract();
 
-  // `floorPerSquare` > 0 is a jump bid: each square gets at least this amount.
-  const bidOnShape = (locs: Loc[], value: bigint, floorPerSquare = 0n) =>
+  // `floorPerSquare` > 0 is a jump bid: each square gets at least this amount. With
+  // `raiseOwnSquares`, squares where the caller is already the highest bidder also go up.
+  const bidOnShape = (locs: Loc[], value: bigint, floorPerSquare = 0n, raiseOwnSquares = false) =>
     writeContractAsync({
       address,
       abi: gaiaAuctionAbi,
       functionName: 'bidOnShape',
-      args: [locs, floorPerSquare],
+      args: [locs, floorPerSquare, raiseOwnSquares],
       value,
     });
 

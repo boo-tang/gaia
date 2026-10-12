@@ -6,6 +6,7 @@ import {
   nextBidFor,
   bidAmountFor,
   computeBidTotal,
+  squareCostFor,
 } from "../frontend/src/utils/shape";
 
 const limits = {
@@ -236,7 +237,7 @@ describe("utils/shape (mirrors GaiaAuction.sol shape validation)", function () {
   });
 });
 
-describe("utils/shape bid totals (mirrors GaiaAuction.sol._nextBid and _bidAmount)", function () {
+describe("utils/shape bid totals (mirrors GaiaAuction.sol._nextBid, _bidAmount and _squareCost)", function () {
   const minBid = 1000n;
   const rules = { minBidPerSquareWei: minBid, minBidIncrementBps: 500n };
 
@@ -257,8 +258,37 @@ describe("utils/shape bid totals (mirrors GaiaAuction.sol._nextBid and _bidAmoun
     expect(bidAmountFor(10_000n, rules, 5000n)).to.equal(11_000n);
   });
 
-  it("computeBidTotal sums bidAmountFor across squares", function () {
-    expect(computeBidTotal([0n, minBid, 0n], rules)).to.equal(minBid + (minBid + minBid) + minBid);
-    expect(computeBidTotal([0n, 10_000n], rules, 5000n)).to.equal(5000n + 11_000n);
+  const other = (amount: bigint) => ({ amount, own: false });
+  const own = (amount: bigint) => ({ amount, own: true });
+
+  it("computeBidTotal sums bidAmountFor across squares of other bidders", function () {
+    expect(computeBidTotal([other(0n), other(minBid), other(0n)], rules)).to.equal(
+      minBid + (minBid + minBid) + minBid,
+    );
+    expect(computeBidTotal([other(0n), other(10_000n)], rules, 5000n)).to.equal(5000n + 11_000n);
+  });
+
+  it("squareCostFor charges 0 for an own square when raiseOwnSquares is false", function () {
+    expect(squareCostFor(own(minBid), rules)).to.equal(0n);
+    expect(squareCostFor(own(minBid), rules, 5000n, false)).to.equal(0n);
+  });
+
+  it("squareCostFor charges only the increase for an own square when raiseOwnSquares is true", function () {
+    expect(squareCostFor(own(minBid), rules, 0n, true)).to.equal(minBid);
+    expect(squareCostFor(own(minBid), rules, 2500n, true)).to.equal(1500n);
+    expect(squareCostFor(own(100_000n), rules, 0n, true)).to.equal(5000n);
+  });
+
+  it("computeBidTotal matches a re-bid after a partial takeover", function () {
+    // Same case as the GaiaAuction test: three own squares at minBid, one lost square at 2 * minBid.
+    const current = [own(minBid), own(minBid), own(minBid), other(2n * minBid)];
+    expect(computeBidTotal(current, rules)).to.equal(3n * minBid);
+    expect(computeBidTotal(current, rules, 5n * minBid)).to.equal(5n * minBid);
+    expect(computeBidTotal(current, rules, 0n, true)).to.equal(6n * minBid);
+    expect(computeBidTotal(current, rules, 2500n, true)).to.equal(3n * 1500n + 3n * minBid);
+  });
+
+  it("computeBidTotal is 0 for a re-bid on own squares only", function () {
+    expect(computeBidTotal([own(minBid), own(minBid)], rules)).to.equal(0n);
   });
 });

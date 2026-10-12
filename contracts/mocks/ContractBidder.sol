@@ -7,6 +7,6 @@ import {Loc} from "../interfaces/GaiaTypes.sol";
 /// Test helper: a bidder contract with no token receiver hooks.
 contract ContractBidder {
     function bid(IGaiaAuction auction, Loc[] calldata locs) external payable {
-        auction.bidOnShape{value: msg.value}(locs, 0);
+        auction.bidOnShape{value: msg.value}(locs, 0, false);
     }
 }

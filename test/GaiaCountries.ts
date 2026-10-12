@@ -285,7 +285,7 @@ describe("GaiaCountries", function () {
         auction.address,
         { client: { wallet: alice } }
       );
-      await auctionAsAlice.write.bidOnShape([[{ lat: 7, lng: 7 }], 0n], {
+      await auctionAsAlice.write.bidOnShape([[{ lat: 7, lng: 7 }], 0n, false], {
         value: 1000n,
       });
 

@@ -59,7 +59,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
     ];
 
     const total = minBid * BigInt(shape.length);
-    await expect(auction.write.bidOnShape([shape, 0n], { value: total })).to.be
+    await expect(auction.write.bidOnShape([shape, 0n, false], { value: total })).to.be
       .fulfilled;
   });
 
@@ -69,7 +69,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 33, lng: 69 },
       { lat: 33, lng: 71 }, // gap
     ];
-    await expect(auction.write.bidOnShape([shape, 0n])).to.be.rejected; // GapBetweenLongitudes
+    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejected; // GapBetweenLongitudes
   });
 
   it("rejects non-consecutive latitudes", async function () {
@@ -80,7 +80,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       // skip 34
       { lat: 35, lng: 69 },
     ];
-    await expect(auction.write.bidOnShape([shape, 0n])).to.be.rejected; // NonConsecutiveLatitudes
+    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejected; // NonConsecutiveLatitudes
   });
 
   it("rejects unsorted latitudes (descending)", async function () {
@@ -90,7 +90,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 34, lng: 70 },
       { lat: 33, lng: 69 }, // goes backward
     ];
-    await expect(auction.write.bidOnShape([shape, 0n])).to.be.rejected; // Unsorted
+    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejected; // Unsorted
   });
 
   it("rejects when subsequent latitude has no overlapping longitudes with previous", async function () {
@@ -102,7 +102,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 34, lng: 72 },
       { lat: 34, lng: 73 },
     ];
-    await expect(auction.write.bidOnShape([shape, 0n])).to.be.rejected; // NoLatAdjacency
+    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejected; // NoLatAdjacency
   });
 
   it("rejects concave start (left boundary)", async function () {
@@ -116,7 +116,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 35, lng: 69 },
       { lat: 35, lng: 70 },
     ];
-    await expect(auction.write.bidOnShape([shape, 0n])).to.be.rejected; // NotConvexStart
+    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejected; // NotConvexStart
   });
 
   it("rejects concave end (right boundary)", async function () {
@@ -132,19 +132,19 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 35, lng: 70 },
       { lat: 35, lng: 71 },
     ];
-    await expect(auction.write.bidOnShape([shape, 0n])).to.be.rejected; // NotConvexEnd
+    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejected; // NotConvexEnd
   });
 
   it("rejects empty shapes", async function () {
     const { auction } = await loadFixture(deployAll);
-    await expect(auction.write.bidOnShape([[], 0n])).to.be.rejected; // EmptyShape
+    await expect(auction.write.bidOnShape([[], 0n, false])).to.be.rejected; // EmptyShape
   });
 
   it("accepts a single cell", async function () {
     const { auction, minBid } = await loadFixture(deployAll);
     const shape = [{ lat: 40, lng: 10 }];
     const total = minBid * 1n;
-    await expect(auction.write.bidOnShape([shape, 0n], { value: total })).to.be
+    await expect(auction.write.bidOnShape([shape, 0n, false], { value: total })).to.be
       .fulfilled;
   });
 
@@ -158,7 +158,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 20, lng: 14 },
     ];
     const total = minBid * BigInt(shape.length);
-    await expect(auction.write.bidOnShape([shape, 0n], { value: total })).to.be
+    await expect(auction.write.bidOnShape([shape, 0n, false], { value: total })).to.be
       .fulfilled;
   });
 
@@ -178,7 +178,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 12, lng: 14 },
     ];
     const total = minBid * BigInt(shape.length);
-    await expect(auction.write.bidOnShape([shape, 0n], { value: total })).to.be
+    await expect(auction.write.bidOnShape([shape, 0n, false], { value: total })).to.be
       .fulfilled;
   });
 
@@ -188,7 +188,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 33, lng: 69 },
       { lat: 33, lng: 69 },
     ];
-    await expect(auction.write.bidOnShape([shape, 0n])).to.be.rejected; // GapBetweenLongitudes
+    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejected; // GapBetweenLongitudes
   });
 
   it("rejects decreasing longitude within a row", async function () {
@@ -197,7 +197,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 33, lng: 70 },
       { lat: 33, lng: 69 },
     ];
-    await expect(auction.write.bidOnShape([shape, 0n])).to.be.rejected; // GapBetweenLongitudes
+    await expect(auction.write.bidOnShape([shape, 0n, false])).to.be.rejected; // GapBetweenLongitudes
   });
 });
 
@@ -245,7 +245,7 @@ describe("GaiaAuction: totals and refunds", function () {
       { lat: 10, lng: 12 },
     ];
     const total = minBid * 3n;
-    await expect(auction.write.bidOnShape([shape, 0n], { value: total })).to.be
+    await expect(auction.write.bidOnShape([shape, 0n, false], { value: total })).to.be
       .fulfilled;
 
     // Verify highestBids amounts == minBid each
@@ -264,7 +264,7 @@ describe("GaiaAuction: totals and refunds", function () {
       { lat: 20, lng: 21 },
     ];
     // First bidder (owner)
-    await auction.write.bidOnShape([shape, 0n], { value: minBid * 2n });
+    await auction.write.bidOnShape([shape, 0n, false], { value: minBid * 2n });
 
     // Second bidder (other) must pay next step per square (minBid + minBid)
     const auctionAsOther = await viem.getContractAt(
@@ -274,7 +274,7 @@ describe("GaiaAuction: totals and refunds", function () {
     );
     const requiredNext = (minBid + minBid) * 2n;
     await expect(
-      auctionAsOther.write.bidOnShape([shape, 0n], { value: requiredNext })
+      auctionAsOther.write.bidOnShape([shape, 0n, false], { value: requiredNext })
     ).to.be.fulfilled;
 
     // pendingReturns for first bidder should equal their total prior contribution
@@ -296,14 +296,14 @@ describe("GaiaAuction: totals and refunds", function () {
       { lat: 21, lng: 21 },
     ];
 
-    await auction.write.bidOnShape([shape, 0n], { value: minBid * 2n });
+    await auction.write.bidOnShape([shape, 0n, false], { value: minBid * 2n });
 
     const auctionAsOther = await viem.getContractAt(
       "contracts/GaiaAuction.sol:GaiaAuction",
       auction.address,
       { client: { wallet: other } }
     );
-    await auctionAsOther.write.bidOnShape([shape, 0n], {
+    await auctionAsOther.write.bidOnShape([shape, 0n, false], {
       value: (minBid + minBid) * 2n,
     });
 
@@ -319,7 +319,7 @@ describe("GaiaAuction: totals and refunds", function () {
       { lat: 30, lng: 30 },
       { lat: 30, lng: 31 },
     ];
-    await auction.write.bidOnShape([first, 0n], { value: minBid * 2n });
+    await auction.write.bidOnShape([first, 0n, false], { value: minBid * 2n });
 
     // Second bid includes the two existing + one new
     const second = [
@@ -328,7 +328,7 @@ describe("GaiaAuction: totals and refunds", function () {
       { lat: 30, lng: 32 }, // new → requires minBid
     ];
     const expected = (minBid + minBid) * 2n + minBid; // 5 * minBid
-    await expect(auction.write.bidOnShape([second, 0n], { value: expected })).to.be
+    await expect(auction.write.bidOnShape([second, 0n, false], { value: expected })).to.be
       .fulfilled;
 
     const b2 = await auction.read.highestBids([30, 32]);
@@ -343,7 +343,7 @@ describe("GaiaAuction: totals and refunds", function () {
       { lat: 40, lng: 42 },
     ];
     const total = minBid * 3n;
-    await expect(auction.write.bidOnShape([shape, 0n], { value: total - 1n })).to.be
+    await expect(auction.write.bidOnShape([shape, 0n, false], { value: total - 1n })).to.be
       .rejected; // InsufficientValue
   });
 });
@@ -389,7 +389,7 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
     const { auction, minBid } = await loadFixture(deployBounded);
     const shape = [{ lat: 50, lng: 50 }];
     await expect(
-      auction.write.bidOnShape([shape, 0n], { value: minBid })
+      auction.write.bidOnShape([shape, 0n, false], { value: minBid })
     ).to.be.rejected; // ShapeTooSmall
   });
 
@@ -407,7 +407,7 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
     ];
     const total = minBid * BigInt(shape.length);
     await expect(
-      auction.write.bidOnShape([shape, 0n], { value: total })
+      auction.write.bidOnShape([shape, 0n, false], { value: total })
     ).to.be.rejected; // ShapeTooLarge
   });
 
@@ -423,7 +423,7 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
       { lat: 51, lng: 62 },
     ];
     const total = minBid * BigInt(shape.length);
-    await expect(auction.write.bidOnShape([shape, 0n], { value: total })).to.be
+    await expect(auction.write.bidOnShape([shape, 0n, false], { value: total })).to.be
       .fulfilled;
   });
 
@@ -438,7 +438,7 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
     ];
     const total = minBid * BigInt(shape.length);
     await expect(
-      auction.write.bidOnShape([shape, 0n], { value: total })
+      auction.write.bidOnShape([shape, 0n, false], { value: total })
     ).to.be.rejected; // AspectRatioExceeded
   });
 
@@ -453,7 +453,7 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
     ];
     const total = minBid * BigInt(shape.length);
     await expect(
-      auction.write.bidOnShape([shape, 0n], { value: total })
+      auction.write.bidOnShape([shape, 0n, false], { value: total })
     ).to.be.rejected; // AspectRatioExceeded
   });
 
@@ -469,7 +469,7 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
       { lat: 71, lng: 12 },
     ];
     const total = minBid * BigInt(shape.length);
-    await expect(auction.write.bidOnShape([shape, 0n], { value: total })).to.be
+    await expect(auction.write.bidOnShape([shape, 0n, false], { value: total })).to.be
       .fulfilled;
   });
 });
@@ -533,13 +533,13 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
       { lat: 80, lng: 11 },
       { lat: 80, lng: 12 },
     ];
-    await auction.write.bidOnShape([aliceShape, 0n], {
+    await auction.write.bidOnShape([aliceShape, 0n, false], {
       value: minBid * BigInt(aliceShape.length),
     });
 
     const bobShape = [{ lat: 80, lng: 11 }];
     await expect(
-      auctionAs2.write.bidOnShape([bobShape, 0n], { value: minBid * 2n })
+      auctionAs2.write.bidOnShape([bobShape, 0n, false], { value: minBid * 2n })
     ).to.be.rejected; // GapBetweenLongitudes in remainder
   });
 
@@ -554,7 +554,7 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
       { lat: 80, lng: 22 },
       { lat: 80, lng: 23 },
     ];
-    await auction.write.bidOnShape([aliceShape, 0n], {
+    await auction.write.bidOnShape([aliceShape, 0n, false], {
       value: minBid * BigInt(aliceShape.length),
     });
 
@@ -565,7 +565,7 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
     ];
     const nextBid = minBid + minBid; // 2nd bid on these squares
     await expect(
-      auctionAs2.write.bidOnShape([bobShape, 0n], {
+      auctionAs2.write.bidOnShape([bobShape, 0n, false], {
         value: nextBid * BigInt(bobShape.length),
       })
     ).to.be.fulfilled;
@@ -580,7 +580,7 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
       { lat: 80, lng: 31 },
       { lat: 80, lng: 32 },
     ];
-    await auction.write.bidOnShape([aliceShape, 0n], {
+    await auction.write.bidOnShape([aliceShape, 0n, false], {
       value: minBid * BigInt(aliceShape.length),
     });
 
@@ -591,7 +591,7 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
     ];
     const requiredNext = (minBid + minBid) * BigInt(bobShape.length);
     await expect(
-      auctionAs2.write.bidOnShape([bobShape, 0n], { value: requiredNext })
+      auctionAs2.write.bidOnShape([bobShape, 0n, false], { value: requiredNext })
     ).to.be.fulfilled;
   });
 
@@ -609,7 +609,7 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
       { lat: 91, lng: 41 },
       { lat: 91, lng: 42 },
     ];
-    await auction.write.bidOnShape([aliceShape, 0n], {
+    await auction.write.bidOnShape([aliceShape, 0n, false], {
       value: minBid * BigInt(aliceShape.length),
     });
 
@@ -621,7 +621,7 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
     ];
     const requiredNext = (minBid + minBid) * BigInt(bobShape.length);
     await expect(
-      auctionAs2.write.bidOnShape([bobShape, 0n], { value: requiredNext })
+      auctionAs2.write.bidOnShape([bobShape, 0n, false], { value: requiredNext })
     ).to.be.fulfilled;
   });
 
@@ -640,14 +640,14 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
       { lat: 101, lng: 42 },
       { lat: 101, lng: 43 },
     ];
-    await auction.write.bidOnShape([aliceShape, 0n], {
+    await auction.write.bidOnShape([aliceShape, 0n, false], {
       value: minBid * BigInt(aliceShape.length),
     });
 
     // Bob takes only (100,41) — the sole overlap cell — breaking adjacency between rows.
     const bobShape = [{ lat: 100, lng: 41 }];
     await expect(
-      auctionAs2.write.bidOnShape([bobShape, 0n], { value: minBid * 2n })
+      auctionAs2.write.bidOnShape([bobShape, 0n, false], { value: minBid * 2n })
     ).to.be.rejected; // NoLatAdjacency in remainder
   });
 });
@@ -722,7 +722,7 @@ describe("GaiaAuction: settleShape", function () {
       { lat: 10, lng: 11 },
       { lat: 10, lng: 12 },
     ];
-    await auctionAs1.write.bidOnShape([shape, 0n], {
+    await auctionAs1.write.bidOnShape([shape, 0n, false], {
       value: minBid * BigInt(shape.length),
     });
 
@@ -755,7 +755,7 @@ describe("GaiaAuction: settleShape", function () {
       { lat: 21, lng: 10 },
       { lat: 21, lng: 11 },
     ];
-    await auctionAs1.write.bidOnShape([shape, 0n], {
+    await auctionAs1.write.bidOnShape([shape, 0n, false], {
       value: minBid * BigInt(shape.length),
     });
 
@@ -789,7 +789,7 @@ describe("GaiaAuction: settleShape", function () {
       { lat: 25, lng: 12 },
       { lat: 25, lng: 13 },
     ];
-    await auctionAs1.write.bidOnShape([shape, 0n], {
+    await auctionAs1.write.bidOnShape([shape, 0n, false], {
       value: minBid * BigInt(shape.length),
     });
 
@@ -815,7 +815,7 @@ describe("GaiaAuction: settleShape", function () {
       { lat: 31, lng: 11 },
       { lat: 31, lng: 12 },
     ];
-    await auctionAs1.write.bidOnShape([shape, 0n], {
+    await auctionAs1.write.bidOnShape([shape, 0n, false], {
       value: minBid * BigInt(shape.length),
     });
 
@@ -889,7 +889,7 @@ describe("GaiaAuction: settleShape", function () {
     const data = encodeFunctionData({
       abi: auction.abi,
       functionName: "bidOnShape",
-      args: [shape, 0n],
+      args: [shape, 0n, false],
     });
     await expect(
       executeAs(land, bidder1, account, auction, data, value)
@@ -906,7 +906,7 @@ describe("GaiaAuction: settleShape", function () {
       { lat: 35, lng: 10 },
       { lat: 35, lng: 11 },
     ];
-    await auctionAs1.write.bidOnShape([shape, 0n], {
+    await auctionAs1.write.bidOnShape([shape, 0n, false], {
       value: minBid * BigInt(shape.length),
     });
 
@@ -932,7 +932,7 @@ describe("GaiaAuction: settleShape", function () {
       { lat: 45, lng: 10 },
       { lat: 45, lng: 11 },
     ];
-    await auctionAs1.write.bidOnShape([shape, 0n], {
+    await auctionAs1.write.bidOnShape([shape, 0n, false], {
       value: minBid * BigInt(shape.length),
     });
 
@@ -986,13 +986,13 @@ describe("GaiaAuction: settleShape", function () {
       { lat: 30, lng: 11 },
       { lat: 30, lng: 12 },
     ];
-    await auctionAs1.write.bidOnShape([aliceShape, 0n], {
+    await auctionAs1.write.bidOnShape([aliceShape, 0n, false], {
       value: minBid * BigInt(aliceShape.length),
     });
 
     // Bob takes over the last square of Alice's shape.
     const bobShape = [{ lat: 30, lng: 12 }];
-    await auctionAs2.write.bidOnShape([bobShape, 0n], { value: minBid * 2n });
+    await auctionAs2.write.bidOnShape([bobShape, 0n, false], { value: minBid * 2n });
 
     await time.increaseTo(end + 1n);
 
@@ -1024,12 +1024,12 @@ describe("GaiaAuction: settleShape", function () {
       { lat: 40, lng: 10 },
       { lat: 40, lng: 11 },
     ];
-    await auctionAs1.write.bidOnShape([aliceShape, 0n], {
+    await auctionAs1.write.bidOnShape([aliceShape, 0n, false], {
       value: minBid * BigInt(aliceShape.length),
     });
 
     // Bob fully overtakes Alice's shape.
-    await auctionAs2.write.bidOnShape([aliceShape, 0n], {
+    await auctionAs2.write.bidOnShape([aliceShape, 0n, false], {
       value: (minBid + minBid) * BigInt(aliceShape.length),
     });
 
@@ -1049,7 +1049,7 @@ describe("GaiaAuction: settleShape", function () {
     const { auctionAs1, minBid } = await loadFixture(deploySettle);
 
     const shape = [{ lat: 50, lng: 10 }];
-    await auctionAs1.write.bidOnShape([shape, 0n], { value: minBid });
+    await auctionAs1.write.bidOnShape([shape, 0n, false], { value: minBid });
 
     await expect(auctionAs1.write.settleShape([1n, 0n])).to.be.rejected; // AuctionNotYetEnded
   });
@@ -1066,7 +1066,7 @@ describe("GaiaAuction: settleShape", function () {
     const { auctionAs1, minBid, end } = await loadFixture(deploySettle);
 
     const shape = [{ lat: 60, lng: 10 }];
-    await auctionAs1.write.bidOnShape([shape, 0n], { value: minBid });
+    await auctionAs1.write.bidOnShape([shape, 0n, false], { value: minBid });
 
     await time.increaseTo(end + 1n);
 
@@ -1079,7 +1079,7 @@ describe("GaiaAuction: settleShape", function () {
 
     const shape = [{ lat: 18000, lng: 10 }];
     await expect(
-      auctionAs1.write.bidOnShape([shape, 0n], { value: minBid })
+      auctionAs1.write.bidOnShape([shape, 0n, false], { value: minBid })
     ).to.be.rejectedWith("InvalidCoordinates");
   });
 
@@ -1091,7 +1091,7 @@ describe("GaiaAuction: settleShape", function () {
       { lat: 10, lng: 36000 },
     ];
     await expect(
-      auctionAs1.write.bidOnShape([shape, 0n], { value: minBid * 2n })
+      auctionAs1.write.bidOnShape([shape, 0n, false], { value: minBid * 2n })
     ).to.be.rejectedWith("InvalidCoordinates");
   });
 
@@ -1105,7 +1105,7 @@ describe("GaiaAuction: settleShape", function () {
       { lat: 17999, lng: 35998 },
       { lat: 17999, lng: 35999 },
     ];
-    await auctionAs1.write.bidOnShape([shape, 0n], {
+    await auctionAs1.write.bidOnShape([shape, 0n, false], {
       value: minBid * BigInt(shape.length),
     });
 
@@ -1131,7 +1131,7 @@ describe("GaiaAuction: settleShape", function () {
     for (let lat = 70; lat < 80; lat++) {
       for (let lng = 10; lng < 20; lng++) shape.push({ lat, lng });
     }
-    await auctionAs1.write.bidOnShape([shape, 0n], {
+    await auctionAs1.write.bidOnShape([shape, 0n, false], {
       value: minBid * BigInt(shape.length),
     });
 
@@ -1217,7 +1217,7 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
 
     const shape = crossingRect(50);
     await expect(
-      auctionAs1.write.bidOnShape([shape, 0n], {
+      auctionAs1.write.bidOnShape([shape, 0n, false], {
         value: minBid * BigInt(shape.length),
       })
     ).to.be.fulfilled;
@@ -1245,7 +1245,7 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
       { lat: 50, lng: 1 },
     ];
     await expect(
-      auctionAs1.write.bidOnShape([shape, 0n], { value: minBid * 3n })
+      auctionAs1.write.bidOnShape([shape, 0n, false], { value: minBid * 3n })
     ).to.be.rejectedWith("GapBetweenLongitudes");
   });
 
@@ -1257,7 +1257,7 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
       { lat: 50, lng: 35999 },
     ];
     await expect(
-      auctionAs1.write.bidOnShape([shape, 0n], { value: minBid * 2n })
+      auctionAs1.write.bidOnShape([shape, 0n, false], { value: minBid * 2n })
     ).to.be.rejectedWith("GapBetweenLongitudes");
   });
 
@@ -1274,7 +1274,7 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
       { lat: 52, lng: 0 },
     ];
     await expect(
-      auctionAs1.write.bidOnShape([shape, 0n], {
+      auctionAs1.write.bidOnShape([shape, 0n, false], {
         value: minBid * BigInt(shape.length),
       })
     ).to.be.rejectedWith("NotConvexStart");
@@ -1290,7 +1290,7 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
       { lat: 50, lng: 1 },
     ];
     await expect(
-      auctionAs1.write.bidOnShape([narrow, 0n], { value: minBid * 3n })
+      auctionAs1.write.bidOnShape([narrow, 0n, false], { value: minBid * 3n })
     ).to.be.fulfilled;
 
     // 1 x 4 → ratio 4 > maxShapeAspectRatio.
@@ -1301,7 +1301,7 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
       { lat: 60, lng: 1 },
     ];
     await expect(
-      auctionAs1.write.bidOnShape([wide, 0n], { value: minBid * 4n })
+      auctionAs1.write.bidOnShape([wide, 0n, false], { value: minBid * 4n })
     ).to.be.rejectedWith("AspectRatioExceeded");
   });
 
@@ -1310,7 +1310,7 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
       await loadFixture(deployAntimeridian);
 
     const aliceShape = crossingRect(70);
-    await auctionAs1.write.bidOnShape([aliceShape, 0n], {
+    await auctionAs1.write.bidOnShape([aliceShape, 0n, false], {
       value: minBid * BigInt(aliceShape.length),
     });
 
@@ -1322,7 +1322,7 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
       { lat: 71, lng: 35999 },
     ];
     await expect(
-      auctionAs2.write.bidOnShape([bobShape, 0n], {
+      auctionAs2.write.bidOnShape([bobShape, 0n, false], {
         value: (minBid + minBid) * BigInt(bobShape.length),
       })
     ).to.be.fulfilled;
@@ -1343,7 +1343,7 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
     );
 
     const aliceShape = crossingRect(80);
-    await auctionAs1.write.bidOnShape([aliceShape, 0n], {
+    await auctionAs1.write.bidOnShape([aliceShape, 0n, false], {
       value: minBid * BigInt(aliceShape.length),
     });
 
@@ -1355,7 +1355,7 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
       { lat: 81, lng: 0 },
     ];
     await expect(
-      auctionAs2.write.bidOnShape([bobShape, 0n], {
+      auctionAs2.write.bidOnShape([bobShape, 0n, false], {
         value: (minBid + minBid) * BigInt(bobShape.length),
       })
     ).to.be.rejectedWith("GapBetweenLongitudes");
@@ -1430,10 +1430,11 @@ describe("GaiaAuction: treasury proceeds", function () {
           { lat: 10, lng: 12 },
         ],
         0n,
+        false,
       ],
       { value: minBid * 3n }
     );
-    await auctionAs2.write.bidOnShape([[{ lat: 10, lng: 12 }], 0n], {
+    await auctionAs2.write.bidOnShape([[{ lat: 10, lng: 12 }], 0n, false], {
       value: minBid * 2n,
     });
     await auctionAs1.write.bidOnShape(
@@ -1443,6 +1444,7 @@ describe("GaiaAuction: treasury proceeds", function () {
           { lat: 20, lng: 11 },
         ],
         0n,
+        false,
       ],
       { value: minBid * 2n }
     );
@@ -1500,7 +1502,7 @@ describe("GaiaAuction: treasury proceeds", function () {
       deployProceeds
     );
 
-    await auctionAs2.write.bidOnShape([[{ lat: 30, lng: 10 }], 0n], {
+    await auctionAs2.write.bidOnShape([[{ lat: 30, lng: 10 }], 0n, false], {
       value: minBid * 5n,
     });
 
@@ -1590,7 +1592,7 @@ describe("GaiaAuction: soft close, bid increment and jump bids", function () {
     lng: number
   ) {
     await time.setNextBlockTimestamp(timestamp);
-    return auction.write.bidOnShape([[{ lat: 40, lng }], 0n], {
+    return auction.write.bidOnShape([[{ lat: 40, lng }], 0n, false], {
       value: minBid,
     });
   }
@@ -1635,7 +1637,7 @@ describe("GaiaAuction: soft close, bid increment and jump bids", function () {
       const { auction, auctionAs2, end } = await loadFixture(deploySoftClose);
       await bidAt(auction, end - 100n, 1);
       await time.setNextBlockTimestamp(end + window - 100n);
-      await auctionAs2.write.bidOnShape([[{ lat: 70, lng: 300 }], 0n], {
+      await auctionAs2.write.bidOnShape([[{ lat: 70, lng: 300 }], 0n, false], {
         value: minBid,
       });
       expect(await auction.read.endTime()).to.equal(end + 2n * window - 100n);
@@ -1714,12 +1716,12 @@ describe("GaiaAuction: soft close, bid increment and jump bids", function () {
     it("uses minBidPerSquareWei when it is larger than the percentage", async function () {
       const { auction, auctionAs2 } = await loadFixture(deploySoftClose);
       const loc = { lat: 40, lng: 1 };
-      await auction.write.bidOnShape([[loc], 0n], { value: minBid });
+      await auction.write.bidOnShape([[loc], 0n, false], { value: minBid });
       // 5% of 1000 is 50, so the step is minBid.
       await expect(
-        auctionAs2.write.bidOnShape([[loc], 0n], { value: 2n * minBid - 1n })
+        auctionAs2.write.bidOnShape([[loc], 0n, false], { value: 2n * minBid - 1n })
       ).to.be.rejectedWith("InsufficientValue");
-      await auctionAs2.write.bidOnShape([[loc], 0n], { value: 2n * minBid });
+      await auctionAs2.write.bidOnShape([[loc], 0n, false], { value: 2n * minBid });
       expect((await auction.read.highestBids([40, 1]))[1]).to.equal(
         2n * minBid
       );
@@ -1728,12 +1730,12 @@ describe("GaiaAuction: soft close, bid increment and jump bids", function () {
     it("uses the percentage when it is larger than minBidPerSquareWei", async function () {
       const { auction, auctionAs2 } = await loadFixture(deploySoftClose);
       const loc = { lat: 40, lng: 1 };
-      await auction.write.bidOnShape([[loc], 100_000n], { value: 100_000n });
+      await auction.write.bidOnShape([[loc], 100_000n, false], { value: 100_000n });
       // 5% of 100000 is 5000, larger than minBid.
       await expect(
-        auctionAs2.write.bidOnShape([[loc], 0n], { value: 104_999n })
+        auctionAs2.write.bidOnShape([[loc], 0n, false], { value: 104_999n })
       ).to.be.rejectedWith("InsufficientValue");
-      await auctionAs2.write.bidOnShape([[loc], 0n], { value: 105_000n });
+      await auctionAs2.write.bidOnShape([[loc], 0n, false], { value: 105_000n });
       expect((await auction.read.highestBids([40, 1]))[1]).to.equal(105_000n);
     });
   });
@@ -1746,9 +1748,9 @@ describe("GaiaAuction: soft close, bid increment and jump bids", function () {
         { lat: 40, lng: 2 },
       ];
       await expect(
-        auction.write.bidOnShape([shape, 5000n], { value: 9999n })
+        auction.write.bidOnShape([shape, 5000n, false], { value: 9999n })
       ).to.be.rejectedWith("InsufficientValue");
-      await auction.write.bidOnShape([shape, 5000n], { value: 10_000n });
+      await auction.write.bidOnShape([shape, 5000n, false], { value: 10_000n });
       expect((await auction.read.highestBids([40, 1]))[1]).to.equal(5000n);
       expect((await auction.read.highestBids([40, 2]))[1]).to.equal(5000n);
       expect(await auction.read.proceeds()).to.equal(10_000n);
@@ -1756,14 +1758,14 @@ describe("GaiaAuction: soft close, bid increment and jump bids", function () {
 
     it("uses the next bid on squares where it is above floorPerSquare", async function () {
       const { auction, auctionAs2 } = await loadFixture(deploySoftClose);
-      await auction.write.bidOnShape([[{ lat: 40, lng: 1 }], 10_000n], {
+      await auction.write.bidOnShape([[{ lat: 40, lng: 1 }], 10_000n, false], {
         value: 10_000n,
       });
       const shape = [
         { lat: 40, lng: 1 }, // next bid 11000 (10000 + minBid), above the floor
         { lat: 40, lng: 2 }, // unbid: the floor, 5000
       ];
-      await auctionAs2.write.bidOnShape([shape, 5000n], { value: 16_000n });
+      await auctionAs2.write.bidOnShape([shape, 5000n, false], { value: 16_000n });
       expect((await auction.read.highestBids([40, 1]))[1]).to.equal(11_000n);
       expect((await auction.read.highestBids([40, 2]))[1]).to.equal(5000n);
     });
@@ -1771,7 +1773,7 @@ describe("GaiaAuction: soft close, bid increment and jump bids", function () {
     it("refunds value above the required total", async function () {
       const { auction, publicClient } = await loadFixture(deploySoftClose);
       const [owner] = await viem.getWalletClients();
-      await auction.write.bidOnShape([[{ lat: 40, lng: 1 }], 5000n], {
+      await auction.write.bidOnShape([[{ lat: 40, lng: 1 }], 5000n, false], {
         value: 6000n,
       });
       expect(
@@ -1779,6 +1781,272 @@ describe("GaiaAuction: soft close, bid increment and jump bids", function () {
       ).to.equal(1000n);
       expect(await publicClient.getBalance({ address: auction.address })).to.equal(6000n);
     });
+  });
+});
+
+describe("GaiaAuction: re-bid on own squares", function () {
+  const window = 600n;
+  const minBid = 1000n;
+  const bps = 500n; // 5%: below minBid for bids up to 20,000 wei
+
+  async function deployOwn() {
+    const [owner, bidder1, bidder2] = await viem.getWalletClients();
+    const publicClient = await viem.getPublicClient();
+
+    const { countries } = await deployLand(owner.account.address);
+
+    const now = (await publicClient.getBlock()).timestamp;
+    const start = now - 10n;
+    const end = now + 3600n;
+    const auction = await viem.deployContract(
+      "contracts/GaiaAuction.sol:GaiaAuction",
+      [
+        countries.address,
+        owner.account.address, // treasury
+        start,
+        end,
+        end + 3600n, // maxEndTime
+        window,
+        minBid,
+        bps,
+        1n, // minShapeSquares
+        1000n, // maxShapeSquares
+        10n, // maxShapeAspectRatio
+      ]
+    );
+    await countries.write.grantRole([
+      await countries.read.ISSUER_ROLE(),
+      auction.address,
+    ]);
+    await countries.write.addAuction([auction.address]);
+
+    const as = async (wallet: typeof owner) =>
+      viem.getContractAt("contracts/GaiaAuction.sol:GaiaAuction", auction.address, {
+        client: { wallet },
+      });
+
+    return {
+      publicClient,
+      countries,
+      auction,
+      alice: bidder1.account.address,
+      bob: bidder2.account.address,
+      asAlice: await as(bidder1),
+      asBob: await as(bidder2),
+      end,
+    };
+  }
+
+  type Own = Awaited<ReturnType<typeof deployOwn>>;
+
+  const row = [
+    { lat: 10, lng: 10 },
+    { lat: 10, lng: 11 },
+    { lat: 10, lng: 12 },
+    { lat: 10, lng: 13 },
+  ];
+  const lost = row[3];
+  const kept = row.slice(0, 3);
+
+  // Alice bids on the row (minBid per square). Bob takes its east square (2 * minBid), so Alice
+  // gets minBid in pendingReturns.
+  async function partialTakeover(f: Own) {
+    await f.asAlice.write.bidOnShape([row, 0n, false], { value: 4n * minBid });
+    await f.asBob.write.bidOnShape([[lost], 0n, false], { value: 2n * minBid });
+  }
+
+  async function amountOf(f: Own, loc: { lat: number; lng: number }) {
+    const [, amount] = await f.auction.read.highestBids([loc.lat, loc.lng]);
+    return amount;
+  }
+
+  async function expectActiveBidsEqualProceeds(f: Own) {
+    const active =
+      (await f.auction.read.activeBids([f.alice])) +
+      (await f.auction.read.activeBids([f.bob]));
+    expect(active).to.equal(await f.auction.read.proceeds());
+  }
+
+  async function paidBy(f: Own, hash: `0x${string}`) {
+    const tx = await f.publicClient.getTransaction({ hash });
+    return tx.value;
+  }
+
+  describe("raiseOwnSquares = false", function () {
+    it("takes back the full shape and pays only for the lost square", async function () {
+      const f = await loadFixture(deployOwn);
+      await partialTakeover(f);
+      await expectActiveBidsEqualProceeds(f);
+
+      // Lost square: next bid after 2 * minBid. Own squares: 0.
+      await expect(
+        f.asAlice.write.bidOnShape([row, 0n, false], { value: 3n * minBid - 1n })
+      ).to.be.rejectedWith("InsufficientValue");
+      await f.asAlice.write.bidOnShape([row, 0n, false], { value: 3n * minBid });
+
+      for (const loc of kept) {
+        expect(await amountOf(f, loc)).to.equal(minBid);
+        expect(await f.auction.read.squareShapeId([loc.lat, loc.lng])).to.equal(3n);
+      }
+      expect(await amountOf(f, lost)).to.equal(3n * minBid);
+      expect(await f.auction.read.squareShapeId([lost.lat, lost.lng])).to.equal(3n);
+      // Only the refund from Bob's takeover: nothing for own squares.
+      expect(await f.auction.read.pendingReturns([f.alice])).to.equal(minBid);
+      expect(await f.auction.read.pendingReturns([f.bob])).to.equal(2n * minBid);
+      expect(await f.auction.read.activeBids([f.alice])).to.equal(6n * minBid);
+      expect(await f.auction.read.activeBids([f.bob])).to.equal(0n);
+      expect(await f.auction.read.proceeds()).to.equal(6n * minBid);
+      await expectActiveBidsEqualProceeds(f);
+    });
+
+    it("applies floorPerSquare only to the lost square", async function () {
+      const f = await loadFixture(deployOwn);
+      await partialTakeover(f);
+
+      await f.asAlice.write.bidOnShape([row, 5n * minBid, false], {
+        value: 5n * minBid,
+      });
+
+      for (const loc of kept) expect(await amountOf(f, loc)).to.equal(minBid);
+      expect(await amountOf(f, lost)).to.equal(5n * minBid);
+      // Only the refund from Bob's takeover: nothing for own squares.
+      expect(await f.auction.read.pendingReturns([f.alice])).to.equal(minBid);
+      await expectActiveBidsEqualProceeds(f);
+    });
+
+    it("accepts a bid with no value when it raises nothing and refunds any value sent", async function () {
+      const f = await loadFixture(deployOwn);
+      await f.asAlice.write.bidOnShape([row, 0n, false], { value: 4n * minBid });
+
+      await f.asAlice.write.bidOnShape([row, 0n, false]);
+      await f.asAlice.write.bidOnShape([row, 0n, false], { value: 700n });
+
+      for (const loc of row) {
+        expect(await amountOf(f, loc)).to.equal(minBid);
+        expect(await f.auction.read.squareShapeId([loc.lat, loc.lng])).to.equal(3n);
+      }
+      expect(await f.auction.read.pendingReturns([f.alice])).to.equal(700n);
+      expect(await f.auction.read.proceeds()).to.equal(4n * minBid);
+      await expectActiveBidsEqualProceeds(f);
+    });
+  });
+
+  describe("raiseOwnSquares = true", function () {
+    it("raises own squares to the next bid and charges only the difference", async function () {
+      const f = await loadFixture(deployOwn);
+      await partialTakeover(f);
+
+      // Own squares: minBid -> 2 * minBid, so 3 * minBid. Lost square: 3 * minBid.
+      await expect(
+        f.asAlice.write.bidOnShape([row, 0n, true], { value: 6n * minBid - 1n })
+      ).to.be.rejectedWith("InsufficientValue");
+      await f.asAlice.write.bidOnShape([row, 0n, true], { value: 6n * minBid });
+
+      for (const loc of kept) expect(await amountOf(f, loc)).to.equal(2n * minBid);
+      expect(await amountOf(f, lost)).to.equal(3n * minBid);
+      // Only the refund from Bob's takeover: nothing for own squares.
+      expect(await f.auction.read.pendingReturns([f.alice])).to.equal(minBid);
+      expect(await f.auction.read.activeBids([f.alice])).to.equal(9n * minBid);
+      expect(await f.auction.read.proceeds()).to.equal(9n * minBid);
+      await expectActiveBidsEqualProceeds(f);
+    });
+
+    it("raises own squares to floorPerSquare when it is above the next bid", async function () {
+      const f = await loadFixture(deployOwn);
+      await partialTakeover(f);
+
+      // Own squares: minBid -> 2.5 * minBid (1.5 * minBid each). Lost square: 3 * minBid.
+      const floor = 2500n;
+      const required = 3n * (floor - minBid) + 3n * minBid;
+      await f.asAlice.write.bidOnShape([row, floor, true], { value: required });
+
+      for (const loc of kept) expect(await amountOf(f, loc)).to.equal(floor);
+      expect(await amountOf(f, lost)).to.equal(3n * minBid);
+      // Only the refund from Bob's takeover: nothing for own squares.
+      expect(await f.auction.read.pendingReturns([f.alice])).to.equal(minBid);
+      await expectActiveBidsEqualProceeds(f);
+    });
+
+    it("uses the percentage increment on own squares", async function () {
+      const f = await loadFixture(deployOwn);
+      const loc = { lat: 30, lng: 30 };
+      await f.asAlice.write.bidOnShape([[loc], 100_000n, false], { value: 100_000n });
+
+      // 5% of 100,000 is above minBid.
+      await f.asAlice.write.bidOnShape([[loc], 0n, true], { value: 5000n });
+      expect(await amountOf(f, loc)).to.equal(105_000n);
+      expect(await f.auction.read.pendingReturns([f.alice])).to.equal(0n);
+      await expectActiveBidsEqualProceeds(f);
+    });
+  });
+
+  describe("soft close", function () {
+    it("does not extend for a re-bid that raises no amount", async function () {
+      const f = await loadFixture(deployOwn);
+      await f.asAlice.write.bidOnShape([row, 0n, false], { value: 4n * minBid });
+
+      await time.setNextBlockTimestamp(f.end - 10n);
+      await f.asAlice.write.bidOnShape([row, 0n, false]);
+      expect(await f.auction.read.endTime()).to.equal(f.end);
+    });
+
+    it("extends for a re-bid that raises one own square", async function () {
+      const f = await loadFixture(deployOwn);
+      await f.asAlice.write.bidOnShape([row, 0n, false], { value: 4n * minBid });
+
+      await time.setNextBlockTimestamp(f.end - 10n);
+      await f.asAlice.write.bidOnShape([[row[0]], 0n, true], { value: minBid });
+      expect(await f.auction.read.endTime()).to.equal(f.end - 10n + window);
+    });
+
+    it("extends for a re-bid that raises only the lost square", async function () {
+      const f = await loadFixture(deployOwn);
+      await partialTakeover(f);
+
+      await time.setNextBlockTimestamp(f.end - 10n);
+      await f.asAlice.write.bidOnShape([row, 0n, false], { value: 3n * minBid });
+      expect(await f.auction.read.endTime()).to.equal(f.end - 10n + window);
+    });
+  });
+
+  it("merges two adjacent own shapes into one country with a free re-bid", async function () {
+    const f = await loadFixture(deployOwn);
+    await f.asAlice.write.bidOnShape([row.slice(0, 2), 0n, false], { value: 2n * minBid });
+    await f.asAlice.write.bidOnShape([row.slice(2), 0n, false], { value: 2n * minBid });
+
+    const hash = await f.asAlice.write.bidOnShape([row, 0n, false]);
+    expect(await paidBy(f, hash)).to.equal(0n);
+    for (const loc of row) {
+      expect(await f.auction.read.squareShapeId([loc.lat, loc.lng])).to.equal(3n);
+      expect(await amountOf(f, loc)).to.equal(minBid);
+    }
+    expect(await f.auction.read.proceeds()).to.equal(4n * minBid);
+    await expectActiveBidsEqualProceeds(f);
+
+    await time.increaseTo((await f.auction.read.endTime()) + 1n);
+    for (const shapeId of [1n, 2n, 3n]) {
+      await f.asAlice.write.settleShape([shapeId, 0n]);
+    }
+    expect(await f.auction.read.shapeCountryId([1n])).to.equal(0n);
+    expect(await f.auction.read.shapeCountryId([2n])).to.equal(0n);
+    const countryId = await f.auction.read.shapeCountryId([3n]);
+    expect(countryId).to.not.equal(0n);
+    expect(await f.countries.read.squareCount([countryId])).to.equal(4n);
+    expect(await f.countries.read.balanceOf([f.alice])).to.equal(1n);
+  });
+
+  it("rejects a re-bid on own squares that leaves the old shape invalid", async function () {
+    const f = await loadFixture(deployOwn);
+    await f.asAlice.write.bidOnShape([row, 0n, false], { value: 4n * minBid });
+
+    // Taking (10, 11) leaves (10, 10) and (10, 12..13): two parts.
+    await expect(
+      f.asAlice.write.bidOnShape([[row[1]], 0n, false])
+    ).to.be.rejectedWith("GapBetweenLongitudes");
+    await expect(
+      f.asAlice.write.bidOnShape([[row[1]], 0n, true], { value: minBid })
+    ).to.be.rejectedWith("GapBetweenLongitudes");
+    await expectActiveBidsEqualProceeds(f);
   });
 });
 
@@ -1856,19 +2124,20 @@ describe("GaiaAuction: pause and cancel", function () {
           { lat: 10, lng: 12 },
         ],
         0n,
+        false,
       ],
       { value: 3n * minBid }
     );
-    await as2.write.bidOnShape([[{ lat: 10, lng: 12 }], 0n], {
+    await as2.write.bidOnShape([[{ lat: 10, lng: 12 }], 0n, false], {
       value: 2n * minBid,
     });
-    await as3.write.bidOnShape([[{ lat: 10, lng: 12 }], 0n], {
+    await as3.write.bidOnShape([[{ lat: 10, lng: 12 }], 0n, false], {
       value: 5n * minBid, // 3 * minBid required, 2 * minBid excess
     });
-    await as1.write.bidOnShape([[{ lat: 10, lng: 10 }], 0n], {
-      value: 2n * minBid,
+    await as1.write.bidOnShape([[{ lat: 10, lng: 10 }], 0n, true], {
+      value: 2n * minBid, // own square raised: minBid required, minBid excess
     });
-    await as2.write.bidOnShape([[{ lat: 20, lng: 20 }], 4n * minBid], {
+    await as2.write.bidOnShape([[{ lat: 20, lng: 20 }], 4n * minBid, false], {
       value: 4n * minBid,
     });
     return [5n * minBid, 6n * minBid, 5n * minBid];
@@ -1903,12 +2172,12 @@ describe("GaiaAuction: pause and cancel", function () {
     await f.asAdmin.write.pause();
     await expect(f.asAdmin.write.pause()).to.be.rejectedWith("AuctionIsPaused");
     await expect(
-      as1.write.bidOnShape([[loc], 0n], { value: minBid })
+      as1.write.bidOnShape([[loc], 0n, false], { value: minBid })
     ).to.be.rejectedWith("AuctionIsPaused");
 
     await f.asAdmin.write.unpause();
     await expect(f.asAdmin.write.unpause()).to.be.rejectedWith("AuctionNotPaused");
-    await expect(as1.write.bidOnShape([[loc], 0n], { value: minBid })).to.be
+    await expect(as1.write.bidOnShape([[loc], 0n, false], { value: minBid })).to.be
       .fulfilled;
   });
 
@@ -1995,7 +2264,7 @@ describe("GaiaAuction: pause and cancel", function () {
   it("refunds a bidder who withdrew the outbid amounts before the cancel", async function () {
     const f = await loadFixture(deployPausable);
     const paid = await placeBids(f);
-    const early = await withdrawnBy(f, 0); // bidder 1: outbid on (10, 12) and (10, 10)
+    const early = await withdrawnBy(f, 0); // bidder 1: outbid on (10, 12), excess on (10, 10)
     expect(early).to.equal(2n * minBid);
 
     await f.asAdmin.write.pause();
@@ -2043,7 +2312,7 @@ describe("GaiaAuction: pause and cancel", function () {
       "AuctionIsCancelled"
     );
     await expect(
-      f.asBidders[0].write.bidOnShape([[{ lat: 40, lng: 40 }], 0n], {
+      f.asBidders[0].write.bidOnShape([[{ lat: 40, lng: 40 }], 0n, false], {
         value: minBid,
       })
     ).to.be.rejectedWith("AuctionIsCancelled");

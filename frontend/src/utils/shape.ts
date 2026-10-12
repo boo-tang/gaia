@@ -156,10 +156,35 @@ export const bidAmountFor = (currentAmount: bigint, rules: BidRules, floorPerSqu
   return floorPerSquare > next ? floorPerSquare : next;
 };
 
-// Sum of bidAmountFor across all squares, given their current highest bids (same order as `locs`).
-export const computeBidTotal = (
-  currentAmounts: bigint[],
+// Current highest bid on a square. `own` is true if the bidder is the connected account.
+export interface CurrentBid {
+  amount: bigint;
+  own: boolean;
+}
+
+// Mirrors GaiaAuction.sol's _squareCost: the ETH that a bid spends on one square. A square of a
+// different bidder, or with no bid: bidAmountFor. Own square: 0, or only the increase if
+// `raiseOwnSquares` is true.
+export const squareCostFor = (
+  current: CurrentBid,
   rules: BidRules,
   floorPerSquare = 0n,
+  raiseOwnSquares = false,
+): bigint => {
+  if (!current.own) return bidAmountFor(current.amount, rules, floorPerSquare);
+  if (!raiseOwnSquares) return 0n;
+  return bidAmountFor(current.amount, rules, floorPerSquare) - current.amount;
+};
+
+// Sum of squareCostFor across all squares, given their current highest bids (same order as
+// `locs`). This is the `msg.value` that the bid needs.
+export const computeBidTotal = (
+  currentBids: CurrentBid[],
+  rules: BidRules,
+  floorPerSquare = 0n,
+  raiseOwnSquares = false,
 ): bigint =>
-  currentAmounts.reduce((sum, amount) => sum + bidAmountFor(amount, rules, floorPerSquare), 0n);
+  currentBids.reduce(
+    (sum, current) => sum + squareCostFor(current, rules, floorPerSquare, raiseOwnSquares),
+    0n,
+  );

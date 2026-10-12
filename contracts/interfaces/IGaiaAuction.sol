@@ -7,15 +7,20 @@ interface IGaiaAuction {
     /// @notice Highest bid per location
     /// @dev Implementers may expose views for current highest bid and bidder
 
-    /// @notice Bids on a convex shape of locations. Each square gets the larger of its next bid
-    ///         and `floorPerSquare`; `msg.value` must cover the sum. The excess goes to
-    ///         `pendingReturns`. A bid with less than `extensionWindow` seconds left extends the
-    ///         auction (see GaiaAuction).
+    /// @notice Bids on a convex shape of locations. Each square of a different bidder, or with no
+    ///         bid, gets the larger of its next bid and `floorPerSquare`. An own square (the caller
+    ///         is its highest bidder) keeps its amount and costs 0, or, if `raiseOwnSquares` is
+    ///         true, goes up to the same amount and costs only the difference. All squares move
+    ///         to the new shape. `msg.value` must cover the sum; the excess goes to
+    ///         `pendingReturns`. A bid that raises at least one amount, with less than
+    ///         `extensionWindow` seconds left, extends the auction (see GaiaAuction).
     /// @param locs The squares, sorted by latitude, then west to east.
     /// @param floorPerSquare Minimum amount per square (a jump bid). 0 bids the minimum.
+    /// @param raiseOwnSquares If true, own squares also go up. If false, they keep their amount.
     function bidOnShape(
         Loc[] calldata locs,
-        uint256 floorPerSquare
+        uint256 floorPerSquare,
+        bool raiseOwnSquares
     ) external payable;
 
     /// @notice Withdraws refunds for outbid amounts and overpayments. After a cancel, also

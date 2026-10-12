@@ -1,28 +1,32 @@
 import { useState } from 'react';
+import { useAccount } from 'wagmi';
 import { formatEther, parseEther } from 'viem';
 
 import { useAppDispatch, useAppSelector } from '../../hooks/reduxHooks';
 import { getSelectedLocations, resetLocations } from '../../state/locations';
 import { AuctionConfig, useBidOnShape, useFetchHighestBids } from '../../chain/useGaiaAuction';
 import { fromCoorToUint } from '../../utils/location';
-import { computeBidTotal, sortLocs, validateShape } from '../../utils/shape';
+import { computeBidTotal, CurrentBid, sortLocs, validateShape } from '../../utils/shape';
 
 // Selection + bid submission UI for the auction phase. Shows a live validity check against the
 // same shape rules the contract enforces, and re-reads exact current bids from the chain right
 // before submitting so payment isn't computed off the (possibly stale) server bid cache.
 export const BidPanel = ({
   config,
-  cachedBidAmounts,
+  cachedBids,
 }: {
   config: AuctionConfig;
-  cachedBidAmounts: Map<string, bigint>;
+  cachedBids: Map<string, CurrentBid>;
 }) => {
+  const account = useAccount();
   const dispatch = useAppDispatch();
   const { selectedLocations } = useAppSelector(getSelectedLocations);
   const { bidOnShape, isPending } = useBidOnShape();
   const fetchHighestBids = useFetchHighestBids();
   const [error, setError] = useState<string | undefined>();
   const [floorInput, setFloorInput] = useState('');
+  // Own squares (this account is the highest bidder) keep their amount unless this is set.
+  const [raiseOwnSquares, setRaiseOwnSquares] = useState(false);
 
   if (selectedLocations.length === 0) return null;
 
@@ -39,18 +43,22 @@ export const BidPanel = ({
   const chainLocs = sortLocs(selectedLocations.map(fromCoorToUint));
   const validation = validateShape(chainLocs, config);
 
-  const cachedAmounts = chainLocs.map(
-    (loc) => cachedBidAmounts.get(`${loc.lat}.${loc.lng}`) ?? 0n,
+  const cachedCurrent = chainLocs.map(
+    (loc) => cachedBids.get(`${loc.lat}.${loc.lng}`) ?? { amount: 0n, own: false },
   );
-  const estimatedTotal = computeBidTotal(cachedAmounts, config, floorPerSquare ?? 0n);
+  const estimatedTotal = computeBidTotal(cachedCurrent, config, floorPerSquare ?? 0n, raiseOwnSquares);
 
   const onSubmit = async () => {
     if (floorPerSquare === undefined) return;
     setError(undefined);
     try {
-      const currentAmounts = await fetchHighestBids(chainLocs);
-      const total = computeBidTotal(currentAmounts, config, floorPerSquare);
-      await bidOnShape(chainLocs, total, floorPerSquare);
+      const me = account.address?.toLowerCase();
+      const current = (await fetchHighestBids(chainLocs)).map(({ bidder, amount }) => ({
+        amount,
+        own: me !== undefined && bidder.toLowerCase() === me,
+      }));
+      const total = computeBidTotal(current, config, floorPerSquare, raiseOwnSquares);
+      await bidOnShape(chainLocs, total, floorPerSquare, raiseOwnSquares);
       dispatch(resetLocations());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Bid failed');
@@ -84,6 +92,14 @@ export const BidPanel = ({
           placeholder="minimum"
           inputMode="decimal"
         />
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          checked={raiseOwnSquares}
+          onChange={(e) => setRaiseOwnSquares(e.target.checked)}
+        />{' '}
+        Also raise my own squares
       </label>
       {floorPerSquare === undefined && <div className="bid-panel-error">Bid per square is not a valid amount</div>}
       {error && <div className="bid-panel-error">{error}</div>}

@@ -35,13 +35,25 @@ import {IGaiaAuction} from "./interfaces/IGaiaAuction.sol";
  * Bid rules (anti-sniping):
  *   - Soft close, global: a bid with less than `extensionWindow` seconds left moves `endTime` for the
  *     whole auction to `block.timestamp + extensionWindow`. A bid with exactly `extensionWindow`
- *     seconds left does not move it. `endTime` never goes past `maxEndTime`.
+ *     seconds left does not move it. `endTime` never goes past `maxEndTime`. Only a bid that
+ *     raises the amount of at least one square moves `endTime`. A bid that raises no amount (for
+ *     example a re-bid on own squares with `raiseOwnSquares = false`) does not move it.
  *   - A bid at `endTime` is accepted. A bid after `endTime` reverts.
  *   - Next bid on a square: the larger of `current + minBidPerSquareWei` and
  *     `current + current * minBidIncrementBps / 10000`. The first bid is `minBidPerSquareWei`.
  *   - Jump bid: a bidder can set `floorPerSquare`. Each square then gets the larger of its next bid
  *     and `floorPerSquare`.
  *   - All these values are constructor parameters and do not change after deployment.
+ *
+ * Own squares: an own square is a square where the caller is already the highest bidder.
+ *   - `raiseOwnSquares = false`: the amount does not change. The square costs 0, gets no refund
+ *     and `floorPerSquare` does not apply to it.
+ *   - `raiseOwnSquares = true`: the amount goes up to `_bidAmount` (next bid, or `floorPerSquare`
+ *     if larger). The bidder pays only the difference and gets no refund for the square.
+ *   - In both cases the square moves to the new shape. The old shape keeps the rule for partial
+ *     takeover: its remainder must be zero or a valid shape.
+ *   - So a bidder can take back a full shape after a partial takeover and pay only for the lost
+ *     squares, or merge two adjacent own shapes into one shape with a bid that costs 0.
  *
  * Pause and cancel (emergency stop):
  *   - The contract has no owner of its own and is not upgradeable. The admin is the holder of
@@ -261,7 +273,8 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     /// @inheritdoc IGaiaAuction
     function bidOnShape(
         Loc[] calldata locs,
-        uint256 floorPerSquare
+        uint256 floorPerSquare,
+        bool raiseOwnSquares
     ) external payable override onlyDuringAuction {
         // GaiaCountries does not let a country go to a country account (OwnershipLoop), so a
         // winning account could never get its country. An account exists only after its
@@ -269,7 +282,11 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         if (countries.countryOfAccount(msg.sender) != 0) {
             revert CountryAccountCannotBid();
         }
-        uint256 requiredTotal = _validateAndComputeTotal(locs, floorPerSquare);
+        uint256 requiredTotal = _validateAndComputeTotal(
+            locs,
+            floorPerSquare,
+            raiseOwnSquares
+        );
         if (msg.value < requiredTotal) {
             revert InsufficientValue(msg.value, requiredTotal);
         }
@@ -294,20 +311,46 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             Loc calldata loc = locs[i];
             Bid memory current = highestBids[loc.lat][loc.lng];
 
-            if (current.bidder != address(0) && current.amount != 0) {
-                unchecked {
-                    pendingReturns[current.bidder] += current.amount;
+            if (current.bidder == msg.sender) {
+                // Own square: no refund. The amount goes up only if `raiseOwnSquares` is true,
+                // and the bidder pays only the difference.
+                if (raiseOwnSquares) {
+                    uint256 raisedAmount = _bidAmount(
+                        current.amount,
+                        floorPerSquare
+                    );
+                    if (raisedAmount != current.amount) {
+                        proceedsIncrease += raisedAmount - current.amount;
+                        highestBids[loc.lat][loc.lng].amount = raisedAmount;
+                        emit HighestBidIncreased(
+                            msg.sender,
+                            raisedAmount,
+                            loc.lat,
+                            loc.lng
+                        );
+                    }
                 }
-                activeBids[current.bidder] -= current.amount;
-            }
+            } else {
+                if (current.bidder != address(0) && current.amount != 0) {
+                    unchecked {
+                        pendingReturns[current.bidder] += current.amount;
+                    }
+                    activeBids[current.bidder] -= current.amount;
+                }
 
-            uint256 nextAmount = _bidAmount(current.amount, floorPerSquare);
-            proceedsIncrease += nextAmount - current.amount;
-            highestBids[loc.lat][loc.lng] = Bid({
-                bidder: msg.sender,
-                amount: nextAmount
-            });
-            emit HighestBidIncreased(msg.sender, nextAmount, loc.lat, loc.lng);
+                uint256 nextAmount = _bidAmount(current.amount, floorPerSquare);
+                proceedsIncrease += nextAmount - current.amount;
+                highestBids[loc.lat][loc.lng] = Bid({
+                    bidder: msg.sender,
+                    amount: nextAmount
+                });
+                emit HighestBidIncreased(
+                    msg.sender,
+                    nextAmount,
+                    loc.lat,
+                    loc.lng
+                );
+            }
 
             _squareShapeId[loc.lat][loc.lng] = newShapeId;
             _shapeLocs[newShapeId].push(loc);
@@ -317,9 +360,15 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             }
         }
         proceeds += proceedsIncrease;
+        // requiredTotal is the full amount of each new square plus the increase of each raised
+        // own square, so the sum of `activeBids` stays equal to `proceeds`.
         activeBids[msg.sender] += requiredTotal;
 
-        _extendIfClosing();
+        // Soft close: only a bid that raises the amount of a square extends the auction. Thus a
+        // free re-bid on own squares cannot move `endTime`.
+        if (proceedsIncrease != 0) {
+            _extendIfClosing();
+        }
     }
 
     /// @inheritdoc IGaiaAuction
@@ -530,7 +579,8 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     /// Reverts on any shape-validity failure.
     function _validateAndComputeTotal(
         Loc[] calldata locs,
-        uint256 floorPerSquare
+        uint256 floorPerSquare,
+        bool raiseOwnSquares
     ) internal view returns (uint256 requiredTotal) {
         uint256 len = locs.length;
         if (len == 0) revert EmptyShape();
@@ -553,20 +603,19 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         s.isFirstLat = true;
         s.latHasAdjacent = true;
 
-        {
-            Bid memory cur0 = highestBids[locs[0].lat][refLng];
-            requiredTotal = _bidAmount(cur0.amount, floorPerSquare);
-        }
+        requiredTotal = _squareCost(
+            locs[0].lat,
+            refLng,
+            floorPerSquare,
+            raiseOwnSquares
+        );
 
         for (uint256 i = 1; i < len; ) {
             uint16 lat = locs[i].lat;
             uint16 lng = locs[i].lng;
             if (lng >= LOC_MAX_LNG) revert InvalidCoordinates();
 
-            {
-                Bid memory current = highestBids[lat][lng];
-                requiredTotal += _bidAmount(current.amount, floorPerSquare);
-            }
+            requiredTotal += _squareCost(lat, lng, floorPerSquare, raiseOwnSquares);
 
             lng = _normLng(lng, refLng);
 
@@ -964,6 +1013,22 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         if (newEnd <= end) return;
         endTime = uint64(newEnd);
         emit AuctionExtended(uint64(newEnd));
+    }
+
+    /// ETH that a bid spends on one square. A square of a different bidder, or with no bid: the
+    /// full `_bidAmount`. Own square: 0, or only the increase if `raiseOwnSquares` is true.
+    function _squareCost(
+        uint16 lat,
+        uint16 lng,
+        uint256 floorPerSquare,
+        bool raiseOwnSquares
+    ) internal view returns (uint256) {
+        Bid memory current = highestBids[lat][lng];
+        if (current.bidder != msg.sender) {
+            return _bidAmount(current.amount, floorPerSquare);
+        }
+        if (!raiseOwnSquares) return 0;
+        return _bidAmount(current.amount, floorPerSquare) - current.amount;
     }
 
     /// Amount a bid puts on a square: the next bid, or `floorPerSquare` if that is larger.
