@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import {Loc, LOC_MAX_LAT, LOC_MAX_LNG} from "./interfaces/GaiaTypes.sol";
@@ -28,6 +29,23 @@ import {IGaiaAuction} from "./interfaces/IGaiaAuction.sol";
  *   - Jump bid: a bidder can set `floorPerSquare`. Each square then gets the larger of its next bid
  *     and `floorPerSquare`.
  *   - All these values are constructor parameters and do not change after deployment.
+ *
+ * Pause and cancel (emergency stop):
+ *   - The contract has no owner of its own and is not upgradeable. The admin is the holder of
+ *     `DEFAULT_ADMIN_ROLE` in `countries` (a multisig), read on each call. So a change of that
+ *     role also moves these powers, and a renounce of it removes them. The admin has only the
+ *     powers below here. It cannot take funds, change bids, change winners or change the bid rules.
+ *   - `pause` stops bids, settlement and `withdrawProceeds`. The admin can pause only while
+ *     `block.timestamp <= endTime`, so a pause always comes before the first settlement and before
+ *     the treasury gets the proceeds. `withdraw` (refunds) always works.
+ *   - `unpause` is possible only while `block.timestamp <= endTime`. It applies the soft close, so
+ *     bidders get at least `extensionWindow` seconds after it (up to `maxEndTime`). The pause does
+ *     not stop the clock.
+ *   - `cancel` ends the auction for good. All current highest bids become refunds: each bidder
+ *     gets back everything with `withdraw`. Nothing settles and the treasury gets nothing.
+ *   - While paused, the admin can cancel at any time. After `endTime`, anybody can cancel a
+ *     paused auction. So a paused auction cannot hold the funds: it either resumes before
+ *     `endTime` or ends in a cancel.
  *
  * Longitude wraps: square 35999 and square 0 are neighbours. Shape checks use longitudes
  * normalised relative to the first square of the shape (see _normLng), so a shape can cross the
@@ -65,6 +83,14 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     mapping(address => uint256) public pendingReturns;
     // Sum of current highest bids; owed to the treasury. Kept separate from pendingReturns.
     uint256 public proceeds;
+    // Sum of each bidder's current highest bids. The sum over all bidders equals `proceeds`.
+    // After a cancel, `withdraw` pays it back.
+    mapping(address => uint256) public activeBids;
+
+    // --- Emergency state ---
+    bool public paused;
+    // A cancelled auction stays paused.
+    bool public cancelled;
 
     // --- Per-shape state ---
     // shapeId 0 is a sentinel for "no active shape"; valid ids start at 1.
@@ -123,6 +149,9 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     );
     event ProceedsWithdrawn(address indexed treasury, uint256 amount);
     event AuctionExtended(uint64 endTime);
+    event AuctionPaused();
+    event AuctionUnpaused();
+    event AuctionCancelled(address indexed by);
 
     // --- Errors ---
     error AuctionAlreadyEnded();
@@ -145,16 +174,27 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     error OverlapWouldInvalidateShape(uint256 shapeId);
     error ProceedsTransferFailed();
     error CountryAccountCannotBid();
+    error NotAdmin();
+    error AuctionIsPaused();
+    error AuctionNotPaused();
+    error AuctionIsCancelled();
 
     // --- Modifiers ---
     modifier onlyDuringAuction() {
         if (block.timestamp < startTime) revert AuctionNotYetStarted();
         if (block.timestamp > endTime) revert AuctionAlreadyEnded();
+        _requireNotStopped();
         _;
     }
 
     modifier onlyAfterAuction() {
         if (block.timestamp <= endTime) revert AuctionNotYetEnded();
+        _requireNotStopped();
+        _;
+    }
+
+    modifier onlyAdmin() {
+        if (!_isAdmin(msg.sender)) revert NotAdmin();
         _;
     }
 
@@ -245,6 +285,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
                 unchecked {
                     pendingReturns[current.bidder] += current.amount;
                 }
+                activeBids[current.bidder] -= current.amount;
             }
 
             uint256 nextAmount = _bidAmount(current.amount, floorPerSquare);
@@ -263,22 +304,28 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             }
         }
         proceeds += proceedsIncrease;
+        activeBids[msg.sender] += requiredTotal;
 
         _extendIfClosing();
     }
 
     /// @inheritdoc IGaiaAuction
     function withdraw() external override nonReentrant returns (bool) {
-        uint256 amount = pendingReturns[msg.sender];
+        uint256 refund = pendingReturns[msg.sender];
+        // After a cancel, the bidder's current highest bids are refunds too.
+        uint256 bids = cancelled ? activeBids[msg.sender] : 0;
+        uint256 amount = refund + bids;
         if (amount == 0) {
             return true;
         }
 
         pendingReturns[msg.sender] = 0;
+        if (bids != 0) activeBids[msg.sender] = 0;
 
         (bool success, ) = payable(msg.sender).call{value: amount}("");
         if (!success) {
-            pendingReturns[msg.sender] = amount;
+            pendingReturns[msg.sender] = refund;
+            if (bids != 0) activeBids[msg.sender] = bids;
             return false;
         }
 
@@ -381,6 +428,38 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
                 );
             }
         }
+    }
+
+    /// @inheritdoc IGaiaAuction
+    function pause() external override onlyAdmin {
+        if (cancelled) revert AuctionIsCancelled();
+        if (paused) revert AuctionIsPaused();
+        if (block.timestamp > endTime) revert AuctionAlreadyEnded();
+        paused = true;
+        emit AuctionPaused();
+    }
+
+    /// @inheritdoc IGaiaAuction
+    function unpause() external override onlyAdmin {
+        if (cancelled) revert AuctionIsCancelled();
+        if (!paused) revert AuctionNotPaused();
+        if (block.timestamp > endTime) revert AuctionAlreadyEnded();
+        paused = false;
+        emit AuctionUnpaused();
+        _extendIfClosing();
+    }
+
+    /// @inheritdoc IGaiaAuction
+    function cancel() external override {
+        if (cancelled) revert AuctionIsCancelled();
+        if (!paused) revert AuctionNotPaused();
+        if (block.timestamp <= endTime && !_isAdmin(msg.sender)) {
+            revert NotAdmin();
+        }
+        cancelled = true;
+        // The bids go back to the bidders through `activeBids`.
+        proceeds = 0;
+        emit AuctionCancelled(msg.sender);
     }
 
     /// @inheritdoc IGaiaAuction
@@ -844,6 +923,21 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
 
         // The remainder must itself be a valid shape (contiguous, convex, within bounds).
         _validateShapeMem(remaining);
+    }
+
+    /// True if `account` has `DEFAULT_ADMIN_ROLE` in `countries`.
+    function _isAdmin(address account) internal view returns (bool) {
+        return
+            IAccessControl(address(countries)).hasRole(
+                0x00, // DEFAULT_ADMIN_ROLE
+                account
+            );
+    }
+
+    /// Reverts when the auction is cancelled or paused.
+    function _requireNotStopped() internal view {
+        if (cancelled) revert AuctionIsCancelled();
+        if (paused) revert AuctionIsPaused();
     }
 
     /// Soft close: a bid with less than `extensionWindow` seconds left moves `endTime` to

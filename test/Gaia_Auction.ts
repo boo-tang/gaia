@@ -1781,3 +1781,301 @@ describe("GaiaAuction: soft close, bid increment and jump bids", function () {
     });
   });
 });
+
+describe("GaiaAuction: pause and cancel", function () {
+  const minBid = 1000n;
+  const window = 300n;
+
+  async function deployPausable() {
+    // `owner` is the GaiaCountries admin, so it can pause, unpause and cancel.
+    const [owner, bidder1, bidder2, bidder3, treasury, stranger, newAdmin] =
+      await viem.getWalletClients();
+    const publicClient = await viem.getPublicClient();
+
+    const { countries } = await deployLand(owner.account.address);
+
+    const now = (await publicClient.getBlock()).timestamp;
+    const start = now - 10n;
+    const end = now + 3600n;
+    const maxEnd = end + 3600n;
+    const auction = await viem.deployContract(
+      "contracts/GaiaAuction.sol:GaiaAuction",
+      [
+        countries.address,
+        treasury.account.address,
+        start,
+        end,
+        maxEnd,
+        window,
+        minBid,
+        0n, // minBidIncrementBps
+        1n, // minShapeSquares
+        1000n, // maxShapeSquares
+        10n, // maxShapeAspectRatio
+      ]
+    );
+    await countries.write.grantRole([
+      await countries.read.ISSUER_ROLE(),
+      auction.address,
+    ]);
+    await countries.write.addAuction([auction.address]);
+
+    const as = async (wallet: typeof owner) =>
+      viem.getContractAt("contracts/GaiaAuction.sol:GaiaAuction", auction.address, {
+        client: { wallet },
+      });
+
+    return {
+      publicClient,
+      countries,
+      auction,
+      bidders: [bidder1, bidder2, bidder3],
+      asBidders: [await as(bidder1), await as(bidder2), await as(bidder3)],
+      asAdmin: await as(owner),
+      asNewAdmin: await as(newAdmin),
+      asStranger: await as(stranger),
+      owner,
+      newAdmin,
+      treasury,
+      end,
+      maxEnd,
+    };
+  }
+
+  type Pausable = Awaited<ReturnType<typeof deployPausable>>;
+
+  // Three bidders. Bidder 2 takes one square of bidder 1, bidder 3 takes it back from bidder 2,
+  // bidder 1 bids again on its own square, and bidder 3 overpays. Returns what each bidder paid.
+  async function placeBids(f: Pausable) {
+    const [as1, as2, as3] = f.asBidders;
+    await as1.write.bidOnShape(
+      [
+        [
+          { lat: 10, lng: 10 },
+          { lat: 10, lng: 11 },
+          { lat: 10, lng: 12 },
+        ],
+        0n,
+      ],
+      { value: 3n * minBid }
+    );
+    await as2.write.bidOnShape([[{ lat: 10, lng: 12 }], 0n], {
+      value: 2n * minBid,
+    });
+    await as3.write.bidOnShape([[{ lat: 10, lng: 12 }], 0n], {
+      value: 5n * minBid, // 3 * minBid required, 2 * minBid excess
+    });
+    await as1.write.bidOnShape([[{ lat: 10, lng: 10 }], 0n], {
+      value: 2n * minBid,
+    });
+    await as2.write.bidOnShape([[{ lat: 20, lng: 20 }], 4n * minBid], {
+      value: 4n * minBid,
+    });
+    return [5n * minBid, 6n * minBid, 5n * minBid];
+  }
+
+  // ETH that `withdraw` sent to the bidder (the balance change plus the gas cost).
+  async function withdrawnBy(f: Pausable, i: number) {
+    const address = f.bidders[i].account.address;
+    const before = await f.publicClient.getBalance({ address });
+    const hash = await f.asBidders[i].write.withdraw();
+    const { gasUsed, effectiveGasPrice } =
+      await f.publicClient.waitForTransactionReceipt({ hash });
+    const after = await f.publicClient.getBalance({ address });
+    return after - before + gasUsed * effectiveGasPrice;
+  }
+
+  it("lets only the admin pause, unpause and cancel before the end", async function () {
+    const f = await loadFixture(deployPausable);
+    await expect(f.asStranger.write.pause()).to.be.rejectedWith("NotAdmin");
+    await f.asAdmin.write.pause();
+    expect(await f.auction.read.paused()).to.equal(true);
+    await expect(f.asStranger.write.unpause()).to.be.rejectedWith("NotAdmin");
+    await expect(f.asStranger.write.cancel()).to.be.rejectedWith("NotAdmin");
+    await expect(f.asBidders[0].write.cancel()).to.be.rejectedWith("NotAdmin");
+  });
+
+  it("blocks bids while paused and accepts them again after unpause", async function () {
+    const f = await loadFixture(deployPausable);
+    const [as1] = f.asBidders;
+    const loc = { lat: 30, lng: 30 };
+
+    await f.asAdmin.write.pause();
+    await expect(f.asAdmin.write.pause()).to.be.rejectedWith("AuctionIsPaused");
+    await expect(
+      as1.write.bidOnShape([[loc], 0n], { value: minBid })
+    ).to.be.rejectedWith("AuctionIsPaused");
+
+    await f.asAdmin.write.unpause();
+    await expect(f.asAdmin.write.unpause()).to.be.rejectedWith("AuctionNotPaused");
+    await expect(as1.write.bidOnShape([[loc], 0n], { value: minBid })).to.be
+      .fulfilled;
+  });
+
+  it("lets outbid bidders withdraw while paused", async function () {
+    const f = await loadFixture(deployPausable);
+    await placeBids(f);
+    await f.asAdmin.write.pause();
+
+    // Bidder 2 was outbid on (10, 12): 2 * minBid.
+    expect(await withdrawnBy(f, 1)).to.equal(2n * minBid);
+  });
+
+  it("gives bidders at least the extension window after an unpause near the end", async function () {
+    const f = await loadFixture(deployPausable);
+    await f.asAdmin.write.pause();
+    await time.setNextBlockTimestamp(f.end - 10n);
+    await f.asAdmin.write.unpause();
+    expect(await f.auction.read.endTime()).to.equal(f.end - 10n + window);
+  });
+
+  it("does not let the admin pause or unpause after the end", async function () {
+    const f = await loadFixture(deployPausable);
+    await time.increaseTo(f.end + 1n);
+    await expect(f.asAdmin.write.pause()).to.be.rejectedWith(
+      "AuctionAlreadyEnded"
+    );
+
+    const g = await loadFixture(deployPausable);
+    await g.asAdmin.write.pause();
+    await time.increaseTo(g.end + 1n);
+    await expect(g.asAdmin.write.unpause()).to.be.rejectedWith(
+      "AuctionAlreadyEnded"
+    );
+  });
+
+  it("blocks settlement and proceeds while a pause lasts past the end", async function () {
+    const f = await loadFixture(deployPausable);
+    await placeBids(f);
+    await f.asAdmin.write.pause();
+    await time.increaseTo(f.end + 1n);
+
+    await expect(f.asStranger.write.settleShape([1n, 0n])).to.be.rejectedWith(
+      "AuctionIsPaused"
+    );
+    await expect(f.asStranger.write.withdrawProceeds()).to.be.rejectedWith(
+      "AuctionIsPaused"
+    );
+  });
+
+  it("refunds every bidder in full after a cancel", async function () {
+    const f = await loadFixture(deployPausable);
+    const paid = await placeBids(f);
+    const total = paid.reduce((a, b) => a + b, 0n);
+
+    // The bidders' current highest bids add up to the proceeds.
+    const active = await Promise.all(
+      f.bidders.map((b) => f.auction.read.activeBids([b.account.address]))
+    );
+    expect(active.reduce((a, b) => a + b, 0n)).to.equal(
+      await f.auction.read.proceeds()
+    );
+    expect(
+      await f.publicClient.getBalance({ address: f.auction.address })
+    ).to.equal(total);
+
+    await f.asAdmin.write.pause();
+    await f.asAdmin.write.cancel();
+    expect(await f.auction.read.cancelled()).to.equal(true);
+    expect(await f.auction.read.proceeds()).to.equal(0n);
+
+    for (let i = 0; i < 3; i++) {
+      expect(await withdrawnBy(f, i)).to.equal(paid[i]);
+      expect(
+        await f.auction.read.activeBids([f.bidders[i].account.address])
+      ).to.equal(0n);
+      // A second withdraw sends nothing.
+      expect(await withdrawnBy(f, i)).to.equal(0n);
+    }
+    expect(
+      await f.publicClient.getBalance({ address: f.auction.address })
+    ).to.equal(0n);
+  });
+
+  it("refunds a bidder who withdrew the outbid amounts before the cancel", async function () {
+    const f = await loadFixture(deployPausable);
+    const paid = await placeBids(f);
+    const early = await withdrawnBy(f, 0); // bidder 1: outbid on (10, 12) and (10, 10)
+    expect(early).to.equal(2n * minBid);
+
+    await f.asAdmin.write.pause();
+    await f.asAdmin.write.cancel();
+    expect(early + (await withdrawnBy(f, 0))).to.equal(paid[0]);
+  });
+
+  it("lets anybody cancel a paused auction after the end", async function () {
+    const f = await loadFixture(deployPausable);
+    const paid = await placeBids(f);
+
+    await expect(f.asStranger.write.cancel()).to.be.rejectedWith(
+      "AuctionNotPaused"
+    );
+    await f.asAdmin.write.pause();
+    await time.increaseTo(f.end + 1n);
+    await expect(f.asStranger.write.cancel()).to.be.fulfilled;
+
+    expect(await withdrawnBy(f, 2)).to.equal(paid[2]);
+  });
+
+  it("does not let anybody cancel an auction that ended without a pause", async function () {
+    const f = await loadFixture(deployPausable);
+    await placeBids(f);
+    await time.increaseTo(f.end + 1n);
+    await expect(f.asAdmin.write.cancel()).to.be.rejectedWith(
+      "AuctionNotPaused"
+    );
+    await expect(f.asStranger.write.withdrawProceeds()).to.be.fulfilled;
+  });
+
+  it("stops everything except withdraw after a cancel", async function () {
+    const f = await loadFixture(deployPausable);
+    await placeBids(f);
+    await f.asAdmin.write.pause();
+    await f.asAdmin.write.cancel();
+
+    await expect(f.asAdmin.write.cancel()).to.be.rejectedWith(
+      "AuctionIsCancelled"
+    );
+    await expect(f.asAdmin.write.unpause()).to.be.rejectedWith(
+      "AuctionIsCancelled"
+    );
+    await expect(f.asAdmin.write.pause()).to.be.rejectedWith(
+      "AuctionIsCancelled"
+    );
+    await expect(
+      f.asBidders[0].write.bidOnShape([[{ lat: 40, lng: 40 }], 0n], {
+        value: minBid,
+      })
+    ).to.be.rejectedWith("AuctionIsCancelled");
+
+    await time.increaseTo(f.end + 1n);
+    await expect(f.asStranger.write.settleShape([1n, 0n])).to.be.rejectedWith(
+      "AuctionIsCancelled"
+    );
+    await expect(f.asStranger.write.withdrawProceeds()).to.be.rejectedWith(
+      "AuctionIsCancelled"
+    );
+  });
+
+  it("follows the admin role of GaiaCountries", async function () {
+    const f = await loadFixture(deployPausable);
+    const adminRole = await f.countries.read.DEFAULT_ADMIN_ROLE();
+    await f.countries.write.grantRole([adminRole, f.newAdmin.account.address]);
+    await f.countries.write.renounceRole([adminRole, f.owner.account.address]);
+
+    await expect(f.asAdmin.write.pause()).to.be.rejectedWith("NotAdmin");
+    await f.asNewAdmin.write.pause();
+    await expect(f.asAdmin.write.cancel()).to.be.rejectedWith("NotAdmin");
+    await f.asNewAdmin.write.cancel();
+    expect(await f.auction.read.cancelled()).to.equal(true);
+  });
+
+  it("cannot be paused after the admin renounces the role", async function () {
+    const f = await loadFixture(deployPausable);
+    await f.countries.write.renounceRole([
+      await f.countries.read.DEFAULT_ADMIN_ROLE(),
+      f.owner.account.address,
+    ]);
+    await expect(f.asAdmin.write.pause()).to.be.rejectedWith("NotAdmin");
+  });
+});

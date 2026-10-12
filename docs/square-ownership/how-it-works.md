@@ -98,6 +98,17 @@ Why one end for the whole auction: when Bob takes some of Alice's squares near t
 
 Settlement and `withdrawProceeds` wait for the current `endTime`. Read `endTime()` from the auction every time. Do not keep a copy. The leftover-square sale must also read it when it runs.
 
+### Pause and cancel
+
+The auction has no owner of its own and is not upgradeable. The admin of `GaiaCountries` (the holder of `DEFAULT_ADMIN_ROLE`, a multisig) can stop it if we find a bug. The auction reads the role on each call: when the role moves to a new multisig, these powers move with it. When the admin renounces the role, nobody can pause any more. The admin cannot take funds, change bids, change winners or change the bid rules.
+
+- **Pause.** `pause()` stops bids, settlement and `withdrawProceeds`. The admin can pause only before `endTime`, so a pause always comes before the first settlement. `withdraw` always works: outbid bidders can take their refunds during a pause.
+- **Unpause.** Only before `endTime`. The clock does not stop during a pause, so `unpause()` applies the soft close: bidders get at least `extensionWindow` seconds (up to `maxEndTime`).
+- **Cancel.** `cancel()` ends a paused auction for good. Every current highest bid becomes a refund. Each bidder calls `withdraw` and gets back everything they paid. Nothing settles, and the treasury gets nothing.
+- **No hold on the funds.** While paused, the admin can cancel at any time. After `endTime`, anybody can cancel a paused auction. So a paused auction either starts again before `endTime` or ends in a cancel.
+
+The frontend must read `paused()` and `cancelled()` and show them.
+
 A country account cannot bid. If Alice already owns a country and bids through its box (`execute` on the account), `bidOnShape` reverts with `CountryAccountCannotBid`. The final transfer would send the new country into a box, which `OwnershipLoop` blocks (see below), so the land would stay in the auction. Alice bids from her wallet instead.
 
 After Alice and Bob settle, and before Carol:

@@ -18,7 +18,8 @@ interface IGaiaAuction {
         uint256 floorPerSquare
     ) external payable;
 
-    /// @notice Withdraws refunds for outbid amounts and overpayments
+    /// @notice Withdraws refunds for outbid amounts and overpayments. After a cancel, also
+    ///         withdraws the caller's current highest bids. Works also when the auction is paused.
     function withdraw() external returns (bool);
 
     /// @notice Sends the sum of all winning bids to the treasury after the auction ends.
@@ -33,6 +34,19 @@ interface IGaiaAuction {
     /// @param maxSquares Minimum number of squares to process in this call; the call continues to
     ///        the end of the current latitude row. 0 means no limit.
     function settleShape(uint256 shapeId, uint256 maxSquares) external;
+
+    /// @notice Stops bids, settlement and `withdrawProceeds`. Only the admin of GaiaCountries
+    ///         (`DEFAULT_ADMIN_ROLE`), and only while `block.timestamp <= endTime`.
+    function pause() external;
+
+    /// @notice Starts the auction again. Only the admin of GaiaCountries, and only while
+    ///         `block.timestamp <= endTime`. Applies the soft close.
+    function unpause() external;
+
+    /// @notice Ends a paused auction for good. All current highest bids become refunds for
+    ///         `withdraw`. The admin can cancel at any time while paused; after `endTime`,
+    ///         anybody can cancel a paused auction.
+    function cancel() external;
 
     /// @notice Returns the shape that currently owns the square; 0 if no shape owns it.
     function squareShapeId(
