@@ -10,14 +10,27 @@ import {IGaiaAuction} from "./interfaces/IGaiaAuction.sol";
 
 /**
  * @title GaiaAuction
- * @notice Timeboxed per-square bidding with convex-shape constraint. Each winning shape settles
- *         into an ERC-721 country in GaiaCountries.
+ * @notice Timeboxed per-square bidding with an HV-convex shape constraint. Each winning shape
+ *         settles into an ERC-721 country in GaiaCountries.
+ *
+ * Shape rule: HV-convex. Each row and each column of the shape is one unbroken run of squares, and
+ * the rows are on consecutive latitudes and touch each other. Cross and plus shapes are valid.
  *
  * Anti-griefing rules enforced on every bid and on every simulated remainder after overlap:
  *   - Shape size must be in [minShapeSquares, maxShapeSquares].
  *   - Bounding-box aspect ratio must satisfy max(width,height) <= min(width,height) * maxShapeAspectRatio.
  *   - A bid that partially overlaps an existing active shape is accepted only if each affected
  *     shape's remaining squares are either zero (full takeover) or still form a valid shape.
+ *
+ * Partial takeover: when a different bidder takes some squares of a shape, the first bidder gets
+ * back the bid on each lost square through `withdraw`. The first bidder cannot cancel. They pay
+ * for, and get, the squares that stay. There are no maximum (proxy) bids: a bidder defends a shape
+ * by bidding again. To grow a shape, a bidder bids on a second shape next to it and moves the
+ * squares into the first country after settlement.
+ *
+ * Coordinates: a square's `(lat, lng)` is its south-west corner, in 1/100 degree. `lat` 0 is 90°S,
+ * `lat` 17999 ends at 90°N. All squares have the same price, but a square near a pole is smaller
+ * on the ground.
  *
  * Bid rules (anti-sniping):
  *   - Soft close, global: a bid with less than `extensionWindow` seconds left moves `endTime` for the

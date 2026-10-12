@@ -2,7 +2,9 @@
 
 PoC for an NFT project that will tokenize the world map.
 
-Currently works by connecting your wallet, selecting a valid (concave) shape and "purchasing"
+Currently works by connecting your wallet, selecting a valid shape and "purchasing"
+
+A valid shape is convex along rows and columns: each row and each column of the shape is one unbroken run of squares. Cross and plus shapes are valid. A shape can cross the 180° meridian. A square's coordinates are its south-west corner, in 1/100 degree: `lat` 0 to 17999 (90°S to 90°N), `lng` 0 to 35999 (180°W eastwards). All squares have the same price, but a square near a pole is smaller on the ground.
 
 ## Install Locally
 
