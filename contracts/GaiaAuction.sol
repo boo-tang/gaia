@@ -313,23 +313,12 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             pendingReturns[msg.sender] += msg.value - requiredTotal;
         }
 
-        uint256 proceedsIncrease = 0;
-        uint256 len = squares.length;
-        uint256[] memory amounts = new uint256[](len);
-        for (uint256 i = 0; i < len; ) {
-            (uint256 amount, uint256 increase) = _takeSquare(
-                squares[i],
-                newShapeId,
-                floorPerSquare,
-                raiseOwnSquares
-            );
-            proceedsIncrease += increase;
-            amounts[i] = amount;
-
-            unchecked {
-                i++;
-            }
-        }
+        (uint256[] memory amounts, uint256 proceedsIncrease) = _takeSquares(
+            squares,
+            newShapeId,
+            floorPerSquare,
+            raiseOwnSquares
+        );
         _shapeSquares[newShapeId] = squares;
         proceeds += proceedsIncrease;
         // requiredTotal is the full amount of each new square plus the increase of each raised
@@ -821,37 +810,62 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         );
     }
 
-    /// Moves a square to `newShapeId` and returns its new amount and the increase of its amount.
-    /// A square of a different bidder: the previous bidder gets a refund. Own square: no refund,
-    /// and the amount goes up only if `raiseOwnSquares` is true.
-    function _takeSquare(
-        uint32 key,
+    /// Moves the squares to `newShapeId`. Returns the new amount of each square and the sum of the
+    /// increases. A square of a different bidder: the previous bidder gets a refund. Own square: no
+    /// refund, and the amount goes up only if `raiseOwnSquares` is true. The refunds go to
+    /// `pendingReturns` and out of `activeBids` once for each run of consecutive squares with the
+    /// same previous bidder, not once for each square.
+    function _takeSquares(
+        uint32[] calldata squares,
         uint256 newShapeId,
         uint256 floorPerSquare,
         bool raiseOwnSquares
-    ) internal returns (uint256 amount, uint256 increase) {
-        Square memory current = _squares[key];
-        address previous = shapeBidder[current.shapeId];
-        amount = current.amount;
+    ) internal returns (uint256[] memory amounts, uint256 proceedsIncrease) {
+        uint256 len = squares.length;
+        amounts = new uint256[](len);
+        address refundTo;
+        uint256 refund;
+        for (uint256 i = 0; i < len; ) {
+            uint32 square = squares[i];
+            Square memory current = _squares[square];
+            address previous = shapeBidder[current.shapeId];
+            uint256 amount = current.amount;
 
-        if (previous != msg.sender) {
-            if (previous != address(0) && current.amount != 0) {
-                unchecked {
-                    pendingReturns[previous] += current.amount;
+            if (previous != msg.sender) {
+                if (previous != refundTo) {
+                    _refund(refundTo, refund);
+                    refundTo = previous;
+                    refund = 0;
                 }
-                activeBids[previous] -= current.amount;
+                refund += current.amount;
+                amount = _bidAmount(current.amount, floorPerSquare);
+            } else if (raiseOwnSquares) {
+                amount = _bidAmount(current.amount, floorPerSquare);
             }
-            amount = _bidAmount(current.amount, floorPerSquare);
-        } else if (raiseOwnSquares) {
-            amount = _bidAmount(current.amount, floorPerSquare);
-        }
-        increase = amount - current.amount;
+            proceedsIncrease += amount - current.amount;
+            amounts[i] = amount;
 
-        // `msg.value` covers the sum of the amounts, so each amount fits in 128 bits.
-        _squares[key] = Square({
-            amount: uint128(amount),
-            shapeId: uint128(newShapeId)
-        });
+            // `msg.value` covers the sum of the amounts, so each amount fits in 128 bits.
+            _squares[square] = Square({
+                amount: uint128(amount),
+                shapeId: uint128(newShapeId)
+            });
+
+            unchecked {
+                i++;
+            }
+        }
+        _refund(refundTo, refund);
+    }
+
+    /// Moves `amount` of the current bids of `bidder` to its refunds. No-op for address(0) (a
+    /// square with no bid) or a zero amount.
+    function _refund(address bidder, uint256 amount) internal {
+        if (bidder == address(0) || amount == 0) return;
+        unchecked {
+            pendingReturns[bidder] += amount;
+        }
+        activeBids[bidder] -= amount;
     }
 
     /// Storage key of a square: `(uint32(lat) << 16) | lng`, the same packing as `ShapeBid`.

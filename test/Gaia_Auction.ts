@@ -336,6 +336,37 @@ describe("GaiaAuction: totals and refunds", function () {
     expect(b2[1]).to.equal(minBid);
   });
 
+  it("refunds each previous bidder in full when the previous bidders alternate", async function () {
+    const { auction, owner, other, minBid } = await loadFixture(deployAll);
+    const [, , third] = await viem.getWalletClients();
+    const as = async (wallet: typeof owner) =>
+      viem.getContractAt("contracts/GaiaAuction.sol:GaiaAuction", auction.address, {
+        client: { wallet },
+      });
+    const asOther = await as(other);
+    const asThird = await as(third);
+    const row = (lat: number) => [10, 11, 12].map((lng) => ({ lat, lng }));
+
+    // Rows 50 and 52 belong to owner, row 51 to other.
+    await auction.write.bidOnShape([pack(row(50)), 0n, false], { value: minBid * 3n });
+    await asOther.write.bidOnShape([pack(row(51)), 0n, false], { value: minBid * 3n });
+    await auction.write.bidOnShape([pack(row(52)), 0n, false], { value: minBid * 3n });
+
+    // The west column: previous bidders owner, other, owner.
+    const column = [50, 51, 52].map((lat) => ({ lat, lng: 10 }));
+    await asThird.write.bidOnShape([pack(column), 0n, false], { value: minBid * 6n });
+
+    expect(await auction.read.pendingReturns([owner.account.address])).to.equal(minBid * 2n);
+    expect(await auction.read.pendingReturns([other.account.address])).to.equal(minBid);
+    const active =
+      (await auction.read.activeBids([owner.account.address])) +
+      (await auction.read.activeBids([other.account.address])) +
+      (await auction.read.activeBids([third.account.address]));
+    expect(await auction.read.activeBids([owner.account.address])).to.equal(minBid * 4n);
+    expect(await auction.read.activeBids([other.account.address])).to.equal(minBid * 2n);
+    expect(active).to.equal(await auction.read.proceeds());
+  });
+
   it("reverts when value is insufficient for the required total", async function () {
     const { auction, minBid } = await loadFixture(deployAll);
     const shape = [
