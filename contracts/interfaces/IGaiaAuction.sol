@@ -51,6 +51,16 @@ interface IGaiaAuction {
     ///         anybody can cancel a paused auction.
     function cancel() external;
 
+    /// @notice Returns the current end of the auction. A bid near the end moves it, up to
+    ///         `maxEndTime`. After the end, it does not change.
+    function endTime() external view returns (uint64);
+
+    /// @notice Returns true while the auction is paused. A cancelled auction stays paused.
+    function paused() external view returns (bool);
+
+    /// @notice Returns true after a cancel.
+    function cancelled() external view returns (bool);
+
     /// @notice Returns the shape that currently owns the square; 0 if no shape owns it.
     function squareShapeId(
         uint16 lat,
