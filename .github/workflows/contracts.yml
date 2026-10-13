@@ -43,9 +43,10 @@ jobs:
       - name: Test
         env:
           LAND_FUZZ_RUNS: ${{ inputs.fuzz_runs }}
+          AUCTION_FUZZ_RUNS: ${{ inputs.fuzz_runs }}
         run: |
           # An empty value means the default. Remove the empty variables.
-          for name in LAND_FUZZ_RUNS; do
+          for name in LAND_FUZZ_RUNS AUCTION_FUZZ_RUNS; do
             if [ -z "${!name}" ]; then unset "$name"; fi
           done
           npx hardhat test
