@@ -240,7 +240,7 @@ The last square of a country can also be split out. The country then has 0 squar
 
 **Warning:** empty the account before you split the last square. ETH, tokens and NFTs that stay in the account after the burn are locked forever.
 
-Users cannot create a new country to split into. Only an issuer can call `createCountry`.
+Users cannot create a new country to split into. Only an issuer can call `createCountry`. To start a new country after the auction, a user buys at least one free square in the land sale (`buy`, see above), and then merges squares into it.
 
 ## Sale: sell the country, not each square
 
