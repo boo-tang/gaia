@@ -101,7 +101,7 @@ All of these values are constructor parameters. Nobody can change them after dep
 
 Why one end for the whole auction: when Bob takes some of Alice's squares near the end, Alice can still bid on other squares that suit her. If each square closed at its own time, she could lose a square after the squares she wants as a replacement have closed.
 
-Settlement and `withdrawProceeds` wait for the current `endTime`. Read `endTime()` from the auction every time. Do not keep a copy. The leftover-square sale must also read it when it runs.
+Settlement and `withdrawProceeds` wait for the current `endTime`. Read `endTime()` from the auction every time. Do not keep a copy. The leftover-square sale also reads it on each purchase (see below).
 
 ### Bid gas
 
@@ -157,6 +157,21 @@ lat 22  .       A       A       .       .
 Carol later settles the same way as Country 3. Her squares go to `accountOf(3)`.
 
 A country can also be created by an issuer (`ISSUER_ROLE`) with `createCountry` and `addSquares`. The ownership picture is the same. Only the caller is different.
+
+## Leftover squares: the land sale
+
+`GaiaLandSale` sells the squares that the auction did not sell. It is the second issuer of `GaiaCountries`, after the auction.
+
+- **Open.** The sale opens after `auction.endTime()`. It reads `endTime()` on each purchase, because a bid near the end moves it. A purchase at `endTime` or before reverts with `SaleNotOpen`.
+- **Closed after a pause or a cancel.** While the auction is paused, a purchase reverts with `AuctionIsPaused`. After a cancel, it reverts with `AuctionIsCancelled`. A paused auction after `endTime` can only end in a cancel, and after a cancel the plan is a new auction with a new sale.
+- **Price.** At a given time, every square has the same price. The price stays at `startPrice` for `holdDuration` seconds after `endTime`. Then it drops in a straight line to `endPrice` in `dropDuration` seconds. Then it stays at `endPrice`. `pricePerSquare()` gives the price now (`startPrice` before the end). `isOpen()` tells if a purchase can go through. All price values are constructor parameters. To change them, deploy a new sale and move the issuer role to it.
+- **Buy.** `buy(squares)` creates a new country for the caller. `buyInto(countryId, squares)` adds squares to a country that the caller owns. The squares use the same packing as `bidOnShape`: `(lat << 16) | lng`. One square is enough; no size or shape limits of the auction apply.
+- **Order of the squares.** `GaiaSquares` adds the squares one at a time, in the given order. Each square must touch the country or an earlier square, and the country must stay without holes. If not, the purchase reverts with `ShapeBroken`.
+- **Payment.** The buyer pays `pricePerSquare() * squares.length` at the block of the purchase. The price can only go down while the transaction waits, so the buyer can send the price that the frontend shows. In the same transaction, the sale sends the cost to the treasury and the excess back to the buyer. The sale holds no ETH. If the treasury cannot receive ETH, every purchase reverts; then deploy a new sale.
+
+The auction land stays safe. `GaiaCountries` rejects each square that has a bid in a registered auction (`SquareReserved`), also after the shape settles. A square that exists already reverts with `SquareAlreadyExists`. So a winner can settle at any time, and the sale cannot sell their squares. This works only while the auction stays registered: do not call `removeAuction`.
+
+A country account cannot buy. `buy` from an account reverts with `OwnershipLoop` (the new country would go into a box), and `buyInto` reverts with `NotCountryOwner` (a box never owns a country). Alice buys from her wallet.
 
 ## Where a square can move
 
