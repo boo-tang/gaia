@@ -1,0 +1,51 @@
+# Compiles the contracts and runs the contract tests.
+# The fuzz tests use their default settings, which are short. To run more fuzz seeds, start the
+# workflow by hand (Actions > Contracts > Run workflow) and set "fuzz_runs".
+name: Contracts
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      fuzz_runs:
+        description: Number of seeds for each fuzz test (empty for the default)
+        required: false
+        default: ""
+
+concurrency:
+  group: contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Install
+        run: yarn install --frozen-lockfile
+
+      - name: Compile
+        run: npx hardhat compile
+
+      - name: Test
+        env:
+          LAND_FUZZ_RUNS: ${{ inputs.fuzz_runs }}
+        run: |
+          # An empty value means the default. Remove the empty variables.
+          for name in LAND_FUZZ_RUNS; do
+            if [ -z "${!name}" ]; then unset "$name"; fi
+          done
+          npx hardhat test
