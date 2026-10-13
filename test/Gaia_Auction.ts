@@ -11,7 +11,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
 
     const { countries } = await deployLand(owner.account.address);
 
-    const now = Math.floor(Date.now() / 1000);
+    const now = await time.latest();
     const start = BigInt(now - 10);
     const end = BigInt(now + 3600);
     const minBid = 1000n;
@@ -208,7 +208,7 @@ describe("GaiaAuction: totals and refunds", function () {
 
     const { countries } = await deployLand(owner.account.address);
 
-    const now = Math.floor(Date.now() / 1000);
+    const now = await time.latest();
     const start = BigInt(now - 10);
     const end = BigInt(now + 3600);
     const minBid = 1000n;
@@ -386,7 +386,7 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
 
     const { countries } = await deployLand(owner.account.address);
 
-    const now = Math.floor(Date.now() / 1000);
+    const now = await time.latest();
     const start = BigInt(now - 10);
     const end = BigInt(now + 3600);
     const minBid = 1000n;
@@ -512,7 +512,7 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
 
     const { countries } = await deployLand(owner.account.address);
 
-    const now = Math.floor(Date.now() / 1000);
+    const now = await time.latest();
     const start = BigInt(now - 10);
     const end = BigInt(now + 3600);
     const minBid = 1000n;

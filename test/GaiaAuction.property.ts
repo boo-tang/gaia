@@ -1,6 +1,6 @@
-import { getAddress, zeroAddress } from "viem";
+import { type Abi, type Hex, getAddress, parseEventLogs, zeroAddress } from "viem";
 
-import { loadFixture, time, viem } from "./helpers/setup";
+import { loadFixture, networkHelpers, time, viem } from "./helpers/setup";
 import { deployLand } from "./helpers/land";
 
 /*
@@ -10,6 +10,23 @@ import { deployLand } from "./helpers/land";
  * call, the model predicts success or the revert error. After each call, the test compares the
  * contract state with the model: `highestBids`, `squareShapeId`, `shapeBidder`,
  * `shapeLiveSquares`, `pendingReturns`, `activeBids` and `proceeds`.
+ *
+ * ETH invariants, checked after each call (bid, withdraw, pause, unpause, cancel,
+ * withdrawProceeds):
+ * - The auction balance is at least the sum of `pendingReturns` of the bidders plus `proceeds`.
+ *   The model also predicts the exact balance.
+ * - Until a cancel, the sum of `activeBids` equals `proceeds`. After a cancel, `proceeds` is 0.
+ *   withdrawProceeds sets `proceeds` to 0 and does not change `activeBids`, so after it the sum of
+ *   `activeBids` equals the proceeds that the treasury got. (A cancel is not possible after
+ *   withdrawProceeds, so `activeBids` is not used again.)
+ * `pendingReturns` cannot be listed, so the test keeps the list of bidders.
+ *
+ * At the end, a run either ends normally or with a cancel:
+ * - Normal end: the treasury gets exactly `proceeds` from withdrawProceeds, and each bidder can
+ *   withdraw their refunds. Then a land sale sells squares next to the window. After each
+ *   purchase the sale holds no ETH, and the treasury gets exactly the price times the number of
+ *   squares.
+ * - Cancel: each bidder withdraws exactly the ETH that they sent, and the treasury gets nothing.
  *
  * Shape rule. The model has two parts:
  * - `shapeError` gives the error of a square list. It reads the squares in the same order as the
@@ -54,6 +71,12 @@ const INCREMENT_BPS = 500n;
 const MIN_SHAPE = 2;
 const MAX_SHAPE = 24;
 const MAX_RATIO = 3;
+
+// Land sale parameters. The price drops by 1 wei per second.
+const SALE_START_PRICE = 9000n;
+const SALE_END_PRICE = 1800n;
+const SALE_HOLD = 3600n;
+const SALE_DROP = 7200n;
 
 type Address = `0x${string}`;
 
@@ -300,6 +323,16 @@ class AuctionModel {
   cancelled = false;
   // True if the last bid reverts because of the remainder of a shape that it cuts.
   remainderError = false;
+  // True after endTime.
+  ended = false;
+  // ETH: the expected balance of the auction, and the ETH that each bidder sent and got back.
+  balance = 0n;
+  sent = new Map<Address, bigint>();
+  withdrawn = new Map<Address, bigint>();
+  // The ETH that the last withdraw or withdrawProceeds pays.
+  lastPayment = 0n;
+  // The proceeds that withdrawProceeds paid to the treasury.
+  proceedsPaid = 0n;
 
   constructor(readonly place: Place) {}
 
@@ -315,6 +348,11 @@ class AuctionModel {
     out.nextShape = this.nextShape;
     out.paused = this.paused;
     out.cancelled = this.cancelled;
+    out.ended = this.ended;
+    out.balance = this.balance;
+    out.proceedsPaid = this.proceedsPaid;
+    for (const [a, v] of this.sent) out.sent.set(a, v);
+    for (const [a, v] of this.withdrawn) out.withdrawn.set(a, v);
     return out;
   }
 
@@ -370,6 +408,7 @@ class AuctionModel {
     raise: boolean,
     value: bigint,
   ): string | undefined {
+    if (this.ended) return "AuctionAlreadyEnded";
     if (this.cancelled) return "AuctionIsCancelled";
     if (this.paused) return "AuctionIsPaused";
     const err = shapeError(squares);
@@ -426,6 +465,59 @@ class AuctionModel {
     if (value > paid) this.pending.set(sender, this.pendingOf(sender) + value - paid);
     this.proceeds += increase;
     this.active.set(sender, this.activeOf(sender) + paid);
+    this.balance += value;
+    this.sent.set(sender, (this.sent.get(sender) ?? 0n) + value);
+    return undefined;
+  }
+
+  /// withdraw: pays the refunds, and after a cancel also the current bids. Never reverts.
+  withdraw(sender: Address): string | undefined {
+    const amount =
+      this.pendingOf(sender) + (this.cancelled ? this.activeOf(sender) : 0n);
+    this.pending.set(sender, 0n);
+    if (this.cancelled) this.active.set(sender, 0n);
+    this.balance -= amount;
+    this.withdrawn.set(sender, (this.withdrawn.get(sender) ?? 0n) + amount);
+    this.lastPayment = amount;
+    return undefined;
+  }
+
+  pause(isAdmin: boolean): string | undefined {
+    if (!isAdmin) return "NotAdmin";
+    if (this.cancelled) return "AuctionIsCancelled";
+    if (this.paused) return "AuctionIsPaused";
+    if (this.ended) return "AuctionAlreadyEnded";
+    this.paused = true;
+    return undefined;
+  }
+
+  unpause(isAdmin: boolean): string | undefined {
+    if (!isAdmin) return "NotAdmin";
+    if (this.cancelled) return "AuctionIsCancelled";
+    if (!this.paused) return "AuctionNotPaused";
+    if (this.ended) return "AuctionAlreadyEnded";
+    this.paused = false;
+    return undefined;
+  }
+
+  /// cancel: the admin while paused; anybody while paused after endTime.
+  cancel(isAdmin: boolean): string | undefined {
+    if (this.cancelled) return "AuctionIsCancelled";
+    if (!this.paused) return "AuctionNotPaused";
+    if (!this.ended && !isAdmin) return "NotAdmin";
+    this.cancelled = true;
+    this.proceeds = 0n;
+    return undefined;
+  }
+
+  withdrawProceeds(): string | undefined {
+    if (!this.ended) return "AuctionNotYetEnded";
+    if (this.cancelled) return "AuctionIsCancelled";
+    if (this.paused) return "AuctionIsPaused";
+    this.lastPayment = this.proceeds;
+    this.proceedsPaid += this.proceeds;
+    this.balance -= this.proceeds;
+    this.proceeds = 0n;
     return undefined;
   }
 }
@@ -449,6 +541,7 @@ async function deploy() {
     land,
     bidders: [alice, bob, carol, dave],
     treasury: getAddress(treasury.account.address),
+    publicClient: await viem.getPublicClient(),
   };
 }
 
@@ -480,6 +573,19 @@ async function deployAuction(fx: Fixture) {
     auction.address,
   ]);
   await fx.land.countries.write.addAuction([auction.address]);
+  const sale = await viem.deployContract("GaiaLandSale", [
+    fx.land.countries.address,
+    auction.address,
+    fx.treasury,
+    SALE_START_PRICE,
+    SALE_END_PRICE,
+    SALE_HOLD,
+    SALE_DROP,
+  ]);
+  await fx.land.countries.write.grantRole([
+    await fx.land.countries.read.ISSUER_ROLE(),
+    sale.address,
+  ]);
   const as = new Map<Address, typeof auction>();
   for (const wallet of fx.bidders) {
     as.set(
@@ -491,10 +597,20 @@ async function deployAuction(fx: Fixture) {
       ),
     );
   }
-  return { auction, as, end };
+  return { auction, sale, as, end };
 }
 
 describe("Auction bid rules: model-based random tests", function () {
+  // The runs move the clock past endTime. Restore the chain after the runs, so that the clock
+  // is back where it was for the next test files.
+  let snapshot: Awaited<ReturnType<typeof networkHelpers.takeSnapshot>>;
+  before(async function () {
+    snapshot = await networkHelpers.takeSnapshot();
+  });
+  after(async function () {
+    await snapshot.restore();
+  });
+
   const seeds =
     ONLY_SEED === undefined
       ? Array.from({ length: RUNS }, (_, i) => i + 1)
@@ -513,13 +629,18 @@ describe("Auction bid rules: model-based random tests", function () {
 
 async function runHistory(seed: number, place: Place, fx: Fixture) {
   const rng = new Rng(seed);
-  const { auction, as } = await deployAuction(fx);
+  const { auction, sale, as, end } = await deployAuction(fx);
   let model = new AuctionModel(place);
   const bidders = fx.bidders.map((w) => getAddress(w.account.address));
+  const admin = getAddress(fx.admin.account.address);
+  // The auction as `caller`. The admin deployed it.
+  const asCaller = (caller: Address) =>
+    caller === admin ? auction : as.get(caller)!;
   const log: string[] = [];
   const counts = { ok: 0, reverted: 0 };
   const outcomes = new Map<string, number>();
-  const who = (a: Address) => NAMES[bidders.indexOf(a)] ?? a;
+  const who = (a: Address) =>
+    a === admin ? "admin" : (NAMES[bidders.indexOf(a)] ?? a);
   // The squares of the last bid, for the checks after it.
   let lastSquares: number[] = [];
 
@@ -789,8 +910,326 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         });
       },
     },
+    {
+      weight: 2,
+      name: "withdraw",
+      run: async () => {
+        await withdraw(rng.pick(bidders));
+      },
+    },
+    {
+      weight: 1,
+      name: "pause or unpause",
+      run: async () => {
+        // Mostly the admin. Sometimes a bidder, who is not the admin.
+        const caller = rng.chance(0.85) ? admin : rng.pick(bidders);
+        const isAdmin = caller === admin;
+        if (model.paused && rng.chance(0.8)) {
+          await attempt(
+            `unpause by ${who(caller)}`,
+            (m) => m.unpause(isAdmin),
+            () => asCaller(caller).write.unpause(),
+          );
+          return;
+        }
+        await attempt(
+          `pause by ${who(caller)}`,
+          (m) => m.pause(isAdmin),
+          () => asCaller(caller).write.pause(),
+        );
+        if (!model.paused) return;
+        // A short pause: a bid reverts and a withdraw works. Then the admin mostly unpauses.
+        const cells = convexShape();
+        if (cells !== undefined) {
+          await sendBid("bid while paused", rng.pick(bidders), packCells(cells));
+        }
+        await withdraw(rng.pick(bidders));
+        if (rng.chance(0.85)) {
+          await attempt("unpause by admin", (m) => m.unpause(true), () => auction.write.unpause());
+        }
+      },
+    },
+    {
+      weight: 1,
+      name: "early cancel or withdrawProceeds",
+      run: async () => {
+        // Before endTime these revert: a bidder cannot cancel, an unpaused auction cannot be
+        // cancelled, and the treasury cannot take the proceeds yet.
+        const caller = rng.pick(bidders);
+        if (rng.chance(0.5)) {
+          await attempt(
+            `cancel by ${who(caller)}`,
+            (m) => m.cancel(false),
+            () => asCaller(caller).write.cancel(),
+          );
+        } else {
+          await attempt(
+            `withdrawProceeds by ${who(caller)}`,
+            (m) => m.withdrawProceeds(),
+            () => asCaller(caller).write.withdrawProceeds(),
+          );
+        }
+      },
+    },
   ];
   const totalWeight = ops.reduce((n, o) => n + o.weight, 0);
+
+  // -------- ETH --------
+
+  const balanceOf = (address: Address) => fx.publicClient.getBalance({ address });
+
+  /// The balance change of `address` over the transaction, plus its gas cost if `address` sent
+  /// it. Also returns the receipt.
+  async function balanceChange(address: Address, send: () => Promise<Hex>) {
+    const before = await balanceOf(address);
+    const hash = await send();
+    const receipt = await fx.publicClient.waitForTransactionReceipt({ hash });
+    const after = await balanceOf(address);
+    const gas =
+      getAddress(receipt.from) === address
+        ? receipt.gasUsed * receipt.effectiveGasPrice
+        : 0n;
+    return { change: after - before + gas, receipt };
+  }
+
+  /// withdraw by `bidder`. The bidder must get exactly the amount of the model.
+  async function withdraw(bidder: Address) {
+    let got = 0n;
+    const ok = await attempt(
+      `withdraw by ${who(bidder)}`,
+      (m) => m.withdraw(bidder),
+      async () => {
+        ({ change: got } = await balanceChange(bidder, () =>
+          as.get(bidder)!.write.withdraw(),
+        ));
+      },
+    );
+    if (ok && got !== model.lastPayment) {
+      throw new Divergence(
+        `withdraw paid ${who(bidder)} ${got}, model ${model.lastPayment}`,
+      );
+    }
+  }
+
+  /// withdrawProceeds by `caller`. On success the treasury must get exactly `proceeds`.
+  async function withdrawProceeds(caller: Address) {
+    let got = 0n;
+    const ok = await attempt(
+      `withdrawProceeds by ${who(caller)}`,
+      (m) => m.withdrawProceeds(),
+      async () => {
+        const before = await balanceOf(fx.treasury);
+        await asCaller(caller).write.withdrawProceeds();
+        got = (await balanceOf(fx.treasury)) - before;
+      },
+    );
+    const expected = ok ? model.lastPayment : 0n;
+    if (got !== expected) {
+      throw new Divergence(`withdrawProceeds paid the treasury ${got}, model ${expected}`);
+    }
+  }
+
+  async function passEndTime() {
+    await time.increaseTo(end + 1n);
+    model.ended = true;
+    log.push("time passes endTime");
+  }
+
+  /// The end of a run: a normal end, or a cancel.
+  async function endRun() {
+    const treasuryBefore = await balanceOf(fx.treasury);
+    const proceeds = model.proceeds;
+    const cancel = rng.chance(0.5);
+    if (cancel) {
+      if (!model.paused) {
+        await attempt("pause by admin", (m) => m.pause(true), () => auction.write.pause());
+      }
+      // The admin can cancel before endTime. After endTime anybody can cancel.
+      let caller = admin;
+      if (rng.chance(0.5)) {
+        await passEndTime();
+        caller = rng.pick(bidders);
+      }
+      await attempt(
+        `cancel by ${who(caller)}`,
+        (m) => m.cancel(caller === admin),
+        () => asCaller(caller).write.cancel(),
+      );
+      await check();
+    } else {
+      if (model.paused) {
+        await attempt("unpause by admin", (m) => m.unpause(true), () => auction.write.unpause());
+      }
+      await passEndTime();
+      const cells = convexShape();
+      if (cells !== undefined) await sendBid("late bid", rng.pick(bidders), packCells(cells));
+      await attempt("pause by admin", (m) => m.pause(true), () => auction.write.pause());
+    }
+    if (!model.ended) await passEndTime();
+
+    await withdrawProceeds(rng.pick(bidders));
+    await check();
+    for (const b of bidders) {
+      await withdraw(b);
+      await check();
+    }
+    const left = await balanceOf(auction.address);
+    if (left !== 0n) throw new Divergence(`auction holds ${left} after all withdrawals`);
+    const treasuryGot = (await balanceOf(fx.treasury)) - treasuryBefore;
+    if (cancel) {
+      if (treasuryGot !== 0n) {
+        throw new Divergence(`treasury got ${treasuryGot} after a cancel`);
+      }
+      for (const b of bidders) {
+        const sent = model.sent.get(b) ?? 0n;
+        const back = model.withdrawn.get(b) ?? 0n;
+        if (sent !== back) {
+          throw new Divergence(`${who(b)} sent ${sent} and got back ${back} after a cancel`);
+        }
+      }
+    } else if (treasuryGot !== proceeds) {
+      throw new Divergence(`treasury got ${treasuryGot}, proceeds were ${proceeds}`);
+    }
+    await salePhase(cancel);
+  }
+
+  // -------- Land sale --------
+
+  // The sale bubbles up the reverts of GaiaCountries and GaiaSquares. Their errors are added to
+  // the ABI, so that viem names them.
+  const saleAbi = [
+    ...sale.abi,
+    ...fx.land.countries.abi.filter((item) => item.type === "error"),
+    ...fx.land.squares.abi.filter((item) => item.type === "error"),
+  ] as Abi;
+
+  /// Sale price at `timestamp` (after endTime).
+  function salePrice(timestamp: bigint): bigint {
+    const elapsed = timestamp - end;
+    if (elapsed <= SALE_HOLD) return SALE_START_PRICE;
+    if (elapsed - SALE_HOLD >= SALE_DROP) return SALE_END_PRICE;
+    return (
+      SALE_START_PRICE -
+      ((SALE_START_PRICE - SALE_END_PRICE) * (elapsed - SALE_HOLD)) / SALE_DROP
+    );
+  }
+
+  /// Random purchases next to the window. Each new country gets its own slot of 6 columns; a
+  /// purchase into a country adds the column east of it. The last bid squares are reserved.
+  async function salePhase(cancelled: boolean) {
+    const lat0 = place.lat0 >= 100 ? place.lat0 - 50 : place.lat0 + 50;
+    const bought: { id: bigint; buyer: Address; lat: number; lng: number; rows: number; cols: number }[] = [];
+    let slot = 0;
+    for (let i = 0; i < 6; i++) {
+      const buyer = rng.pick(bidders);
+      const wallet = fx.bidders[bidders.indexOf(buyer)];
+      let fn: "buy" | "buyInto" = "buy";
+      let countryId = 0n;
+      let squares: number[] = [];
+      let expected: string | undefined;
+      const kind = rng.pick(["new", "new", "into", "reserved", "short"]);
+      const into = rng.pickOr(bought.filter((c) => c.buyer === buyer && c.cols < 5));
+      if (kind === "into" && into !== undefined) {
+        fn = "buyInto";
+        countryId = into.id;
+        for (let r = 0; r < into.rows; r++) {
+          squares.push((into.lat + r) * 65536 + ((into.lng + into.cols) % MAX_LNG));
+        }
+      } else if (kind === "reserved" && model.squares.size > 0) {
+        squares = [packOf(place, rng.pick([...model.squares.keys()]))];
+        expected = "SquareReserved";
+      } else {
+        const rows = 1 + rng.int(3);
+        const cols = 1 + rng.int(4);
+        const lng0 = (place.lng0 + slot * 6) % MAX_LNG;
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            squares.push((lat0 + r) * 65536 + ((lng0 + c) % MAX_LNG));
+          }
+        }
+      }
+
+      const timestamp = BigInt(await time.latest()) + 1n + BigInt(rng.int(4000));
+      await time.setNextBlockTimestamp(timestamp);
+      const price = salePrice(timestamp);
+      const cost = price * BigInt(squares.length);
+      let value = cost + (rng.chance(0.5) ? BigInt(rng.int(10_000)) : 0n);
+      if (kind === "short") value = cost - 1n;
+      if (cancelled) expected = "AuctionIsCancelled";
+      else if (kind === "short") expected = "InsufficientValue";
+      const label = `sale ${fn} of ${squares.length} squares ${fmtSquares(squares)} by ${who(buyer)} at price ${price}, value ${value}`;
+      log.push(`${label} -> expect ${expected ?? "success"}`);
+
+      const treasuryBefore = await balanceOf(fx.treasury);
+      let message = "";
+      let result: Awaited<ReturnType<typeof balanceChange>> | undefined;
+      try {
+        result = await balanceChange(buyer, () =>
+          wallet.writeContract({
+            address: sale.address,
+            abi: saleAbi,
+            functionName: fn,
+            args: fn === "buy" ? [squares] : [countryId, squares],
+            value,
+          }),
+        );
+      } catch (e) {
+        message = e instanceof Error ? e.message : String(e);
+      }
+      const saleBalance = await balanceOf(sale.address);
+      if (saleBalance !== 0n) throw new Divergence(`sale holds ${saleBalance}`);
+      const treasuryGot = (await balanceOf(fx.treasury)) - treasuryBefore;
+
+      if (expected !== undefined) {
+        if (result !== undefined) throw new Divergence(`sale: expected ${expected}, call succeeded`);
+        if (!new RegExp(`\\b${expected}\\(`).test(message)) {
+          throw new Divergence(`sale: expected ${expected}, reverted with: ${message}`);
+        }
+        if (treasuryGot !== 0n) throw new Divergence(`treasury got ${treasuryGot} from a reverted purchase`);
+        counts.reverted++;
+        outcomes.set(`sale ${expected}`, (outcomes.get(`sale ${expected}`) ?? 0) + 1);
+        // A revert that is not mined leaves the next timestamp set. Mine it.
+        if (BigInt(await time.latest()) < timestamp) await time.increaseTo(timestamp);
+        continue;
+      }
+      if (result === undefined) throw new Divergence(`sale: expected success, reverted with: ${message}`);
+      if (treasuryGot !== cost) {
+        throw new Divergence(`treasury got ${treasuryGot}, price ${price} x ${squares.length} = ${cost}`);
+      }
+      if (result.change !== -cost) {
+        throw new Divergence(`buyer paid ${-result.change}, cost ${cost}`);
+      }
+      const [event] = parseEventLogs({
+        abi: sale.abi,
+        eventName: "SquaresBought",
+        logs: result.receipt.logs,
+      });
+      if (
+        event.args.pricePerSquare !== price ||
+        event.args.squareCount !== BigInt(squares.length)
+      ) {
+        throw new Divergence(
+          `SquaresBought ${event.args.squareCount} at ${event.args.pricePerSquare}, ` +
+            `model ${squares.length} at ${price}`,
+        );
+      }
+      counts.ok++;
+      if (fn === "buyInto") {
+        into!.cols++;
+      } else {
+        const first = squares[0];
+        bought.push({
+          id: event.args.countryId,
+          buyer,
+          lat: latOf(first),
+          lng: lngOf(first),
+          rows: new Set(squares.map(latOf)).size,
+          cols: squares.length / new Set(squares.map(latOf)).size,
+        });
+        slot++;
+      }
+    }
+  }
 
   // -------- Checks --------
 
@@ -866,12 +1305,45 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         })(),
       );
     }
+    // ETH invariants, from the contract values.
+    let sumPending = 0n;
+    let sumActive = 0n;
+    for (const b of bidders) {
+      reads.push(
+        (async () => {
+          // Read first, then add: `sum += await read()` reads `sum` before the await.
+          const pending = await auction.read.pendingReturns([b]);
+          const active = await auction.read.activeBids([b]);
+          sumPending += pending;
+          sumActive += active;
+        })(),
+      );
+    }
+    let proceeds = 0n;
+    let balance = 0n;
+    let cancelled = false;
     reads.push(
       (async () => {
-        expectEq("proceeds", await auction.read.proceeds(), model.proceeds);
+        proceeds = await auction.read.proceeds();
+        balance = await balanceOf(auction.address);
+        cancelled = await auction.read.cancelled();
       })(),
     );
     await Promise.all(reads);
+    expectEq("proceeds", proceeds, model.proceeds);
+    expectEq("auction balance", balance, model.balance);
+    expectEq("cancelled", cancelled, model.cancelled);
+    expectEq("paused", await auction.read.paused(), model.paused);
+    if (balance < sumPending + proceeds) {
+      problems.push(`balance ${balance} < sum of pendingReturns ${sumPending} + proceeds ${proceeds}`);
+    }
+    // withdrawProceeds sets `proceeds` to 0 and does not change `activeBids`.
+    if (!cancelled && sumActive !== proceeds + model.proceedsPaid) {
+      problems.push(
+        `sum of activeBids ${sumActive} != proceeds ${proceeds} + paid ${model.proceedsPaid}`,
+      );
+    }
+    if (cancelled && proceeds !== 0n) problems.push(`proceeds ${proceeds} after a cancel`);
     if (problems.length > 0) throw new Divergence(problems.join("\n"));
   }
 
@@ -914,6 +1386,8 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
       await check(t.cells, t.shapes);
     }
     await check();
+    log.push("end of the run");
+    await endRun();
   } catch (e) {
     const tail = log.slice(-40).join("\n  ");
     const message = e instanceof Error ? e.message : String(e);
@@ -925,9 +1399,9 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
   }
   if (process.env.AUCTION_FUZZ_VERBOSE !== undefined) {
     console.log(
-      `seed ${seed}: ${counts.ok} bids succeeded, ${counts.reverted} reverted as expected, ` +
+      `seed ${seed}: ${counts.ok} calls succeeded, ${counts.reverted} reverted as expected, ` +
         `${model.shapes.size} shapes (${model.liveShapes().length} live), ` +
-        `${model.squares.size} squares, proceeds ${model.proceeds}, ` +
+        `${model.squares.size} squares, ${model.cancelled ? "cancelled" : `proceeds ${model.proceedsPaid}`}, ` +
         `reverts ${[...outcomes].map(([e, n]) => `${e} ${n}`).join(", ")}`,
     );
   }
