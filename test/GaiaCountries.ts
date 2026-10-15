@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { encodeFunctionData, getAddress, zeroAddress } from "viem";
 
 import { loadFixture, viem } from "./helpers/setup";
-import { pack } from "./helpers/auction";
+import { auctionAs, deployAuction, pack } from "./helpers/auction";
 import { deployAccount, deployLand } from "./helpers/land";
 
 describe("GaiaCountries", function () {
@@ -264,28 +264,11 @@ describe("GaiaCountries", function () {
 
   describe("auction reservations", function () {
     it("rejects a square that a registered auction reserves, until the auction is removed", async function () {
-      const { admin, alice, countries, asIssuer, publicClient } =
-        await loadFixture(deployCountries);
+      const { alice, countries, asIssuer } = await loadFixture(deployCountries);
 
-      const now = BigInt((await publicClient.getBlock()).timestamp);
-      const auction = await viem.deployContract("GaiaAuction", [
-        countries.address,
-        admin.account.address,
-        now - 10n,
-        now + 3600n,
-        now + 3600n,
-        0n,
-        1000n,
-        0n,
-        1n,
-        1000n,
-        10n,
-      ]);
-      const auctionAsAlice = await viem.getContractAt(
-        "GaiaAuction",
-        auction.address,
-        { client: { wallet: alice } }
-      );
+      // Not registered yet: the test registers it after the bid.
+      const { auction } = await deployAuction({ countries }, {}, { register: false });
+      const auctionAsAlice = await auctionAs(auction.address, alice);
       await auctionAsAlice.write.bidOnShape([pack([{ lat: 7, lng: 7 }]), 0n, false], {
         value: 1000n,
       });

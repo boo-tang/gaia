@@ -22,7 +22,7 @@ export async function deployLand(admin: `0x${string}`, v = viem) {
   return { registry, accountImpl, countries, squares };
 }
 
-type Land = Awaited<ReturnType<typeof deployLand>>;
+export type Land = Awaited<ReturnType<typeof deployLand>>;
 
 /// Deploys the account of a country through the registry and returns its address.
 export async function deployAccount(land: Land, countryId: bigint) {

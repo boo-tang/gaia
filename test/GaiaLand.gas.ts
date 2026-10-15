@@ -4,7 +4,7 @@ import { encodeFunctionData, getAddress } from "viem";
 import { network } from "hardhat";
 
 import { coverage } from "./helpers/setup";
-import { pack } from "./helpers/auction";
+import { deployAuction, deploySale, pack } from "./helpers/auction";
 import { deployAccount, deployLand, executeAs, squareId } from "./helpers/land";
 
 // Own connection on the Prague hardfork, the same as test/Gaia_Auction.gas.ts.
@@ -49,36 +49,24 @@ describe("Land: gas", function () {
     const issuerRole = await countries.read.ISSUER_ROLE();
     await countries.write.grantRole([issuerRole, admin.account.address]);
 
-    const now = BigInt(await time.latest());
-    const end = now + 3600n;
-    const auction = await viem.deployContract(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      [
-        countries.address,
-        treasury.account.address,
-        now - 10n,
-        end,
-        end, // maxEndTime
-        0n, // extensionWindow
-        1000n, // minBidPerSquareWei
-        0n, // minBidIncrementBps
-        1n, // minShapeSquares
-        1000n, // maxShapeSquares
-        10n, // maxShapeAspectRatio
-      ]
+    // This file has its own connection (`viem`), so the helpers get it as `v`.
+    const { auction, endTime: end } = await deployAuction(
+      { countries },
+      { treasury: treasury.account.address },
+      { v: viem }
     );
-    await countries.write.grantRole([issuerRole, auction.address]);
-    await countries.write.addAuction([auction.address]);
-    const sale = await viem.deployContract("GaiaLandSale", [
-      countries.address,
+    const sale = await deploySale(
+      { countries },
       auction.address,
-      treasury.account.address,
-      1000n, // startPrice
-      1000n, // endPrice
-      0n, // holdDuration
-      1n, // dropDuration
-    ]);
-    await countries.write.grantRole([issuerRole, sale.address]);
+      {
+        treasury: treasury.account.address,
+        startPrice: 1000n,
+        endPrice: 1000n,
+        holdDuration: 0n,
+        dropDuration: 1n,
+      },
+      { v: viem }
+    );
     const market = await viem.deployContract("GaiaCountryMarket", [
       countries.address,
     ]);

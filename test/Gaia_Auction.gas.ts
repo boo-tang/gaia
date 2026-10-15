@@ -3,7 +3,7 @@ import { expect } from "chai";
 import { network } from "hardhat";
 
 import { coverage } from "./helpers/setup";
-import { pack } from "./helpers/auction";
+import { auctionAs, deployAuction, pack } from "./helpers/auction";
 import { deployLand } from "./helpers/land";
 
 // Own connection on the Prague hardfork, which has no per-transaction gas cap (EIP-7825 starts
@@ -28,34 +28,14 @@ describe("GaiaAuction: gas", function () {
     const publicClient = await viem.getPublicClient();
     const { countries } = await deployLand(owner.account.address, viem);
 
-    const now = await time.latest();
-    const end = BigInt(now + 3600);
-    const auction = await viem.deployContract(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      [
-        countries.address,
-        owner.account.address, // treasury
-        BigInt(now - 10),
-        end,
-        end, // maxEndTime
-        0n, // extensionWindow
-        minBid,
-        0n, // minBidIncrementBps
-        1n, // minShapeSquares
-        1000n, // maxShapeSquares
-        10n, // maxShapeAspectRatio
-      ]
+    // This file has its own connection (`viem`), so the helpers get it as `v`.
+    const { auction, endTime: end } = await deployAuction(
+      { countries },
+      { minBidPerSquareWei: minBid },
+      { v: viem }
     );
-    await countries.write.grantRole([
-      await countries.read.ISSUER_ROLE(),
-      auction.address,
-    ]);
-    await countries.write.addAuction([auction.address]);
 
-    const as = async (wallet: typeof owner) =>
-      viem.getContractAt("contracts/GaiaAuction.sol:GaiaAuction", auction.address, {
-        client: { wallet },
-      });
+    const as = async (wallet: typeof owner) => auctionAs(auction.address, wallet, viem);
 
     return {
       publicClient,

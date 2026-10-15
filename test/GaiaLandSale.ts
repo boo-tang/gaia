@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { type Abi, encodeFunctionData, getAddress, parseEventLogs } from "viem";
 
 import { loadFixture, time, viem } from "./helpers/setup";
-import { pack } from "./helpers/auction";
+import { auctionAs, deployAuction, deploySale as deploySaleContract, pack } from "./helpers/auction";
 import { deployAccount, deployLand, executeAs, squareId } from "./helpers/land";
 
 describe("GaiaLandSale", function () {
@@ -22,44 +22,26 @@ describe("GaiaLandSale", function () {
     const land = await deployLand(owner.account.address);
     const { countries, squares } = land;
 
-    // Chain time, not Date.now(): earlier tests move the clock forward.
-    const now = BigInt(await time.latest());
-    const end = now + 3600n;
+    const end = BigInt(await time.latest()) + 3600n;
     const maxEnd = end + 1800n;
-    const auction = await viem.deployContract(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      [
-        countries.address,
-        treasury.account.address,
-        now - 10n,
-        end,
-        maxEnd,
-        window,
-        minBid,
-        0n, // minBidIncrementBps
-        1n, // minShapeSquares
-        1000n, // maxShapeSquares
-        10n, // maxShapeAspectRatio
-      ]
+    const { auction } = await deployAuction(
+      { countries },
+      {
+        treasury: treasury.account.address,
+        endTime: end,
+        maxEndTime: maxEnd,
+        extensionWindow: window,
+        minBidPerSquareWei: minBid,
+      }
     );
-    const sale = await viem.deployContract("GaiaLandSale", [
-      countries.address,
-      auction.address,
-      treasury.account.address,
+    const saleParams = {
+      treasury: treasury.account.address,
       startPrice,
       endPrice,
       holdDuration,
       dropDuration,
-    ]);
-    const issuerRole = await countries.read.ISSUER_ROLE();
-    await countries.write.grantRole([issuerRole, auction.address]);
-    await countries.write.addAuction([auction.address]);
-    await countries.write.grantRole([issuerRole, sale.address]);
-
-    const auctionAs = (wallet: typeof owner) =>
-      viem.getContractAt("contracts/GaiaAuction.sol:GaiaAuction", auction.address, {
-        client: { wallet },
-      });
+    };
+    const sale = await deploySaleContract({ countries }, auction.address, saleParams);
 
     // The sale bubbles up the reverts of GaiaCountries and GaiaSquares. Add their errors to the
     // ABI, so that viem names them also under --coverage.
@@ -109,7 +91,8 @@ describe("GaiaLandSale", function () {
       treasury,
       end,
       maxEnd,
-      auctionAs,
+      auctionAs: (wallet: typeof owner) => auctionAs(auction.address, wallet),
+      saleParams,
       buy,
       buyInto,
     };
@@ -417,19 +400,13 @@ describe("GaiaLandSale", function () {
 
     it("rounds the price up when the drop is not a whole number of wei per second", async function () {
       const f = await loadFixture(deploySale);
-      const sale = await viem.deployContract("GaiaLandSale", [
-        f.countries.address,
-        f.auction.address,
-        f.treasury.account.address,
-        10n,
-        1n,
-        0n, // holdDuration
-        4n, // dropDuration: 9 wei in 4 seconds
-      ]);
-      await f.countries.write.grantRole([
-        await f.countries.read.ISSUER_ROLE(),
-        sale.address,
-      ]);
+      const sale = await deploySaleContract({ countries: f.countries }, f.auction.address, {
+        ...f.saleParams,
+        startPrice: 10n,
+        endPrice: 1n,
+        holdDuration: 0n,
+        dropDuration: 4n, // 9 wei in 4 seconds
+      });
       const saleAsBuyer = await viem.getContractAt("GaiaLandSale", sale.address, {
         client: { wallet: f.buyer },
       });
@@ -485,19 +462,10 @@ describe("GaiaLandSale", function () {
     it("reverts when the treasury cannot receive ETH", async function () {
       const f = await loadFixture(deploySale);
       const noReceive = await viem.deployContract("ContractBidder");
-      const sale = await viem.deployContract("GaiaLandSale", [
-        f.countries.address,
-        f.auction.address,
-        noReceive.address,
-        startPrice,
-        endPrice,
-        holdDuration,
-        dropDuration,
-      ]);
-      await f.countries.write.grantRole([
-        await f.countries.read.ISSUER_ROLE(),
-        sale.address,
-      ]);
+      const sale = await deploySaleContract({ countries: f.countries }, f.auction.address, {
+        ...f.saleParams,
+        treasury: noReceive.address,
+      });
       await time.increaseTo(f.end + 1n);
       await expect(
         sale.write.buy([pack([{ lat: 50, lng: 50 }])], { value: startPrice })

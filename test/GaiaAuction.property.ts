@@ -1,6 +1,7 @@
 import { type Abi, type Hex, getAddress, parseEventLogs, zeroAddress } from "viem";
 
 import { loadFixture, networkHelpers, time, viem } from "./helpers/setup";
+import { auctionAs, deployAuction, deploySale } from "./helpers/auction";
 import { deployLand } from "./helpers/land";
 
 /*
@@ -547,55 +548,29 @@ async function deploy() {
 
 type Fixture = Awaited<ReturnType<typeof deploy>>;
 
-/// A new auction for one run. Its times come from the chain clock, so each run is open for 30
+/// A new auction and land sale for one run. Its times come from the chain clock, so each run is open for 30
 /// days from its start.
-async function deployAuction(fx: Fixture) {
-  const now = BigInt(await time.latest());
-  const end = now + 30n * 86400n;
-  const auction = await viem.deployContract(
-    "contracts/GaiaAuction.sol:GaiaAuction",
-    [
-      fx.land.countries.address,
-      fx.treasury,
-      now - 10n,
-      end,
-      end, // maxEndTime
-      0n, // extensionWindow
-      MIN_BID,
-      INCREMENT_BPS,
-      BigInt(MIN_SHAPE),
-      BigInt(MAX_SHAPE),
-      BigInt(MAX_RATIO),
-    ],
-  );
-  await fx.land.countries.write.grantRole([
-    await fx.land.countries.read.ISSUER_ROLE(),
-    auction.address,
-  ]);
-  await fx.land.countries.write.addAuction([auction.address]);
-  const sale = await viem.deployContract("GaiaLandSale", [
-    fx.land.countries.address,
-    auction.address,
-    fx.treasury,
-    SALE_START_PRICE,
-    SALE_END_PRICE,
-    SALE_HOLD,
-    SALE_DROP,
-  ]);
-  await fx.land.countries.write.grantRole([
-    await fx.land.countries.read.ISSUER_ROLE(),
-    sale.address,
-  ]);
+async function deployRun(fx: Fixture) {
+  const end = BigInt(await time.latest()) + 30n * 86400n;
+  const { auction } = await deployAuction(fx.land, {
+    treasury: fx.treasury,
+    endTime: end,
+    minBidPerSquareWei: MIN_BID,
+    minBidIncrementBps: INCREMENT_BPS,
+    minShapeSquares: BigInt(MIN_SHAPE),
+    maxShapeSquares: BigInt(MAX_SHAPE),
+    maxShapeAspectRatio: BigInt(MAX_RATIO),
+  });
+  const sale = await deploySale(fx.land, auction.address, {
+    treasury: fx.treasury,
+    startPrice: SALE_START_PRICE,
+    endPrice: SALE_END_PRICE,
+    holdDuration: SALE_HOLD,
+    dropDuration: SALE_DROP,
+  });
   const as = new Map<Address, typeof auction>();
   for (const wallet of fx.bidders) {
-    as.set(
-      getAddress(wallet.account.address),
-      await viem.getContractAt(
-        "contracts/GaiaAuction.sol:GaiaAuction",
-        auction.address,
-        { client: { wallet } },
-      ),
-    );
+    as.set(getAddress(wallet.account.address), await auctionAs(auction.address, wallet));
   }
   return { auction, sale, as, end };
 }
@@ -629,7 +604,7 @@ describe("Auction bid rules: model-based random tests", function () {
 
 async function runHistory(seed: number, place: Place, fx: Fixture) {
   const rng = new Rng(seed);
-  const { auction, sale, as, end } = await deployAuction(fx);
+  const { auction, sale, as, end } = await deployRun(fx);
   let model = new AuctionModel(place);
   const bidders = fx.bidders.map((w) => getAddress(w.account.address));
   const admin = getAddress(fx.admin.account.address);

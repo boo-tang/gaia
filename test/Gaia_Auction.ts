@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { encodeFunctionData, getAddress } from "viem";
 
 import { coverage, loadFixture, time, viem } from "./helpers/setup";
-import { pack } from "./helpers/auction";
+import { auctionAs, deployAuction, pack } from "./helpers/auction";
 import { deployAccount, deployLand, executeAs, squareId } from "./helpers/land";
 
 describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
@@ -11,32 +11,8 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
 
     const { countries } = await deployLand(owner.account.address);
 
-    const now = await time.latest();
-    const start = BigInt(now - 10);
-    const end = BigInt(now + 3600);
     const minBid = 1000n;
-    const auction = await viem.deployContract(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      [
-        countries.address,
-        owner.account.address, // treasury
-        start,
-        end,
-        end, // maxEndTime
-        0n, // extensionWindow
-        minBid,
-        0n, // minBidIncrementBps
-        1n,    // minShapeSquares
-        1000n, // maxShapeSquares
-        10n,   // maxShapeAspectRatio
-      ]
-    );
-
-    await countries.write.grantRole([
-      await countries.read.ISSUER_ROLE(),
-      auction.address,
-    ]);
-    await countries.write.addAuction([auction.address]);
+    const { auction } = await deployAuction({ countries });
 
     return { owner, countries, auction, minBid };
   }
@@ -208,32 +184,8 @@ describe("GaiaAuction: totals and refunds", function () {
 
     const { countries } = await deployLand(owner.account.address);
 
-    const now = await time.latest();
-    const start = BigInt(now - 10);
-    const end = BigInt(now + 3600);
     const minBid = 1000n;
-    const auction = await viem.deployContract(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      [
-        countries.address,
-        owner.account.address, // treasury
-        start,
-        end,
-        end, // maxEndTime
-        0n, // extensionWindow
-        minBid,
-        0n, // minBidIncrementBps
-        1n,    // minShapeSquares
-        1000n, // maxShapeSquares
-        10n,   // maxShapeAspectRatio
-      ]
-    );
-
-    await countries.write.grantRole([
-      await countries.read.ISSUER_ROLE(),
-      auction.address,
-    ]);
-    await countries.write.addAuction([auction.address]);
+    const { auction } = await deployAuction({ countries });
 
     return { owner, other, countries, auction, minBid };
   }
@@ -268,11 +220,7 @@ describe("GaiaAuction: totals and refunds", function () {
     await auction.write.bidOnShape([pack(shape), 0n, false], { value: minBid * 2n });
 
     // Second bidder (other) must pay next step per square (minBid + minBid)
-    const auctionAsOther = await viem.getContractAt(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      auction.address,
-      { client: { wallet: other } }
-    );
+    const auctionAsOther = await auctionAs(auction.address, other);
     const requiredNext = (minBid + minBid) * 2n;
     await expect(
       auctionAsOther.write.bidOnShape([pack(shape), 0n, false], { value: requiredNext })
@@ -299,11 +247,7 @@ describe("GaiaAuction: totals and refunds", function () {
 
     await auction.write.bidOnShape([pack(shape), 0n, false], { value: minBid * 2n });
 
-    const auctionAsOther = await viem.getContractAt(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      auction.address,
-      { client: { wallet: other } }
-    );
+    const auctionAsOther = await auctionAs(auction.address, other);
     await auctionAsOther.write.bidOnShape([pack(shape), 0n, false], {
       value: (minBid + minBid) * 2n,
     });
@@ -340,9 +284,7 @@ describe("GaiaAuction: totals and refunds", function () {
     const { auction, owner, other, minBid } = await loadFixture(deployAll);
     const [, , third] = await viem.getWalletClients();
     const as = async (wallet: typeof owner) =>
-      viem.getContractAt("contracts/GaiaAuction.sol:GaiaAuction", auction.address, {
-        client: { wallet },
-      });
+      auctionAs(auction.address, wallet);
     const asOther = await as(other);
     const asThird = await as(third);
     const row = (lat: number) => [10, 11, 12].map((lng) => ({ lat, lng }));
@@ -386,33 +328,11 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
 
     const { countries } = await deployLand(owner.account.address);
 
-    const now = await time.latest();
-    const start = BigInt(now - 10);
-    const end = BigInt(now + 3600);
     const minBid = 1000n;
-    // minShapeSquares=2, maxShapeSquares=6, maxShapeAspectRatio=3
-    const auction = await viem.deployContract(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      [
-        countries.address,
-        owner.account.address, // treasury
-        start,
-        end,
-        end, // maxEndTime
-        0n, // extensionWindow
-        minBid,
-        0n, // minBidIncrementBps
-        2n, // minShapeSquares
-        6n, // maxShapeSquares
-        3n, // maxShapeAspectRatio
-      ]
+    const { auction } = await deployAuction(
+      { countries },
+      { minShapeSquares: 2n, maxShapeSquares: 6n, maxShapeAspectRatio: 3n }
     );
-
-    await countries.write.grantRole([
-      await countries.read.ISSUER_ROLE(),
-      auction.address,
-    ]);
-    await countries.write.addAuction([auction.address]);
 
     return { owner, countries, auction, minBid };
   }
@@ -512,44 +432,12 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
 
     const { countries } = await deployLand(owner.account.address);
 
-    const now = await time.latest();
-    const start = BigInt(now - 10);
-    const end = BigInt(now + 3600);
     const minBid = 1000n;
     // minShapeSquares=2 so single-square remainders are invalid
-    const auction = await viem.deployContract(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      [
-        countries.address,
-        owner.account.address, // treasury
-        start,
-        end,
-        end, // maxEndTime
-        0n, // extensionWindow
-        minBid,
-        0n, // minBidIncrementBps
-        2n,    // minShapeSquares
-        1000n, // maxShapeSquares
-        10n,   // maxShapeAspectRatio
-      ]
-    );
+    const { auction } = await deployAuction({ countries }, { minShapeSquares: 2n });
 
-    await countries.write.grantRole([
-      await countries.read.ISSUER_ROLE(),
-      auction.address,
-    ]);
-    await countries.write.addAuction([auction.address]);
-
-    const auctionAs1 = await viem.getContractAt(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      auction.address,
-      { client: { wallet: bidder1 } }
-    );
-    const auctionAs2 = await viem.getContractAt(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      auction.address,
-      { client: { wallet: bidder2 } }
-    );
+    const auctionAs1 = await auctionAs(auction.address, bidder1);
+    const auctionAs2 = await auctionAs(auction.address, bidder2);
 
     return { owner, bidder1, bidder2, auction, auctionAs1, auctionAs2, minBid };
   }
@@ -760,45 +648,11 @@ describe("GaiaAuction: settleShape", function () {
 
     const land = await deployLand(owner.account.address);
     const { countries, squares } = land;
-
-    // Chain time, not Date.now(): earlier tests move the clock forward.
-    const now = await time.latest();
-    const start = BigInt(now - 10);
-    const end = BigInt(now + 3600);
     const minBid = 1000n;
-    const auction = await viem.deployContract(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      [
-        countries.address,
-        owner.account.address, // treasury
-        start,
-        end,
-        end, // maxEndTime
-        0n, // extensionWindow
-        minBid,
-        0n, // minBidIncrementBps
-        1n, // minShapeSquares
-        1000n, // maxShapeSquares
-        10n, // maxShapeAspectRatio
-      ]
-    );
+    const { auction, endTime: end } = await deployAuction({ countries });
 
-    await countries.write.grantRole([
-      await countries.read.ISSUER_ROLE(),
-      auction.address,
-    ]);
-    await countries.write.addAuction([auction.address]);
-
-    const auctionAs1 = await viem.getContractAt(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      auction.address,
-      { client: { wallet: bidder1 } }
-    );
-    const auctionAs2 = await viem.getContractAt(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      auction.address,
-      { client: { wallet: bidder2 } }
-    );
+    const auctionAs1 = await auctionAs(auction.address, bidder1);
+    const auctionAs2 = await auctionAs(auction.address, bidder2);
 
     return {
       land,
@@ -1251,44 +1105,14 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
 
     const { countries, squares } = await deployLand(owner.account.address);
 
-    const publicClient = await viem.getPublicClient();
-    const now = (await publicClient.getBlock()).timestamp;
-    const start = now - 10n;
-    const end = now + 3600n;
     const minBid = 1000n;
-    const auction = await viem.deployContract(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      [
-        countries.address,
-        owner.account.address, // treasury
-        start,
-        end,
-        end, // maxEndTime
-        0n, // extensionWindow
-        minBid,
-        0n, // minBidIncrementBps
-        2n, // minShapeSquares
-        1000n, // maxShapeSquares
-        3n, // maxShapeAspectRatio
-      ]
+    const { auction, endTime: end } = await deployAuction(
+      { countries },
+      { minShapeSquares: 2n, maxShapeAspectRatio: 3n }
     );
 
-    await countries.write.grantRole([
-      await countries.read.ISSUER_ROLE(),
-      auction.address,
-    ]);
-    await countries.write.addAuction([auction.address]);
-
-    const auctionAs1 = await viem.getContractAt(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      auction.address,
-      { client: { wallet: bidder1 } }
-    );
-    const auctionAs2 = await viem.getContractAt(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      auction.address,
-      { client: { wallet: bidder2 } }
-    );
+    const auctionAs1 = await auctionAs(auction.address, bidder1);
+    const auctionAs2 = await auctionAs(auction.address, bidder2);
 
     return {
       bidder1,
@@ -1472,37 +1296,15 @@ describe("GaiaAuction: treasury proceeds", function () {
 
     const { countries } = await deployLand(owner.account.address);
 
-    const now = (await publicClient.getBlock()).timestamp;
-    const start = now - 10n;
-    const end = now + 3600n;
     const minBid = 1000n;
-    const auction = await viem.deployContract(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      [
-        countries.address,
-        treasury.account.address,
-        start,
-        end,
-        end, // maxEndTime
-        0n, // extensionWindow
-        minBid,
-        0n, // minBidIncrementBps
-        1n, // minShapeSquares
-        1000n, // maxShapeSquares
-        10n, // maxShapeAspectRatio
-      ]
+    const { auction, endTime: end } = await deployAuction(
+      { countries },
+      { treasury: treasury.account.address },
+      { register: false }
     );
 
-    const auctionAs1 = await viem.getContractAt(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      auction.address,
-      { client: { wallet: bidder1 } }
-    );
-    const auctionAs2 = await viem.getContractAt(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      auction.address,
-      { client: { wallet: bidder2 } }
-    );
+    const auctionAs1 = await auctionAs(auction.address, bidder1);
+    const auctionAs2 = await auctionAs(auction.address, bidder2);
 
     return {
       publicClient,
@@ -1652,37 +1454,20 @@ describe("GaiaAuction: soft close, bid increment and jump bids", function () {
 
     const { countries } = await deployLand(owner.account.address);
 
-    const now = (await publicClient.getBlock()).timestamp;
-    const start = now - 10n;
-    const end = now + 3600n;
+    const end = BigInt(await time.latest()) + 3600n;
     const maxEnd = end + capAfterEnd;
-    const auction = await viem.deployContract(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      [
-        countries.address,
-        owner.account.address, // treasury
-        start,
-        end,
-        maxEnd,
-        window,
-        minBid,
-        bps,
-        1n, // minShapeSquares
-        1000n, // maxShapeSquares
-        10n, // maxShapeAspectRatio
-      ]
+    const { auction } = await deployAuction(
+      { countries },
+      {
+        endTime: end,
+        maxEndTime: maxEnd,
+        extensionWindow: window,
+        minBidPerSquareWei: minBid,
+        minBidIncrementBps: bps,
+      }
     );
-    await countries.write.grantRole([
-      await countries.read.ISSUER_ROLE(),
-      auction.address,
-    ]);
-    await countries.write.addAuction([auction.address]);
 
-    const auctionAs2 = await viem.getContractAt(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      auction.address,
-      { client: { wallet: bidder2 } }
-    );
+    const auctionAs2 = await auctionAs(auction.address, bidder2);
 
     return { publicClient, countries, auction, auctionAs2, end, maxEnd };
   }
@@ -1787,29 +1572,16 @@ describe("GaiaAuction: soft close, bid increment and jump bids", function () {
     it("rejects a maxEndTime before endTime and an increment above 100%", async function () {
       const [owner] = await viem.getWalletClients();
       const { countries } = await deployLand(owner.account.address);
-      const args = (maxEnd: bigint, incrementBps: bigint) =>
-        [
-          countries.address,
-          owner.account.address,
-          100n,
-          200n,
-          maxEnd,
-          window,
-          minBid,
-          incrementBps,
-          1n,
-          1000n,
-          10n,
-        ] as const;
+      const params = { startTime: 100n, endTime: 200n, extensionWindow: window, minBidPerSquareWei: minBid };
       await expect(
-        viem.deployContract("contracts/GaiaAuction.sol:GaiaAuction", [
-          ...args(199n, bps),
-        ])
+        deployAuction({ countries }, { ...params, maxEndTime: 199n, minBidIncrementBps: bps }, { register: false })
       ).to.be.rejectedWith("invalid max end time");
       await expect(
-        viem.deployContract("contracts/GaiaAuction.sol:GaiaAuction", [
-          ...args(200n, 10_001n),
-        ])
+        deployAuction(
+          { countries },
+          { ...params, maxEndTime: 200n, minBidIncrementBps: 10_001n },
+          { register: false }
+        )
       ).to.be.rejectedWith("invalid bid increment");
     });
   });
@@ -1897,35 +1669,20 @@ describe("GaiaAuction: re-bid on own squares", function () {
 
     const { countries } = await deployLand(owner.account.address);
 
-    const now = (await publicClient.getBlock()).timestamp;
-    const start = now - 10n;
-    const end = now + 3600n;
-    const auction = await viem.deployContract(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      [
-        countries.address,
-        owner.account.address, // treasury
-        start,
-        end,
-        end + 3600n, // maxEndTime
-        window,
-        minBid,
-        bps,
-        1n, // minShapeSquares
-        1000n, // maxShapeSquares
-        10n, // maxShapeAspectRatio
-      ]
+    const end = BigInt(await time.latest()) + 3600n;
+    const { auction } = await deployAuction(
+      { countries },
+      {
+        endTime: end,
+        maxEndTime: end + 3600n,
+        extensionWindow: window,
+        minBidPerSquareWei: minBid,
+        minBidIncrementBps: bps,
+      }
     );
-    await countries.write.grantRole([
-      await countries.read.ISSUER_ROLE(),
-      auction.address,
-    ]);
-    await countries.write.addAuction([auction.address]);
 
     const as = async (wallet: typeof owner) =>
-      viem.getContractAt("contracts/GaiaAuction.sol:GaiaAuction", auction.address, {
-        client: { wallet },
-      });
+      auctionAs(auction.address, wallet);
 
     return {
       publicClient,
@@ -2222,36 +1979,21 @@ describe("GaiaAuction: pause and cancel", function () {
 
     const { countries } = await deployLand(owner.account.address);
 
-    const now = (await publicClient.getBlock()).timestamp;
-    const start = now - 10n;
-    const end = now + 3600n;
+    const end = BigInt(await time.latest()) + 3600n;
     const maxEnd = end + 3600n;
-    const auction = await viem.deployContract(
-      "contracts/GaiaAuction.sol:GaiaAuction",
-      [
-        countries.address,
-        treasury.account.address,
-        start,
-        end,
-        maxEnd,
-        window,
-        minBid,
-        0n, // minBidIncrementBps
-        1n, // minShapeSquares
-        1000n, // maxShapeSquares
-        10n, // maxShapeAspectRatio
-      ]
+    const { auction } = await deployAuction(
+      { countries },
+      {
+        treasury: treasury.account.address,
+        endTime: end,
+        maxEndTime: maxEnd,
+        extensionWindow: window,
+        minBidPerSquareWei: minBid,
+      }
     );
-    await countries.write.grantRole([
-      await countries.read.ISSUER_ROLE(),
-      auction.address,
-    ]);
-    await countries.write.addAuction([auction.address]);
 
     const as = async (wallet: typeof owner) =>
-      viem.getContractAt("contracts/GaiaAuction.sol:GaiaAuction", auction.address, {
-        client: { wallet },
-      });
+      auctionAs(auction.address, wallet);
 
     return {
       publicClient,
