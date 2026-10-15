@@ -105,6 +105,17 @@ export function auctionArgs(land: Pick<Land, "countries">, p: AuctionParams) {
   ] as const;
 }
 
+/// Expects the sum of `activeBids` of `bidders` to equal `proceeds`. `bidders` must be all the
+/// bidders of the auction. Holds until a cancel or `withdrawProceeds`.
+export async function expectActiveBidsEqualProceeds(
+  auction: Awaited<ReturnType<typeof deployAuction>>["auction"],
+  bidders: readonly `0x${string}`[]
+) {
+  let active = 0n;
+  for (const bidder of bidders) active += await auction.read.activeBids([bidder]);
+  expect(active).to.equal(await auction.read.proceeds());
+}
+
 /// The auction at `address`, with `wallet` as the sender.
 export function auctionAs(address: `0x${string}`, wallet: Wallet, v = viem) {
   return v.getContractAt("GaiaAuction", address, { client: { wallet } });

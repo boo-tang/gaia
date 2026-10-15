@@ -6,6 +6,7 @@ import { network } from "hardhat";
 import { coverage } from "./helpers/setup";
 import { deployAuction, deploySale, pack } from "./helpers/auction";
 import { deployAccount, deployLand, executeAs, squareId } from "./helpers/land";
+import { type Loc, rect } from "./helpers/shapes";
 
 // Own connection on the Prague hardfork, the same as test/Gaia_Auction.gas.ts.
 const { viem, networkHelpers } = await network.create({
@@ -26,17 +27,7 @@ const time = networkHelpers.time;
 describe("Land: gas", function () {
   const report = process.env.GAS_REPORT === "1";
 
-  type Loc = { lat: number; lng: number };
 
-  // Rectangle of `rows` x `cols` squares with its south-west square at (lat, lng). Each square
-  // touches an earlier square.
-  const rect = (lat: number, lng: number, rows: number, cols: number): Loc[] => {
-    const locs: Loc[] = [];
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) locs.push({ lat: lat + r, lng: lng + c });
-    }
-    return locs;
-  };
 
   // Alice owns country 1, a 10 x 10 square at (100, 100), and country 2, one square at
   // (200, 200). The account of country 1 is deployed. An auction is registered and has ended,

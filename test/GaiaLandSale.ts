@@ -3,6 +3,7 @@ import { type Abi, encodeFunctionData, getAddress, parseEventLogs } from "viem";
 
 import { loadFixture, time, viem } from "./helpers/setup";
 import { auctionAs, deployAuction, deploySale as deploySaleContract, pack } from "./helpers/auction";
+import { balanceChange } from "./helpers/eth";
 import { deployAccount, deployLand, executeAs, squareId } from "./helpers/land";
 
 describe("GaiaLandSale", function () {
@@ -100,27 +101,10 @@ describe("GaiaLandSale", function () {
 
   type Sale = Awaited<ReturnType<typeof deploySale>>;
 
-  // The balance change of `address` over the transaction, plus its gas cost if `address` sent it.
-  async function balanceChange(
-    f: Sale,
-    address: `0x${string}`,
-    send: () => Promise<`0x${string}`>
-  ) {
-    const before = await f.publicClient.getBalance({ address });
-    const hash = await send();
-    const receipt = await f.publicClient.waitForTransactionReceipt({ hash });
-    const after = await f.publicClient.getBalance({ address });
-    const gas =
-      getAddress(receipt.from) === getAddress(address)
-        ? receipt.gasUsed * receipt.effectiveGasPrice
-        : 0n;
-    return { change: after - before + gas, receipt };
-  }
-
   // The price that the treasury gets for one square bought at `timestamp`.
   async function priceAt(f: Sale, timestamp: bigint, lng: number) {
     await time.setNextBlockTimestamp(timestamp);
-    const { change } = await balanceChange(f, f.treasury.account.address, () =>
+    const { change } = await balanceChange(f.treasury.account.address, () =>
       f.buy(f.buyer, [{ lat: 50, lng }], startPrice)
     );
     return change;
@@ -411,7 +395,7 @@ describe("GaiaLandSale", function () {
       });
       // 10 - floor(9 * 1 / 4) = 8
       await time.setNextBlockTimestamp(f.end + 1n);
-      const { change } = await balanceChange(f, f.treasury.account.address, () =>
+      const { change } = await balanceChange(f.treasury.account.address, () =>
         saleAsBuyer.write.buy([pack([{ lat: 50, lng: 50 }])], { value: 10n })
       );
       expect(change).to.equal(8n);
@@ -432,7 +416,7 @@ describe("GaiaLandSale", function () {
 
       // The buyer sends the start price (the price shown before the drop).
       await time.setNextBlockTimestamp(at);
-      const { change } = await balanceChange(f, f.buyer.account.address, () =>
+      const { change } = await balanceChange(f.buyer.account.address, () =>
         f.buy(f.buyer, squares, 3n * startPrice)
       );
       expect(change).to.equal(-3n * price);

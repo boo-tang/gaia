@@ -2,8 +2,14 @@ import { expect } from "chai";
 
 import { network } from "hardhat";
 
-import { auctionAs, deployAuction, pack } from "./helpers/auction";
+import {
+  auctionAs,
+  deployAuction,
+  expectActiveBidsEqualProceeds,
+  pack,
+} from "./helpers/auction";
 import { deployLand } from "./helpers/land";
+import { type Loc, rect } from "./helpers/shapes";
 
 // Own connection on the Prague hardfork, which has no per-transaction gas cap (EIP-7825 starts
 // with Osaka). Thus a test can measure a bid above the cap. Base applies the cap.
@@ -20,7 +26,6 @@ describe("GaiaAuction: gas", function () {
   const minBid = 1000n;
   const report = process.env.GAS_REPORT === "1";
 
-  type Loc = { lat: number; lng: number };
 
   async function deployGas() {
     const [owner, alice, bob] = await viem.getWalletClients();
@@ -51,14 +56,6 @@ describe("GaiaAuction: gas", function () {
   type Gas = Awaited<ReturnType<typeof deployGas>>;
   type Bidder = Gas["asAlice"];
 
-  // Rectangle of `rows` x `cols` squares with its south-west square at (lat, lng), in bid order.
-  const rect = (lat: number, lng: number, rows: number, cols: number): Loc[] => {
-    const locs: Loc[] = [];
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) locs.push({ lat: lat + r, lng: lng + c });
-    }
-    return locs;
-  };
 
   async function gasOf(f: Gas, hash: `0x${string}`) {
     const receipt = await f.publicClient.waitForTransactionReceipt({ hash });
@@ -80,13 +77,6 @@ describe("GaiaAuction: gas", function () {
     return gasOf(f, hash);
   }
 
-  async function expectActiveBidsEqualProceeds(f: Gas) {
-    const active =
-      (await f.auction.read.activeBids([f.alice])) +
-      (await f.auction.read.activeBids([f.bob]));
-    expect(active).to.equal(await f.auction.read.proceeds());
-  }
-
   function log(label: string, gas: bigint) {
     if (report) console.log(`      ${label}: ${gas.toLocaleString("en-US")}`);
   }
@@ -98,7 +88,7 @@ describe("GaiaAuction: gas", function () {
         const locs = rect(100, 100, n, n);
         const gas = await bid(f, f.asAlice, locs, minBid * BigInt(locs.length));
         log(`new ${n}x${n}`, gas);
-        await expectActiveBidsEqualProceeds(f);
+        await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
       });
     }
   });
@@ -119,7 +109,7 @@ describe("GaiaAuction: gas", function () {
         const locs = rect(100, 100, k * rows, taken);
         const gas = await bid(f, f.asBob, locs, 2n * minBid * BigInt(locs.length));
         log(`overlap K=${k} (bid ${locs.length} squares)`, gas);
-        await expectActiveBidsEqualProceeds(f);
+        await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
       });
     }
   });
@@ -144,7 +134,7 @@ describe("GaiaAuction: gas", function () {
         const second = rect(100, 100 + taken, k * rows, taken);
         const again = await bid(f, f.asBob, second, 2n * minBid * BigInt(second.length));
         log(`large K=${k} again (bid ${second.length} squares)`, again);
-        await expectActiveBidsEqualProceeds(f);
+        await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
       });
     }
   });
@@ -157,7 +147,7 @@ describe("GaiaAuction: gas", function () {
         await bid(f, f.asAlice, locs, minBid * 100n);
         const gas = await bid(f, f.asAlice, locs, raise ? minBid * 100n : 0n, raise);
         log(`re-bid 10x10 raise=${raise}`, gas);
-        await expectActiveBidsEqualProceeds(f);
+        await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
       });
     }
   });

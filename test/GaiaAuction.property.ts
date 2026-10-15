@@ -3,6 +3,8 @@ import { type Abi, type Hex, getAddress, parseEventLogs, zeroAddress } from "vie
 import { loadFixture, networkHelpers, time, viem } from "./helpers/setup";
 import { SHAPE_ERRORS, auctionAs, deployAuction, deploySale } from "./helpers/auction";
 import { deployLand } from "./helpers/land";
+import { balanceChange } from "./helpers/eth";
+import { Rng } from "./helpers/random";
 
 /*
  * Model-based random tests of the auction bid rules.
@@ -87,42 +89,6 @@ const PLACES = [
   { name: "north limit (rows 17993 to 18002)", lat0: MAX_LAT - 7, lng0: 100 },
 ];
 type Place = (typeof PLACES)[number];
-
-// -------- Random numbers --------
-
-function mulberry32(seed: number) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-class Rng {
-  private next: () => number;
-  constructor(seed: number) {
-    this.next = mulberry32(seed);
-  }
-  float() {
-    return this.next();
-  }
-  int(n: number) {
-    return Math.floor(this.next() * n);
-  }
-  chance(p: number) {
-    return this.next() < p;
-  }
-  pick<T>(items: T[]): T {
-    return items[this.int(items.length)];
-  }
-  pickOr<T>(items: T[]): T | undefined {
-    if (items.length === 0) return undefined;
-    return this.pick(items);
-  }
-}
 
 // -------- Squares --------
 
@@ -881,20 +847,6 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
   // -------- ETH --------
 
   const balanceOf = (address: Address) => fx.publicClient.getBalance({ address });
-
-  /// The balance change of `address` over the transaction, plus its gas cost if `address` sent
-  /// it. Also returns the receipt.
-  async function balanceChange(address: Address, send: () => Promise<Hex>) {
-    const before = await balanceOf(address);
-    const hash = await send();
-    const receipt = await fx.publicClient.waitForTransactionReceipt({ hash });
-    const after = await balanceOf(address);
-    const gas =
-      getAddress(receipt.from) === address
-        ? receipt.gasUsed * receipt.effectiveGasPrice
-        : 0n;
-    return { change: after - before + gas, receipt };
-  }
 
   /// withdraw by `bidder`. The bidder must get exactly the amount of the model.
   async function withdraw(bidder: Address) {

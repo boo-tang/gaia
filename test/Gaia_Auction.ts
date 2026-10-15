@@ -6,11 +6,13 @@ import {
   SHAPE_ERRORS,
   auctionAs,
   deployAuction,
+  expectActiveBidsEqualProceeds,
   expectRevertWithOneOf,
   pack,
 } from "./helpers/auction";
 import { balanceChange } from "./helpers/eth";
 import { deployAccount, deployLand, executeAs, squareId } from "./helpers/land";
+import { rect } from "./helpers/shapes";
 
 describe("GaiaAuction: bid shape rule", function () {
   async function deployAll() {
@@ -582,14 +584,6 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
     ).to.be.rejectedWith("OverlapWouldInvalidateShape");
   });
 
-  // Rectangle of `rows` x `cols` squares with its south-west square at (lat, lng), in bid order.
-  const rect = (lat: number, lng: number, rows: number, cols: number) => {
-    const locs = [];
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) locs.push({ lat: lat + r, lng: lng + c });
-    }
-    return locs;
-  };
 
   it("tracks the squares that each shape still holds", async function () {
     const { auction, auctionAs1, auctionAs2, minBid } = await loadFixture(deployAntiGrief);
@@ -1710,13 +1704,6 @@ describe("GaiaAuction: re-bid on own squares", function () {
     return amount;
   }
 
-  async function expectActiveBidsEqualProceeds(f: Own) {
-    const active =
-      (await f.auction.read.activeBids([f.alice])) +
-      (await f.auction.read.activeBids([f.bob]));
-    expect(active).to.equal(await f.auction.read.proceeds());
-  }
-
   async function paidBy(f: Own, hash: `0x${string}`) {
     const tx = await f.publicClient.getTransaction({ hash });
     return tx.value;
@@ -1726,7 +1713,7 @@ describe("GaiaAuction: re-bid on own squares", function () {
     it("takes back the full shape and pays only for the lost square", async function () {
       const f = await loadFixture(deployOwn);
       await partialTakeover(f);
-      await expectActiveBidsEqualProceeds(f);
+      await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
 
       // Lost square: next bid after 2 * minBid. Own squares: 0.
       await expect(
@@ -1746,7 +1733,7 @@ describe("GaiaAuction: re-bid on own squares", function () {
       expect(await f.auction.read.activeBids([f.alice])).to.equal(6n * minBid);
       expect(await f.auction.read.activeBids([f.bob])).to.equal(0n);
       expect(await f.auction.read.proceeds()).to.equal(6n * minBid);
-      await expectActiveBidsEqualProceeds(f);
+      await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
     });
 
     it("applies floorPerSquare only to the lost square", async function () {
@@ -1761,7 +1748,7 @@ describe("GaiaAuction: re-bid on own squares", function () {
       expect(await amountOf(f, lost)).to.equal(5n * minBid);
       // Only the refund from Bob's takeover: nothing for own squares.
       expect(await f.auction.read.pendingReturns([f.alice])).to.equal(minBid);
-      await expectActiveBidsEqualProceeds(f);
+      await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
     });
 
     it("accepts a bid with no value when it raises nothing and refunds any value sent", async function () {
@@ -1777,7 +1764,7 @@ describe("GaiaAuction: re-bid on own squares", function () {
       }
       expect(await f.auction.read.pendingReturns([f.alice])).to.equal(700n);
       expect(await f.auction.read.proceeds()).to.equal(4n * minBid);
-      await expectActiveBidsEqualProceeds(f);
+      await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
     });
   });
 
@@ -1798,7 +1785,7 @@ describe("GaiaAuction: re-bid on own squares", function () {
       expect(await f.auction.read.pendingReturns([f.alice])).to.equal(minBid);
       expect(await f.auction.read.activeBids([f.alice])).to.equal(9n * minBid);
       expect(await f.auction.read.proceeds()).to.equal(9n * minBid);
-      await expectActiveBidsEqualProceeds(f);
+      await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
     });
 
     it("raises own squares to floorPerSquare when it is above the next bid", async function () {
@@ -1814,7 +1801,7 @@ describe("GaiaAuction: re-bid on own squares", function () {
       expect(await amountOf(f, lost)).to.equal(3n * minBid);
       // Only the refund from Bob's takeover: nothing for own squares.
       expect(await f.auction.read.pendingReturns([f.alice])).to.equal(minBid);
-      await expectActiveBidsEqualProceeds(f);
+      await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
     });
 
     it("uses the percentage increment on own squares", async function () {
@@ -1826,7 +1813,7 @@ describe("GaiaAuction: re-bid on own squares", function () {
       await f.asAlice.write.bidOnShape([pack([loc]), 0n, true], { value: 5000n });
       expect(await amountOf(f, loc)).to.equal(105_000n);
       expect(await f.auction.read.pendingReturns([f.alice])).to.equal(0n);
-      await expectActiveBidsEqualProceeds(f);
+      await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
     });
   });
 
@@ -1871,7 +1858,7 @@ describe("GaiaAuction: re-bid on own squares", function () {
       expect(await amountOf(f, loc)).to.equal(minBid);
     }
     expect(await f.auction.read.proceeds()).to.equal(4n * minBid);
-    await expectActiveBidsEqualProceeds(f);
+    await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
 
     await time.increaseTo((await f.auction.read.endTime()) + 1n);
     for (const shapeId of [1n, 2n, 3n]) {
@@ -1934,7 +1921,7 @@ describe("GaiaAuction: re-bid on own squares", function () {
       expect(getAddress(await f.auction.read.shapeBidder([shapeId]))).to.equal(getAddress(bidder));
     }
     expect(total).to.equal(await f.auction.read.proceeds());
-    await expectActiveBidsEqualProceeds(f);
+    await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
 
     // Current shapes: 1 to 4 are fully overtaken; 5, 6 and 7 hold squares.
     expect([...shapeSquares.keys()].sort()).to.deep.equal([5n, 6n, 7n]);
@@ -1954,7 +1941,7 @@ describe("GaiaAuction: re-bid on own squares", function () {
     await expect(
       f.asAlice.write.bidOnShape([pack([row[1]]), 0n, true], { value: minBid })
     ).to.be.rejectedWith("OverlapWouldInvalidateShape");
-    await expectActiveBidsEqualProceeds(f);
+    await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
   });
 });
 

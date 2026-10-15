@@ -9,13 +9,8 @@ import {
 } from "viem";
 
 import { loadFixture, viem } from "./helpers/setup";
+import { row } from "./helpers/shapes";
 import { deployAccount, deployLand } from "./helpers/land";
-
-const row = (lat: number, from: number, to: number) => {
-  const out: { lat: number; lng: number }[] = [];
-  for (let lng = from; lng <= to; lng++) out.push({ lat, lng });
-  return out;
-};
 
 const approvalAbi = parseAbi([
   "function approve(address spender, uint256 amount)",

@@ -2,18 +2,13 @@ import { expect } from "chai";
 import { encodeFunctionData, getAddress, parseEther, zeroAddress } from "viem";
 
 import { loadFixture, viem } from "./helpers/setup";
+import { row } from "./helpers/shapes";
 import {
   accountTransferSquare,
   deployAccount,
   deployLand,
   squareId,
 } from "./helpers/land";
-
-const row = (lat: number, from: number, to: number) => {
-  const out: { lat: number; lng: number }[] = [];
-  for (let lng = from; lng <= to; lng++) out.push({ lat, lng });
-  return out;
-};
 
 describe("GaiaCountryMarket", function () {
   // Alice owns country 1 (row 10, columns 10-12) and lists it for 2 ETH.
