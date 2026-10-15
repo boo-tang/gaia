@@ -13,8 +13,8 @@ import {IGaiaAuction} from "./interfaces/IGaiaAuction.sol";
  * @notice Timeboxed per-square bidding with an HV-convex shape constraint. Each winning shape
  *         settles into an ERC-721 country in GaiaCountries.
  *
- * Shape rule: HV-convex. Each row and each column of the shape is one unbroken run of squares, and
- * the rows are on consecutive latitudes and touch each other. Cross and plus shapes are valid.
+ * Shape rule: HV-convex. Each row and each column of the shape is one unbroken range of squares,
+ * and the rows are on consecutive latitudes and touch each other. Cross and plus shapes are valid.
  *
  * Anti-griefing rules enforced on every bid and on every simulated remainder after overlap:
  *   - Shape size must be in [minShapeSquares, maxShapeSquares].
@@ -62,12 +62,15 @@ import {IGaiaAuction} from "./interfaces/IGaiaAuction.sol";
  * unpacked values.
  *
  * Storage (gas): one slot per square ({uint128 amount, uint128 shapeId}, keyed by the packed
- * square); the bidder is the bidder of the shape. One slot per shape ({bidder, liveSquares}). The
- * squares of each shape as in the bid, packed eight per slot; the list does not get shorter. A
- * bitmap per shape (_lostSquares) marks the squares that the shape lost in a partial takeover, so
- * the remainder check does not read them again. A bid that takes all remaining squares of a shape
- * skips the remainder check. The gas of a bid grows with the number of squares, and with the
- * size of each shape that it cuts into; see test/Gaia_Auction.gas.ts.
+ * square); the bidder is the bidder of the shape. One slot per shape ({bidder, liveSquares,
+ * frame, live rows}). A valid shape has one unbroken range of squares in each row, so each shape
+ * stores one range (first and last normalised longitude) per row, eight rows per slot (_ranges).
+ * The ranges are always the squares that the shape still holds: a bid that takes squares of a
+ * shape makes the ranges of these rows shorter. A bid that takes squares from the middle of a
+ * range reverts (OverlapWouldInvalidateShape). The remainder check reads only the rows that the
+ * shape still holds, and a bid that takes all remaining squares of a shape skips it. The gas of
+ * a bid grows with the number of squares, and with the number of rows of each shape that it cuts
+ * into; see test/Gaia_Auction.gas.ts.
  *
  * Events: each bid emits one `ShapeBid` with the new shape ID, the bidder, all squares of the new
  * shape and their amounts after the bid. A square belongs to the newest shape that contains it,
@@ -139,23 +142,28 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     // --- Per-shape state ---
     // shapeId 0 is a sentinel for "no active shape"; valid ids start at 1.
     uint256 private _nextShapeId;
-    // Bidder of the shape and the number of squares that the shape still holds, in one slot.
+    // One slot per shape. Row r of the shape is latitude `baseLat + r`. Longitudes of the ranges
+    // are normalised with `refLng`, the longitude of the first square of the bid (see _normLng).
+    // Rows `loRow` to `hiRow` hold squares; the other rows are empty.
     struct Shape {
         address bidder;
-        uint32 liveSquares;
+        // Number of squares that the shape still holds.
+        uint24 liveSquares;
+        // True only during a bid that takes squares of the shape (see _cut).
+        bool touched;
+        uint16 refLng;
+        uint16 baseLat;
+        uint16 loRow;
+        uint16 hiRow;
     }
     mapping(uint256 => Shape) private _shapes;
-    // Squares that a shape lost in a partial takeover: bit (i % 256) of word (i / 256) is set when
-    // stored square i went to a later bid that left a remainder. The remainder check then does
-    // not read these squares again. The squares of a full takeover are not marked: no later bid
-    // can affect a shape that holds no squares.
-    mapping(uint256 => mapping(uint256 => uint256)) private _lostSquares;
-    // Original sorted squares of the bid, packed as `(uint32(lat) << 16) | lng`. Squares may later
-    // be overtaken by newer bids.
-    mapping(uint256 => uint32[]) private _shapeSquares;
+    // Range of each row of a shape: row r is bits 32 * (r % 8) to 32 * (r % 8) + 31 of slot r / 8,
+    // `(start << 16) | end` in the normalised frame of the shape. 0 is an empty row: a shape is
+    // at most LNG_ORIGIN squares wide, so a normalised longitude is never 0.
+    mapping(uint256 => mapping(uint256 => uint256)) private _ranges;
 
     // --- Per-shape settlement state ---
-    // Index into _shapeSquares[shapeId] up to which settlement has progressed.
+    // Next row (relative to `baseLat`) to settle. Settlement starts at `loRow`.
     mapping(uint256 => uint256) public shapeSettleCursor;
     // Count of squares actually settled (i.e. not overtaken) for the shape so far.
     mapping(uint256 => uint256) public shapeSettledSquares;
@@ -191,23 +199,22 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint256 paid;
         // Sum of the increases of all amounts.
         uint256 proceedsIncrease;
-        // IDs of the shapes that owned squares of the bid before it, each once. 0 for a shape
-        // that the bid takes completely (no remainder to check).
+        // IDs of the shapes that owned squares of the bid before it, each once.
         uint256[] affected;
-        // Number of squares that the bid takes from each affected shape.
-        uint256[] takenCounts;
+        // A shape that would lose squares from the middle of a row (0: none).
+        uint256 splitShape;
     }
 
-    // State of the merge scan in _validateShapeRemainder.
-    struct RemainderScan {
-        // Next square of the bid, and its sort key in the frame of the shape.
-        uint256 rIdx;
-        uint256 rKey;
-        // Number of squares in the buffer.
-        uint256 remainCount;
+    // The squares that a bid takes from one row of one shape: always one unbroken part of the
+    // range of the row, because the bid also has one range per row. `first` and `last` are
+    // normalised in the frame of the shape.
+    struct Cut {
+        uint256 shapeId;
+        uint256 lat;
+        uint256 first;
+        uint256 last;
+        address bidder;
         uint16 refLng;
-        // First storage slot of the shape's square data.
-        uint256 base;
     }
 
     // --- Events ---
@@ -349,9 +356,15 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         unchecked {
             _nextShapeId = newShapeId + 1;
         }
+        uint256 rowCount = _writeRows(newShapeId, squares);
         _shapes[newShapeId] = Shape({
             bidder: msg.sender,
-            liveSquares: uint32(squares.length)
+            liveSquares: uint24(squares.length),
+            touched: false,
+            refLng: uint16(squares[0]),
+            baseLat: uint16(squares[0] >> 16),
+            loRow: 0,
+            hiRow: uint16(rowCount - 1)
         });
 
         // Writes the squares first. A revert below undoes the writes.
@@ -366,12 +379,11 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         }
 
         // Revert if any affected active shape would be left in an invalid state.
-        _validateOverlaps(t.affected, squares);
+        _validateOverlaps(t);
 
         if (msg.value != t.paid) {
             pendingReturns[msg.sender] += msg.value - t.paid;
         }
-        _shapeSquares[newShapeId] = squares;
         proceeds += t.proceedsIncrease;
         // `paid` is the full amount of each new square plus the increase of each raised own
         // square, so the sum of `activeBids` stays equal to `proceeds`.
@@ -431,55 +443,39 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint256 shapeId,
         uint256 maxSquares
     ) external override onlyAfterAuction {
-        address winner = _shapes[shapeId].bidder;
+        Shape memory shape = _shapes[shapeId];
+        address winner = shape.bidder;
         if (winner == address(0)) revert UnknownShape();
 
-        uint32[] storage stored = _shapeSquares[shapeId];
-        uint256 storedLen = stored.length;
-        uint256 cursor = shapeSettleCursor[shapeId];
-        if (cursor >= storedLen) revert ShapeAlreadySettled();
+        uint256 hi = shape.hiRow;
+        uint256 from = shapeSettleCursor[shapeId];
+        if (from < shape.loRow) from = shape.loRow;
+        if (from > hi) revert ShapeAlreadySettled();
 
-        uint256 end = storedLen;
-        if (maxSquares != 0 && cursor + maxSquares < storedLen) {
-            end = cursor + maxSquares;
-            // Chunks end on a row boundary, so each row is ordered as a whole (see
-            // _orderForSettlement).
-            uint32 rowLat = stored[end - 1] >> 16;
-            while (end < storedLen && stored[end] >> 16 == rowLat) {
-                unchecked {
-                    end++;
-                }
-            }
-        }
-
-        Loc[] memory owned = new Loc[](end - cursor);
+        // Whole rows only, so each row is ordered as a whole (see _settlementOrder).
+        mapping(uint256 => uint256) storage ranges = _ranges[shapeId];
+        uint256 to = from;
         uint256 ownedCount = 0;
-
-        for (uint256 i = cursor; i < end; ) {
-            uint32 square = stored[i];
-            if (_squares[square].shapeId == shapeId) {
-                owned[ownedCount] = Loc({
-                    lat: uint16(square >> 16),
-                    lng: uint16(square)
-                });
-                unchecked {
-                    ownedCount++;
-                }
-            }
+        while (to <= hi) {
+            uint256 range = _range(ranges, to);
             unchecked {
-                i++;
+                if (range != 0) ownedCount += (range & 0xffff) - (range >> 16) + 1;
+                to++;
             }
+            if (maxSquares != 0 && ownedCount >= maxSquares) break;
         }
 
-        shapeSettleCursor[shapeId] = end;
+        shapeSettleCursor[shapeId] = to;
 
         uint256 countryId = shapeCountryId[shapeId];
         if (ownedCount > 0) {
-            // Trim the pre-allocated array to the actual owned count.
-            assembly {
-                mstore(owned, ownedCount)
-            }
-            owned = _orderForSettlement(owned, shapeId);
+            Loc[] memory owned = _settlementOrder(
+                ranges,
+                shape,
+                from,
+                to,
+                ownedCount
+            );
             // The auction holds the country until the last chunk, so nobody can trade a
             // partially settled country.
             if (countryId == 0) {
@@ -494,7 +490,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             emit ShapeSquaresSettled(shapeId, countryId, ownedCount);
         }
 
-        if (end == storedLen) {
+        if (to > hi) {
             if (countryId != 0) {
                 // transferFrom, not safeTransferFrom: a winner contract without a receiver hook
                 // must not block settlement.
@@ -574,45 +570,64 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
 
     // --- Internal helpers ---
 
+    /// The squares of rows `from` to `to - 1` of the shape, in the order for GaiaCountries.
     /// GaiaSquares adds squares one at a time and requires each one to keep the country connected
-    /// and without holes. Input is sorted by row, west to east. Each row starts at an anchor: the
-    /// first square above a square of this shape in the row below (that square is already in the
-    /// country), or the first square if no row below exists. The row then extends west, then
-    /// east, so every added square touches exactly one run of the country.
-    function _orderForSettlement(
-        Loc[] memory locs,
-        uint256 shapeId
+    /// and without holes. Rows go from south to north. Each row starts at an anchor: the first
+    /// square above the range of the row below (that row is already in the country), or the first
+    /// square of the range if the row is the first row of the shape. The row then extends west,
+    /// then east, so every added square touches exactly one range of the country. `count` is the
+    /// number of squares in these rows.
+    function _settlementOrder(
+        mapping(uint256 => uint256) storage ranges,
+        Shape memory shape,
+        uint256 from,
+        uint256 to,
+        uint256 count
     ) internal view returns (Loc[] memory ordered) {
-        uint256 len = locs.length;
-        ordered = new Loc[](len);
+        ordered = new Loc[](count);
         uint256 out = 0;
-        uint256 rowStart = 0;
-
-        while (rowStart < len) {
-            uint16 lat = locs[rowStart].lat;
-            uint256 rowEnd = rowStart + 1;
-            while (rowEnd < len && locs[rowEnd].lat == lat) rowEnd++;
-
-            uint256 anchor = rowStart;
-            if (lat > 0) {
-                for (uint256 k = rowStart; k < rowEnd; k++) {
-                    if (_squares[_key(lat - 1, locs[k].lng)].shapeId == shapeId) {
-                        anchor = k;
-                        break;
-                    }
-                }
+        for (uint256 r = from; r < to; r++) {
+            uint256 range = _range(ranges, r);
+            if (range == 0) continue;
+            uint256 start = range >> 16;
+            uint256 end = range & 0xffff;
+            uint256 anchor = start;
+            if (r > shape.loRow) {
+                uint256 below = _range(ranges, r - 1) >> 16;
+                if (below > anchor) anchor = below;
             }
-
-            ordered[out++] = locs[anchor];
-            for (uint256 k = anchor; k > rowStart; ) {
-                k--;
-                ordered[out++] = locs[k];
-            }
-            for (uint256 k = anchor + 1; k < rowEnd; k++) {
-                ordered[out++] = locs[k];
-            }
-            rowStart = rowEnd;
+            out = _appendRow(
+                ordered,
+                out,
+                uint16(shape.baseLat + r),
+                (start << 32) | (anchor << 16) | end,
+                shape.refLng
+            );
         }
+    }
+
+    /// Appends the squares of one row to `ordered` from index `out`: the anchor, then west to the
+    /// start, then east to the end. `span` is `(start << 32) | (anchor << 16) | end`, normalised.
+    /// Returns the next index.
+    function _appendRow(
+        Loc[] memory ordered,
+        uint256 out,
+        uint16 lat,
+        uint256 span,
+        uint16 refLng
+    ) internal pure returns (uint256) {
+        uint256 start = span >> 32;
+        uint256 anchor = (span >> 16) & 0xffff;
+        uint256 end = span & 0xffff;
+        ordered[out++] = Loc(lat, _denormLng(anchor, refLng));
+        for (uint256 c = anchor; c > start; ) {
+            c--;
+            ordered[out++] = Loc(lat, _denormLng(c, refLng));
+        }
+        for (uint256 c = anchor + 1; c <= end; c++) {
+            ordered[out++] = Loc(lat, _denormLng(c, refLng));
+        }
+        return out;
     }
 
     /// The shape validator for a new bid. Reverts with the error of the first rule that fails.
@@ -633,9 +648,8 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     }
 
     /// The shape rule without the size limits. Returns the selector of the error of the first rule
-    /// that fails, or 0 if the squares are a valid shape. For a new bid (_validateShape) and for
-    /// the remainder of each affected shape (_validateShapeRemainder). `squares` must not be
-    /// empty.
+    /// that fails, or 0 if the squares are a valid shape. _rangesOk applies the same rule to the
+    /// row ranges of a shape. `squares` must not be empty.
     function _shapeError(
         uint32[] memory squares
     ) internal view returns (bytes4) {
@@ -765,9 +779,9 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     /// Moves the squares to `newShapeId`. A square of a different bidder: the previous bidder gets
     /// a refund, and the bid pays the full new amount. Own square: no refund, and the amount goes
     /// up only if `raiseOwnSquares` is true; the bid pays only the increase. The refunds go to
-    /// `pendingReturns` and out of `activeBids` once for each run of consecutive squares with the
-    /// same previous bidder, not once for each square. Also collects the IDs of the shapes that
-    /// owned the squares before.
+    /// `pendingReturns` and out of `activeBids` once for each group of consecutive squares with the
+    /// same previous bidder, not once for each square. Removes the squares from the row ranges of
+    /// the shapes that held them (see _cut), and collects the IDs of these shapes.
     function _takeSquares(
         uint32[] calldata squares,
         uint256 newShapeId,
@@ -777,14 +791,28 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint256 len = squares.length;
         t.amounts = new uint256[](len);
         t.affected = new uint256[](len);
-        t.takenCounts = new uint256[](len);
         uint256 affectedCount = 0;
         address refundTo;
         uint256 refund;
+        Cut memory cut;
         for (uint256 i = 0; i < len; ) {
             uint32 square = squares[i];
             Square memory current = _squares[square];
-            address previous = _shapes[current.shapeId].bidder;
+
+            // The squares that the bid takes from one row of one shape are consecutive in the
+            // bid. A new shape or a new row starts a new cut.
+            if (current.shapeId != cut.shapeId || square >> 16 != cut.lat) {
+                affectedCount = _cut(t, affectedCount, cut);
+                cut.shapeId = current.shapeId;
+                cut.lat = square >> 16;
+                Shape memory owner = _shapes[current.shapeId];
+                cut.bidder = owner.bidder;
+                cut.refLng = owner.refLng;
+                cut.first = _normLng(uint16(square), owner.refLng);
+            }
+            cut.last = _normLng(uint16(square), cut.refLng);
+
+            address previous = cut.bidder;
             uint256 amount = current.amount;
 
             if (previous != msg.sender) {
@@ -802,9 +830,6 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             }
             t.proceedsIncrease += amount - current.amount;
             t.amounts[i] = amount;
-            if (current.shapeId != 0) {
-                affectedCount = _addAffected(t, affectedCount, current.shapeId);
-            }
 
             // `msg.value` covers the sum of the amounts, so each amount fits in 128 bits. If it
             // does not, the bid reverts with InsufficientValue.
@@ -817,19 +842,8 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
                 i++;
             }
         }
+        affectedCount = _cut(t, affectedCount, cut);
         _refund(refundTo, refund);
-
-        // Update the live square count of each affected shape. A shape that holds no squares
-        // after the bid needs no remainder check.
-        for (uint256 k = 0; k < affectedCount; ) {
-            Shape storage shape = _shapes[t.affected[k]];
-            uint32 live = shape.liveSquares - uint32(t.takenCounts[k]);
-            shape.liveSquares = live;
-            if (live == 0) t.affected[k] = 0;
-            unchecked {
-                k++;
-            }
-        }
 
         uint256[] memory affected = t.affected;
         assembly {
@@ -837,30 +851,100 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         }
     }
 
-    /// Counts one square taken from `shapeId`. Adds `shapeId` to the first `count` entries of
-    /// `t.affected` if it is not there yet, and returns the new count. The squares of one shape
-    /// are often consecutive in the bid, so the last entry is checked first.
-    function _addAffected(
+    /// Removes the squares of `cut` from the range of their row and from the live square count of
+    /// the shape. A cut from the middle of a range would split the row: the range does not change
+    /// and `t.splitShape` records the shape (the bid then reverts in _validateOverlaps). Adds the
+    /// shape to the first `count` entries of `t.affected` the first time, and returns the new
+    /// count.
+    /// No-op for shape 0 (squares with no bid).
+    function _cut(
         Taken memory t,
         uint256 count,
-        uint256 shapeId
-    ) internal pure returns (uint256) {
-        uint256[] memory affected = t.affected;
-        unchecked {
-            if (count != 0 && affected[count - 1] == shapeId) {
-                t.takenCounts[count - 1]++;
-                return count;
-            }
-            for (uint256 j = 0; j < count; j++) {
-                if (affected[j] == shapeId) {
-                    t.takenCounts[j]++;
-                    return count;
-                }
-            }
-            affected[count] = shapeId;
-            t.takenCounts[count] = 1;
-            return count + 1;
+        Cut memory cut
+    ) internal returns (uint256) {
+        uint256 shapeId = cut.shapeId;
+        if (shapeId == 0) return count;
+        Shape memory shape = _shapes[shapeId];
+
+        uint256 r = cut.lat - shape.baseLat;
+        mapping(uint256 => uint256) storage ranges = _ranges[shapeId];
+        uint256 word = ranges[r >> 3];
+        uint256 shift = (r & 7) << 5;
+        uint256 range = (word >> shift) & 0xffffffff;
+        uint256 start = range >> 16;
+        uint256 end = range & 0xffff;
+        uint256 newRange;
+        if (cut.first == start) {
+            newRange = cut.last == end ? 0 : ((cut.last + 1) << 16) | end;
+        } else if (cut.last == end) {
+            newRange = (start << 16) | (cut.first - 1);
+        } else {
+            if (t.splitShape == 0) t.splitShape = shapeId;
+            newRange = range;
         }
+        if (newRange != range) {
+            ranges[r >> 3] =
+                (word & ~(uint256(0xffffffff) << shift)) |
+                (newRange << shift);
+        }
+
+        shape.liveSquares -= uint24(cut.last - cut.first + 1);
+        if (!shape.touched) {
+            shape.touched = true;
+            t.affected[count] = shapeId;
+            unchecked {
+                count++;
+            }
+        }
+        _shapes[shapeId] = shape;
+        return count;
+    }
+
+    /// Writes the row ranges of a new shape. `squares` must be a valid shape. Returns the number of
+    /// rows.
+    function _writeRows(
+        uint256 shapeId,
+        uint32[] calldata squares
+    ) internal returns (uint256) {
+        mapping(uint256 => uint256) storage ranges = _ranges[shapeId];
+        uint256 len = squares.length;
+        uint16 refLng = uint16(squares[0]);
+        uint256 lat = squares[0] >> 16;
+        uint256 r = 0;
+        uint256 start = LNG_ORIGIN;
+        uint256 end = LNG_ORIGIN;
+        uint256 word = 0;
+        for (uint256 i = 1; i < len; ) {
+            uint32 square = squares[i];
+            uint256 lng = _normLng(uint16(square), refLng);
+            if (square >> 16 != lat) {
+                // Rows are consecutive, so this is row r + 1.
+                word |= ((start << 16) | end) << ((r & 7) << 5);
+                if (r & 7 == 7) {
+                    ranges[r >> 3] = word;
+                    word = 0;
+                }
+                unchecked {
+                    r++;
+                    lat++;
+                }
+                start = lng;
+            }
+            end = lng;
+            unchecked {
+                i++;
+            }
+        }
+        ranges[r >> 3] = word | (((start << 16) | end) << ((r & 7) << 5));
+        return r + 1;
+    }
+
+    /// Range of row `r` of a shape: `(start << 16) | end`, or 0 for an empty row.
+    function _range(
+        mapping(uint256 => uint256) storage ranges,
+        uint256 r
+    ) internal view returns (uint256) {
+        return (ranges[r >> 3] >> ((r & 7) << 5)) & 0xffffffff;
     }
 
     /// Moves `amount` of the current bids of `bidder` to its refunds. No-op for address(0) (a
@@ -890,6 +974,13 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         }
     }
 
+    /// Inverse of _normLng: the longitude of the normalised value `norm` in the frame of `refLng`.
+    function _denormLng(uint256 norm, uint16 refLng) internal pure returns (uint16) {
+        unchecked {
+            return uint16((norm + refLng + LOC_MAX_LNG - LNG_ORIGIN) % LOC_MAX_LNG);
+        }
+    }
+
     /// False if max(width, height) > min(width, height) * maxShapeAspectRatio.
     function _aspectRatioOk(
         uint16 minLat,
@@ -904,164 +995,89 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         return longer <= shorter * maxShapeAspectRatio;
     }
 
-    /// Validates the remainder of each affected shape (0 entries: full takeover, no check). All
-    /// checks use one memory buffer.
-    function _validateOverlaps(
-        uint256[] memory affected,
-        uint32[] calldata squares
-    ) internal {
+    /// Checks the remainder of each shape that the bid took squares from, after all squares of
+    /// the bid are taken. A shape that holds no squares after the bid needs no check. Reverts with
+    /// OverlapWouldInvalidateShape for a shape that would lose squares from the middle of a row or
+    /// that keeps an invalid remainder. Clears the `touched` flag of each shape.
+    function _validateOverlaps(Taken memory t) internal {
+        if (t.splitShape != 0) revert OverlapWouldInvalidateShape(t.splitShape);
+        uint256[] memory affected = t.affected;
         uint256 count = affected.length;
-        uint256 capacity = 0;
         for (uint256 i = 0; i < count; ) {
-            if (affected[i] != 0) {
-                uint256 storedLen = _shapeSquares[affected[i]].length;
-                if (storedLen > capacity) capacity = storedLen;
+            uint256 shapeId = affected[i];
+            Shape memory shape = _shapes[shapeId];
+            shape.touched = false;
+            // The remainder must itself be a valid shape. It is not larger than the shape, so it
+            // is not above maxShapeSquares. One error for each invalid remainder: the shape errors
+            // are about the squares of the bid, and the remainder is not.
+            if (shape.liveSquares != 0 && !_rangesOk(shapeId, shape)) {
+                revert OverlapWouldInvalidateShape(shapeId);
             }
-            unchecked {
-                i++;
-            }
-        }
-        if (capacity == 0) return;
-
-        uint32[] memory buffer = new uint32[](capacity);
-        for (uint256 i = 0; i < count; ) {
-            if (affected[i] != 0) {
-                // Restore the full length of the buffer after the previous check.
-                assembly {
-                    mstore(buffer, capacity)
-                }
-                _validateShapeRemainder(affected[i], squares, buffer);
-            }
+            _shapes[shapeId] = shape;
             unchecked {
                 i++;
             }
         }
     }
 
-    /// Validates the squares that `shapeId` keeps after the bid. Reads the stored squares of the
-    /// shape, skips the squares that it lost before (_lostSquares), and removes the squares of the
-    /// bid with a merge scan (both lists are sorted by lat, then west to east). Longitudes are
-    /// compared in the stored shape's normalised frame. Marks the squares of the bid in
-    /// _lostSquares. The caller makes sure that the shape keeps at least one square.
-    function _validateShapeRemainder(
+    /// The shape rule of _shapeError and minShapeSquares, on the row ranges of a shape that holds
+    /// squares. Reads rows `loRow` to `hiRow` and sets them to the first and last row that hold
+    /// squares. Each row holds one range (_cut makes sure of that), so the rows that hold squares
+    /// must be consecutive, each range must touch the range below, the west ends must go west and
+    /// then east (or one of the two), the east ends east and then west, and the bounding box must
+    /// satisfy the aspect ratio.
+    function _rangesOk(
         uint256 shapeId,
-        uint32[] calldata removing,
-        uint32[] memory buffer
-    ) internal {
-        RemainderScan memory c;
-        uint256 storedLen;
-        {
-            uint32[] storage stored = _shapeSquares[shapeId];
-            storedLen = stored.length;
-            c.refLng = uint16(stored[0]);
-            uint256 base;
-            assembly {
-                mstore(0, stored.slot)
-                base := keccak256(0, 32)
-            }
-            c.base = base;
-        }
-        c.rKey = removing.length != 0
-            ? _frameKey(removing[0], c.refLng)
-            : type(uint256).max;
-        mapping(uint256 => uint256) storage lost = _lostSquares[shapeId];
-
-        // One bitmap word covers 256 stored squares.
-        for (uint256 from = 0; from < storedLen; from += 256) {
-            uint256 word = lost[from >> 8];
-            uint256 newWord = _scanBlock(
-                from,
-                storedLen,
-                word,
-                c,
-                removing,
-                buffer
-            );
-            if (newWord != word) lost[from >> 8] = newWord;
-        }
-
-        if (c.remainCount < minShapeSquares) {
-            revert OverlapWouldInvalidateShape(shapeId);
-        }
-
-        uint256 remainCount = c.remainCount;
-        assembly {
-            mstore(buffer, remainCount)
-        }
-
-        // The remainder must itself be a valid shape. It is not larger than the stored shape, so
-        // it is not above maxShapeSquares. One error for each invalid remainder: the shape errors
-        // are about the squares of the bid, and the remainder is not.
-        if (_shapeError(buffer) != bytes4(0)) {
-            revert OverlapWouldInvalidateShape(shapeId);
-        }
-    }
-
-    /// Scans the stored squares from `from` (a multiple of 256) to the end of its bitmap word or
-    /// to `storedLen`. The square data of the shape starts at storage slot `c.base`; eight packed
-    /// squares share one slot. Appends each kept square to `buffer`. Returns `lostWord` with the
-    /// bits of the squares that the bid takes set.
-    function _scanBlock(
-        uint256 from,
-        uint256 storedLen,
-        uint256 lostWord,
-        RemainderScan memory c,
-        uint32[] calldata removing,
-        uint32[] memory buffer
-    ) internal view returns (uint256 newWord) {
-        newWord = lostWord;
-        uint256 to = from + 256 < storedLen ? from + 256 : storedLen;
-        uint256 base = c.base;
-        uint256 data;
-        for (uint256 i = from; i < to; ) {
-            if (i & 7 == 0) {
-                assembly {
-                    data := sload(add(base, shr(3, i)))
-                }
-            }
-            if (lostWord & (1 << (i & 255)) == 0) {
-                uint32 square = uint32(data >> ((i & 7) << 5));
-                uint256 sKey = _frameKey(square, c.refLng);
-                while (c.rKey < sKey) _nextRemoving(c, removing);
-                if (c.rKey == sKey) {
-                    // The bid takes this square.
-                    newWord |= 1 << (i & 255);
-                    _nextRemoving(c, removing);
+        Shape memory shape
+    ) internal view returns (bool) {
+        if (shape.liveSquares < minShapeSquares) return false;
+        mapping(uint256 => uint256) storage ranges = _ranges[shapeId];
+        uint256 hi = shape.hiRow;
+        uint256 first = type(uint256).max;
+        uint256 last;
+        uint256 prevStart;
+        uint256 prevEnd;
+        uint256 minStart;
+        uint256 maxEnd;
+        bool startsGoEast;
+        bool endsGoWest;
+        uint256 word;
+        for (uint256 r = shape.loRow; r <= hi; ) {
+            if (r == shape.loRow || r & 7 == 0) word = ranges[r >> 3];
+            uint256 range = (word >> ((r & 7) << 5)) & 0xffffffff;
+            if (range != 0) {
+                uint256 start = range >> 16;
+                uint256 end = range & 0xffff;
+                if (first == type(uint256).max) {
+                    first = r;
+                    minStart = start;
+                    maxEnd = end;
                 } else {
-                    buffer[c.remainCount] = square;
-                    unchecked {
-                        c.remainCount++;
-                    }
+                    // An empty row between two rows, or no contact with the row below.
+                    if (last != r - 1) return false;
+                    if (start > prevEnd || end < prevStart) return false;
+                    if (start > prevStart) startsGoEast = true;
+                    else if (start < prevStart && startsGoEast) return false;
+                    if (end < prevEnd) endsGoWest = true;
+                    else if (end > prevEnd && endsGoWest) return false;
+                    if (start < minStart) minStart = start;
+                    if (end > maxEnd) maxEnd = end;
                 }
+                last = r;
+                prevStart = start;
+                prevEnd = end;
             }
             unchecked {
-                i++;
+                r++;
             }
         }
-    }
-
-    /// Moves the merge scan to the next square of the bid.
-    function _nextRemoving(
-        RemainderScan memory c,
-        uint32[] calldata removing
-    ) internal pure {
-        uint256 rIdx;
-        unchecked {
-            rIdx = c.rIdx + 1;
-        }
-        c.rIdx = rIdx;
-        c.rKey = rIdx < removing.length
-            ? _frameKey(removing[rIdx], c.refLng)
-            : type(uint256).max;
-    }
-
-    /// Sort key of a square in the frame of `refLng`: lat, then normalised lng.
-    function _frameKey(
-        uint32 square,
-        uint16 refLng
-    ) internal pure returns (uint256) {
-        return
-            (uint256(square >> 16) << 16) | _normLng(uint16(square), refLng);
+        shape.loRow = uint16(first);
+        shape.hiRow = uint16(last);
+        uint256 height = last - first + 1;
+        uint256 width = maxEnd - minStart + 1;
+        uint256 longer = height > width ? height : width;
+        uint256 shorter = height > width ? width : height;
+        return longer <= shorter * maxShapeAspectRatio;
     }
 
     /// True if `account` has `DEFAULT_ADMIN_ROLE` in `countries`.

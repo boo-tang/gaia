@@ -2416,3 +2416,149 @@ describe("GaiaAuction: start time, coordinates and constructor checks", function
     await expect(deploy({ maxShapeAspectRatio: 0n })).to.be.rejectedWith("invalid aspect ratio");
   });
 });
+
+// Each shape stores one range of longitudes per row, and a bid that takes squares of the shape
+// makes these ranges shorter (GaiaAuction._cut). These tests follow the ranges through several
+// bids and then through settlement.
+describe("GaiaAuction: row ranges after a cut", function () {
+  async function deployRanges() {
+    const [owner, alice, bob] = await viem.getWalletClients();
+    const { countries, squares } = await deployLand(owner.account.address);
+    const minBid = 1000n;
+    const { auction, endTime: end } = await deployAuction({ countries });
+    const asAlice = await auctionAs(auction.address, alice);
+    const asBob = await auctionAs(auction.address, bob);
+    return {
+      countries,
+      squares,
+      auction,
+      asAlice,
+      asBob,
+      alice: alice.account.address,
+      bob: bob.account.address,
+      minBid,
+      end,
+    };
+  }
+  type Ranges = Awaited<ReturnType<typeof deployRanges>>;
+
+  /// A rectangle as `rect` makes it, with each longitude modulo 36000.
+  const wrapRect = (lat: number, lng: number, rows: number, cols: number) =>
+    rect(lat, lng, rows, cols).map(({ lat: a, lng: b }) => ({ lat: a, lng: (b + 36000) % 36000 }));
+
+  async function bid(as: Ranges["asAlice"], locs: { lat: number; lng: number }[], f: Ranges) {
+    await as.write.bidOnShape([pack(locs), 0n, false], {
+      value: 2n * f.minBid * BigInt(locs.length),
+    });
+  }
+
+  /// Settles shape 1 and expects Alice's country to hold exactly `kept`.
+  async function expectAliceCountry(f: Ranges, kept: { lat: number; lng: number }[]) {
+    await time.increaseTo(f.end + 1n);
+    await f.asAlice.write.settleShape([1n, 0n]);
+    const countryId = await f.auction.read.shapeCountryId([1n]);
+    expect(getAddress(await f.countries.read.ownerOf([countryId]))).to.equal(getAddress(f.alice));
+    expect(await f.countries.read.squareCount([countryId])).to.equal(BigInt(kept.length));
+    for (const loc of kept) {
+      expect(await f.squares.read.countryOf([loc.lat, loc.lng])).to.equal(countryId);
+    }
+  }
+
+  // Alice: 3 rows (lat 40 to 42) x longitudes 100 to 107.
+  const aliceShape = () => rect(40, 100, 3, 8);
+
+  it("takes the west end of each row twice, then settles the rest", async function () {
+    const f = await loadFixture(deployRanges);
+    await bid(f.asAlice, aliceShape(), f);
+
+    // Bob takes 100 to 102 (and the free columns 98 and 99).
+    await bid(f.asBob, rect(40, 98, 3, 5), f);
+    expect(await f.auction.read.shapeLiveSquares([1n])).to.equal(15n);
+    // 103 is now the west end of each row, so Bob can take it.
+    await bid(f.asBob, rect(40, 103, 3, 1), f);
+    expect(await f.auction.read.shapeLiveSquares([1n])).to.equal(12n);
+
+    await expectAliceCountry(f, rect(40, 104, 3, 4));
+    await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
+  });
+
+  it("takes the east end of each row twice, then settles the rest", async function () {
+    const f = await loadFixture(deployRanges);
+    await bid(f.asAlice, aliceShape(), f);
+
+    await bid(f.asBob, rect(40, 105, 3, 5), f);
+    expect(await f.auction.read.shapeLiveSquares([1n])).to.equal(15n);
+    await bid(f.asBob, rect(40, 104, 3, 1), f);
+    expect(await f.auction.read.shapeLiveSquares([1n])).to.equal(12n);
+
+    await expectAliceCountry(f, rect(40, 100, 3, 4));
+    await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
+  });
+
+  it("rejects a cut from the middle of a range, and accepts the same cut once it is an end", async function () {
+    const f = await loadFixture(deployRanges);
+    await bid(f.asAlice, aliceShape(), f);
+
+    // 103 and 104 are in the middle of rows 40 to 42.
+    await expect(bid(f.asBob, rect(40, 103, 3, 2), f)).to.be.rejectedWith(
+      "OverlapWouldInvalidateShape"
+    );
+    // After Bob takes 100 to 102, 103 and 104 are the west end.
+    await bid(f.asBob, rect(40, 100, 3, 3), f);
+    await bid(f.asBob, rect(40, 103, 3, 2), f);
+    expect(await f.auction.read.shapeLiveSquares([1n])).to.equal(9n);
+
+    await expectAliceCountry(f, rect(40, 105, 3, 3));
+    await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
+  });
+
+  it("rejects a bid that empties the middle row", async function () {
+    const f = await loadFixture(deployRanges);
+    await bid(f.asAlice, aliceShape(), f);
+
+    // Rows 40 and 42 would not be consecutive.
+    await expect(bid(f.asBob, rect(41, 99, 1, 10), f)).to.be.rejectedWith(
+      "OverlapWouldInvalidateShape"
+    );
+  });
+
+  it("empties the first and the last row, then settles the middle row", async function () {
+    const f = await loadFixture(deployRanges);
+    await bid(f.asAlice, aliceShape(), f);
+
+    await bid(f.asBob, rect(42, 99, 1, 10), f);
+    expect(await f.auction.read.shapeLiveSquares([1n])).to.equal(16n);
+    await bid(f.asBob, rect(40, 99, 1, 10), f);
+    expect(await f.auction.read.shapeLiveSquares([1n])).to.equal(8n);
+
+    // Settlement starts at the first row that holds squares, in chunks of one row.
+    await time.increaseTo(f.end + 1n);
+    await f.asAlice.write.settleShape([1n, 1n]);
+    await expect(f.asAlice.write.settleShape([1n, 1n])).to.be.rejectedWith("ShapeAlreadySettled");
+    const countryId = await f.auction.read.shapeCountryId([1n]);
+    expect(getAddress(await f.countries.read.ownerOf([countryId]))).to.equal(getAddress(f.alice));
+    expect(await f.countries.read.squareCount([countryId])).to.equal(8n);
+    for (const loc of rect(41, 100, 1, 8)) {
+      expect(await f.squares.read.countryOf([loc.lat, loc.lng])).to.equal(countryId);
+    }
+    await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
+  });
+
+  it("cuts both ends of a shape that crosses longitude 0, then settles the rest", async function () {
+    const f = await loadFixture(deployRanges);
+    // Longitudes 35996 to 3.
+    await bid(f.asAlice, wrapRect(60, -4, 3, 8), f);
+
+    // Bob takes 35996 and 35997, then 2 and 3.
+    await bid(f.asBob, wrapRect(60, -6, 3, 4), f);
+    await bid(f.asBob, wrapRect(60, 2, 3, 4), f);
+    expect(await f.auction.read.shapeLiveSquares([1n])).to.equal(12n);
+    // 35999 and 0 are now in the middle of the ranges (35998 to 1).
+    await expect(bid(f.asBob, wrapRect(60, -1, 3, 2), f)).to.be.rejectedWith(
+      "OverlapWouldInvalidateShape"
+    );
+
+    await expectAliceCountry(f, wrapRect(60, -2, 3, 4));
+    await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
+  });
+});

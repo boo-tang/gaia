@@ -107,19 +107,21 @@ Settlement and `withdrawProceeds` wait for the current `endTime`. Read `endTime(
 
 Base does not accept a transaction above 16,777,216 gas (EIP-7825). Measured costs (`test/Gaia_Auction.gas.ts`, run with `GAS_REPORT=1`):
 
-- A new square costs about 28,600 gas. A new 10 x 10 bid costs 3.0M gas. A new 20 x 20 bid costs 11.6M gas.
-- A square that the bid takes from a different bidder costs about 12,000 gas.
-- For each shape that the bid cuts into and that keeps squares, the auction checks the remaining squares. They must be a valid shape of at least `minShapeSquares` squares. If not, the bid reverts with `OverlapWouldInvalidateShape(shapeId)`, with the ID of that shape. The other shape errors (for example `GapBetweenLongitudes`) are only for the squares of the bid itself. This costs about 40,000 gas plus 1,250 gas for each square of the original shape. When a bid takes all remaining squares of a shape, there is no check.
-- Settlement costs about 70,000 gas for each square. A settlement chunk always continues to the end of its row, so the widest row of a shape must settle in one call.
+- A new square costs about 27,000 gas. A new 10 x 10 bid costs 2.8M gas. A new 20 x 20 bid costs 10.7M gas.
+- A square that the bid takes from a different bidder costs about 11,000 gas when the squares come from a small number of shapes.
+- For each shape that the bid cuts into and that keeps squares, the auction checks the remaining squares. They must be a valid shape of at least `minShapeSquares` squares. If not, the bid reverts with `OverlapWouldInvalidateShape(shapeId)`, with the ID of that shape. The other shape errors (for example `GapBetweenLongitudes`) are only for the squares of the bid itself. The check reads one slot for each eight rows that the shape still holds. It does not read the squares that the shape lost before. When a bid takes all remaining squares of a shape, there is no check.
+- The worst bid: each square of the bid comes from a different shape, and each shape has a different bidder. This costs about 56,000 gas for each square of the bid. About 27,000 of it is the refund to a bidder who had no refund before. The cost does not depend on the size of the shapes that the bid cuts.
+- Settlement costs about 63,000 to 65,000 gas for each square. A settlement chunk always continues to the end of its row, so the widest row of a shape must settle in one call.
 
-`maxShapeSquares`, `maxShapeAspectRatio` and a limit on the number of shapes that one bid can cut into must keep each bid and each settlement chunk below the cap. These values are not chosen yet.
+`maxShapeSquares` and `maxShapeAspectRatio` must keep each bid and each settlement chunk below the cap. With the worst bid above, `maxShapeSquares` of about 290 or less keeps each bid below 16,777,216 gas, and about 210 or less keeps it below 12M. A limit on the number of shapes that one bid can cut into is not necessary. These values are not chosen yet.
 
 How the auction stores bids:
 
 - One storage slot for each square: the amount (128 bits) and the shape ID (128 bits). The bidder of a square is the bidder of its shape. `highestBids(lat, lng)` returns the bidder and the amount.
-- One slot for each shape: the bidder and the number of squares that the shape still holds (`shapeLiveSquares`).
-- The squares of each shape, as in the bid, eight squares in one slot. The list does not get shorter when a later bid takes squares.
-- For each shape, one bit for each square of its list. The bit is set when a later bid takes the square and the shape keeps other squares. The check of the remaining squares then does not read that square again.
+- One slot for each shape: the bidder, the number of squares that the shape still holds (`shapeLiveSquares`), the first latitude and the reference longitude of the shape, and the first and last row that still hold squares.
+- One range for each row of each shape: the first and the last longitude of the squares that the shape holds in that row. A valid shape has exactly one range in each row. Eight ranges go in one slot. When a later bid takes squares at the west or east end of a range, the range gets shorter. When it takes all squares of the row, the range is empty. A bid that takes squares from the middle of a range reverts with `OverlapWouldInvalidateShape`, because the shape would have two ranges in that row.
+- Example: Alice's shape has the squares from longitude 501 to 508 in latitude 102. Bob's bid takes 501 to 503. The range of that row is then 504 to 508.
+- Settlement goes through the rows from south to north and adds the squares of each range to the country.
 
 ### Pause and cancel
 

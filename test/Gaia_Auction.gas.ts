@@ -72,7 +72,7 @@ describe("GaiaAuction: gas", function () {
   ) {
     const hash = await as.write.bidOnShape([pack(locs), 0n, raiseOwnSquares], {
       value,
-      gas: 200_000_000n,
+      gas: 900_000_000n,
     });
     return gasOf(f, hash);
   }
@@ -138,6 +138,97 @@ describe("GaiaAuction: gas", function () {
       });
     }
   });
+
+  // K shapes of 10 rows x 100 columns (1000 squares, the maximum) in two stacks: the west stack
+  // at longitudes 1000 to 1099 and the east stack at 1100 to 1199. The new bid is 10 columns
+  // wide (1095 to 1104) and as high as the stacks, so it takes 5 columns of each shape. With
+  // `reduce`, Bob first takes 90 columns of each shape, and each shape keeps 10 x 10 squares; the
+  // new bid then cuts K small leftovers of shapes that were large.
+  function twoStacks(k: number) {
+    const rows = 10;
+    const cols = 100;
+    const shapes: Loc[][] = [];
+    const reduce: Loc[][] = [];
+    for (let i = 0; i < k; i++) {
+      const lat = 100 + Math.floor(i / 2) * rows;
+      const west = i % 2 === 0;
+      shapes.push(rect(lat, west ? 1000 : 1100, rows, cols));
+      reduce.push(rect(lat, west ? 1000 : 1110, rows, 90));
+    }
+    const bid = rect(100, 1095, Math.ceil(k / 2) * rows, 10);
+    return { shapes, reduce, bid };
+  }
+
+  for (const reduce of [false, true]) {
+    const what = reduce ? "K small leftovers of shapes of 1000 squares" : "K shapes of 1000 squares";
+    describe(`bid that cuts ${what}`, function () {
+      for (const k of [2, 4, 10, 20]) {
+        it(`K = ${k}`, async function () {
+          const f = await loadFixture(deployGas);
+          const layout = twoStacks(k);
+          for (const s of layout.shapes) {
+            await bid(f, f.asAlice, s, minBid * BigInt(s.length));
+          }
+          if (reduce) {
+            for (const s of layout.reduce) {
+              await bid(f, f.asBob, s, 2n * minBid * BigInt(s.length));
+            }
+          }
+          const gas = await bid(f, f.asBob, layout.bid, 2n * minBid * BigInt(layout.bid.length));
+          log(`cut ${reduce ? "leftovers" : "shapes"} K=${k} (bid ${layout.bid.length} squares)`, gas);
+          await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
+        });
+      }
+    });
+  }
+
+  // The bid that cuts the most shapes: a staircase of N squares (rows of 2 squares, each row one
+  // column east of the row below). Each square of the bid is in its own shape of 2 squares, so
+  // each square of the bid cuts one shape. With `eachBidder`, each of these shapes has its own
+  // bidder, so each square also refunds a different bidder (cold storage for each). Else Alice
+  // holds all of them.
+  for (const eachBidder of [true, false]) {
+    const who = eachBidder ? "one bidder for each shape" : "one bidder";
+    describe(`bid that cuts one shape for each square, ${who}`, function () {
+      for (const n of [100, 500, 1000]) {
+        it(`N = ${n}`, async function () {
+          this.timeout(600_000);
+          const f = await loadFixture(deployGas);
+          const stair: Loc[] = [];
+          const bidders: `0x${string}`[] = [];
+          for (let j = 0; j < n / 2; j++) {
+            const lat = 100 + j;
+            const lng = 1000 + j;
+            stair.push({ lat, lng }, { lat, lng: lng + 1 });
+            const dominoes = [
+              [
+                { lat, lng: lng - 1 },
+                { lat, lng },
+              ],
+              [
+                { lat, lng: lng + 1 },
+                { lat, lng: lng + 2 },
+              ],
+            ];
+            for (const d of dominoes) {
+              let as = f.asAlice;
+              if (eachBidder) {
+                const address = `0x${(0x10000 + bidders.length).toString(16).padStart(40, "0")}` as const;
+                bidders.push(address);
+                await networkHelpers.impersonateAccount(address);
+                await networkHelpers.setBalance(address, 10n ** 18n);
+                as = await auctionAs(f.auction.address, await viem.getWalletClient(address), viem);
+              }
+              await bid(f, as, d, minBid * 2n);
+            }
+          }
+          const gas = await bid(f, f.asBob, stair, 2n * minBid * BigInt(n));
+          log(`cut ${n} shapes of 2 squares, ${who} (bid ${n} squares)`, gas);
+          await expectActiveBidsEqualProceeds(f.auction, [...bidders, f.alice, f.bob]);
+        });
+      }
+    });
+  }
 
   describe("re-bid on own squares", function () {
     for (const raise of [false, true]) {
