@@ -3,7 +3,7 @@ import { type Abi, encodeFunctionData, getAddress, parseEventLogs } from "viem";
 
 import { loadFixture, time, viem } from "./helpers/setup";
 import { auctionAs, deployAuction, deploySale as deploySaleContract, pack } from "./helpers/auction";
-import { balanceChange } from "./helpers/eth";
+import { balanceChange, walletExec } from "./helpers/eth";
 import { deployAccount, deployLand, executeAs, squareId } from "./helpers/land";
 
 describe("GaiaLandSale", function () {
@@ -471,6 +471,24 @@ describe("GaiaLandSale", function () {
         value: startPrice,
       });
       expect(await f.countries.read.ownerOf([1n])).to.equal(getAddress(buyer.address));
+    });
+  });
+
+  describe("contract buyers", function () {
+    it("blocks a buyer that calls the sale again when it gets its refund", async function () {
+      const f = await loadFixture(deploySale);
+      await time.increaseTo(f.end + 1n);
+      const buyer = await viem.deployContract("MockWallet");
+      const target = { address: f.sale.address, abi: f.abi };
+      const buy = (lng: number) =>
+        encodeFunctionData({ abi: f.sale.abi, functionName: "buy", args: [pack([{ lat: 50, lng }])] });
+      // The second buy reverts (nonReentrant), so the refund fails.
+      await buyer.write.setHook([f.sale.address, buy(51)]);
+      await expect(walletExec(buyer, target, buy(50), startPrice + 1n)).to.be.rejectedWith(
+        "RefundFailed"
+      );
+      expect(await f.squares.read.exists([50, 50])).to.equal(false);
+      expect(await f.squares.read.exists([50, 51])).to.equal(false);
     });
   });
 

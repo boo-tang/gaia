@@ -1,5 +1,5 @@
 import { expect } from "chai";
-import { encodeFunctionData, getAddress } from "viem";
+import { decodeFunctionResult, encodeFunctionData, getAddress, zeroAddress } from "viem";
 
 import { loadFixture, time, viem } from "./helpers/setup";
 import {
@@ -10,7 +10,7 @@ import {
   expectRevertWithOneOf,
   pack,
 } from "./helpers/auction";
-import { balanceChange } from "./helpers/eth";
+import { balanceChange, walletExec, walletExecResult } from "./helpers/eth";
 import { deployAccount, deployLand, executeAs, squareId } from "./helpers/land";
 import { rect } from "./helpers/shapes";
 
@@ -2226,5 +2226,130 @@ describe("GaiaAuction: pause and cancel", function () {
       f.owner.account.address,
     ]);
     await expect(f.asAdmin.write.pause()).to.be.rejectedWith("NotAdmin");
+  });
+});
+
+describe("GaiaAuction: ETH that cannot be sent", function () {
+  const minBid = 1000n;
+  const shape = [
+    { lat: 10, lng: 10 },
+    { lat: 10, lng: 11 },
+  ];
+
+  // A contract wallet bids on two squares (2 * minBid). Bob takes the squares, so the wallet has
+  // 2 * minBid to withdraw. The default wallet is the admin and the treasury.
+  async function deployWallet() {
+    const [admin, bob] = await viem.getWalletClients();
+    const publicClient = await viem.getPublicClient();
+    const { countries } = await deployLand(admin.account.address);
+    const { auction, endTime: end } = await deployAuction(
+      { countries },
+      { minBidPerSquareWei: minBid }
+    );
+    const wallet = await viem.deployContract("MockWallet");
+    const call = (functionName: "withdraw" | "withdrawProceeds") =>
+      encodeFunctionData({ abi: auction.abi, functionName });
+    const bid = encodeFunctionData({
+      abi: auction.abi,
+      functionName: "bidOnShape",
+      args: [pack(shape), 0n, false],
+    });
+    await walletExec(wallet, auction, bid, 2n * minBid);
+    const asBob = await auctionAs(auction.address, bob);
+    await asBob.write.bidOnShape([pack(shape), 0n, false], { value: 4n * minBid });
+
+    // The value that `withdraw` returns to the wallet, and the wallet's withdraw.
+    const withdrawReturns = async () =>
+      decodeFunctionResult({
+        abi: auction.abi,
+        functionName: "withdraw",
+        data: await walletExecResult(wallet, auction, call("withdraw")),
+      });
+    const withdraw = () => walletExec(wallet, auction, call("withdraw"));
+    const balanceOf = (address: `0x${string}`) => publicClient.getBalance({ address });
+    return { admin, bob, auction, wallet, end, call, withdraw, withdrawReturns, balanceOf };
+  }
+
+  it("keeps the refund of a bidder that refuses ETH, and pays it later", async function () {
+    const f = await loadFixture(deployWallet);
+    const held = await f.balanceOf(f.auction.address);
+    await f.wallet.write.setAcceptEth([false]);
+
+    expect(await f.withdrawReturns()).to.equal(false);
+    await f.withdraw();
+    expect(await f.auction.read.pendingReturns([f.wallet.address])).to.equal(2n * minBid);
+    expect(await f.balanceOf(f.auction.address)).to.equal(held);
+
+    await f.wallet.write.setAcceptEth([true]);
+    expect(await f.withdrawReturns()).to.equal(true);
+    await f.withdraw();
+    expect(await f.balanceOf(f.wallet.address)).to.equal(2n * minBid);
+    expect(await f.auction.read.pendingReturns([f.wallet.address])).to.equal(0n);
+  });
+
+  it("keeps the bids of a cancelled auction for a bidder that refuses ETH", async function () {
+    const f = await loadFixture(deployWallet);
+    // The wallet also holds a current bid on a third square.
+    await walletExec(
+      f.wallet,
+      f.auction,
+      encodeFunctionData({
+        abi: f.auction.abi,
+        functionName: "bidOnShape",
+        args: [pack([{ lat: 20, lng: 20 }]), 0n, false],
+      }),
+      minBid
+    );
+    await f.auction.write.pause();
+    await f.auction.write.cancel();
+    await f.wallet.write.setAcceptEth([false]);
+
+    await f.withdraw();
+    expect(await f.auction.read.pendingReturns([f.wallet.address])).to.equal(2n * minBid);
+    expect(await f.auction.read.activeBids([f.wallet.address])).to.equal(minBid);
+
+    await f.wallet.write.setAcceptEth([true]);
+    await f.withdraw();
+    expect(await f.balanceOf(f.wallet.address)).to.equal(3n * minBid);
+    expect(await f.auction.read.activeBids([f.wallet.address])).to.equal(0n);
+  });
+
+  it("pays a refund once when the bidder calls withdraw again from receive", async function () {
+    const f = await loadFixture(deployWallet);
+    const held = await f.balanceOf(f.auction.address);
+    // The second withdraw reverts (nonReentrant), so the wallet refuses the ETH.
+    await f.wallet.write.setHook([f.auction.address, f.call("withdraw")]);
+
+    expect(await f.withdrawReturns()).to.equal(false);
+    await f.withdraw();
+    expect(await f.balanceOf(f.auction.address)).to.equal(held);
+    expect(await f.auction.read.pendingReturns([f.wallet.address])).to.equal(2n * minBid);
+
+    await f.wallet.write.setHook([zeroAddress, "0x"]);
+    await f.withdraw();
+    expect(await f.balanceOf(f.wallet.address)).to.equal(2n * minBid);
+    expect(await f.balanceOf(f.auction.address)).to.equal(held - 2n * minBid);
+  });
+
+  it("keeps the proceeds when the treasury refuses ETH", async function () {
+    const [admin] = await viem.getWalletClients();
+    const { countries } = await deployLand(admin.account.address);
+    const treasury = await viem.deployContract("MockWallet");
+    await treasury.write.setAcceptEth([false]);
+    const { auction, endTime: end } = await deployAuction(
+      { countries },
+      { treasury: treasury.address, minBidPerSquareWei: minBid }
+    );
+    await auction.write.bidOnShape([pack(shape), 0n, false], { value: 2n * minBid });
+    await time.increaseTo(end + 1n);
+
+    await expect(auction.write.withdrawProceeds()).to.be.rejectedWith("ProceedsTransferFailed");
+    expect(await auction.read.proceeds()).to.equal(2n * minBid);
+
+    await treasury.write.setAcceptEth([true]);
+    await auction.write.withdrawProceeds();
+    expect(await auction.read.proceeds()).to.equal(0n);
+    const publicClient = await viem.getPublicClient();
+    expect(await publicClient.getBalance({ address: treasury.address })).to.equal(2n * minBid);
   });
 });

@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { encodeFunctionData, getAddress, parseEther, zeroAddress } from "viem";
 
 import { loadFixture, viem } from "./helpers/setup";
+import { walletExec } from "./helpers/eth";
 import { row } from "./helpers/shapes";
 import {
   accountTransferSquare,
@@ -44,6 +45,7 @@ describe("GaiaCountryMarket", function () {
       });
     return {
       land,
+      asIssuer,
       market,
       marketAs,
       countriesAs,
@@ -400,6 +402,67 @@ describe("GaiaCountryMarket", function () {
       await expect(
         (await marketAs(bob)).write.buy([1n, version, state], { value: price })
       ).to.be.rejectedWith("ERC721NonexistentToken");
+    });
+  });
+
+  describe("contract wallets", function () {
+    it("keeps the country and the listing when the seller refuses the payment", async function () {
+      const { land, asIssuer, market, marketAs, bob } = await loadFixture(deploy);
+      // Country 2 belongs to a contract wallet, which lists it.
+      const seller = await viem.deployContract("MockWallet");
+      await asIssuer.write.createCountry([seller.address, row(20, 10, 11)]);
+      await walletExec(
+        seller,
+        land.countries,
+        encodeFunctionData({
+          abi: land.countries.abi,
+          functionName: "approve",
+          args: [market.address, 2n],
+        })
+      );
+      await walletExec(
+        seller,
+        market,
+        encodeFunctionData({ abi: market.abi, functionName: "list", args: [2n, price] })
+      );
+      await seller.write.setAcceptEth([false]);
+
+      const version = await land.countries.read.compositionVersion([2n]);
+      await expect(
+        (await marketAs(bob)).write.buy([2n, version, 0n], { value: price })
+      ).to.be.rejectedWith("PaymentFailed");
+      expect(getAddress(await land.countries.read.ownerOf([2n]))).to.equal(
+        getAddress(seller.address)
+      );
+      expect((await market.read.listingOf([2n])).price).to.equal(price);
+
+      await seller.write.setAcceptEth([true]);
+      await (await marketAs(bob)).write.buy([2n, version, 0n], { value: price });
+      expect(getAddress(await land.countries.read.ownerOf([2n]))).to.equal(
+        getAddress(bob.account.address)
+      );
+    });
+
+    it("blocks a buyer that calls the market again when it receives the country", async function () {
+      const { land, market, version } = await loadFixture(withListing);
+      const buyer = await viem.deployContract("MockWallet");
+      const buy = encodeFunctionData({
+        abi: market.abi,
+        functionName: "buy",
+        args: [1n, version, 0n],
+      });
+      // The country arrives (safeTransferFrom) before the seller is paid. The buyer calls buy
+      // again from onERC721Received.
+      await buyer.write.setHook([market.address, buy]);
+      await expect(walletExec(buyer, market, buy, price)).to.be.rejectedWith(
+        "ReentrancyGuardReentrantCall"
+      );
+
+      await buyer.write.setHook([zeroAddress, "0x"]);
+      await walletExec(buyer, market, buy, price);
+      expect(getAddress(await land.countries.read.ownerOf([1n]))).to.equal(
+        getAddress(buyer.address)
+      );
     });
   });
 });
