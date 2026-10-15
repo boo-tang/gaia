@@ -26,7 +26,8 @@ import { Rng } from "./helpers/random";
  *
  * At the end, a run either ends normally or with a cancel:
  * - Normal end: the treasury gets exactly `proceeds` from withdrawProceeds, and each bidder can
- *   withdraw their refunds. Then a land sale sells squares next to the window. After each
+ *   withdraw their refunds. Then every shape settles in random chunks (see `settlePhase`), and a
+ *   land sale sells squares next to the window. After each
  *   purchase the sale holds no ETH, and the treasury gets exactly the price times the number of
  *   squares.
  * - Cancel: each bidder withdraws exactly the ETH that they sent, and the treasury gets nothing.
@@ -946,7 +947,150 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     } else if (treasuryGot !== proceeds) {
       throw new Divergence(`treasury got ${treasuryGot}, proceeds were ${proceeds}`);
     }
+    if (!cancel) await settlePhase();
     await salePhase(cancel);
+  }
+
+  // -------- Settlement --------
+
+  /// Settles every shape: random callers, random chunk sizes (0 is the whole rest), and shapes in
+  /// a random mix. A shape is done when settleShape reverts with ShapeAlreadySettled. The test
+  /// does not model the settle cursor; it checks public results after each call:
+  /// - A call that mints squares emits ShapeSquaresSettled with the country and the number of new
+  ///   squares, and squareCount goes up by that number.
+  /// - Until the country holds all live squares of the shape, the auction owns it. The call that
+  ///   completes it sends it to the bidder and emits ShapeSettled.
+  /// At the end: each shape with live squares has one country of its bidder with exactly those
+  /// squares; a shape with no live squares has no country; and the squares that exist in the
+  /// window are exactly the squares of the model.
+  async function settlePhase() {
+    const { countries, squares } = fx.land;
+    const open = new Set(model.shapes.keys());
+    const calls = new Map<number, number>();
+    while (open.size > 0) {
+      const id = rng.pick([...open]);
+      const shape = model.shapes.get(id)!;
+      const live = model.liveCells(id);
+      const chunk = rng.chance(0.3) ? 0n : BigInt(1 + rng.int(6));
+      const caller = rng.pick(bidders);
+      const n = (calls.get(id) ?? 0) + 1;
+      calls.set(id, n);
+      // Each call settles at least one stored square, so a shape needs at most one call for
+      // each stored square, plus the call that finds it settled.
+      if (n > shape.cells.length + 1) {
+        throw new Divergence(`settleShape(#${id}) does not end after ${n - 1} calls`);
+      }
+      log.push(`settleShape(#${id}, ${chunk}) by ${who(caller)}`);
+      const before = await auction.read.shapeCountryId([BigInt(id)]);
+      const countBefore = before === 0n ? 0n : await countries.read.squareCount([before]);
+      const ownerBefore =
+        before === 0n ? undefined : getAddress(await countries.read.ownerOf([before]));
+      let receipt;
+      try {
+        const hash = await as.get(caller)!.write.settleShape([BigInt(id), chunk]);
+        receipt = await fx.publicClient.waitForTransactionReceipt({ hash });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        if (!/\bShapeAlreadySettled\(/.test(message)) {
+          throw new Divergence(`settleShape(#${id}) reverted with: ${message}`);
+        }
+        open.delete(id);
+        await checkSettled(id, live);
+        continue;
+      }
+      counts.ok++;
+      const countryId = await auction.read.shapeCountryId([BigInt(id)]);
+      if (live.length === 0) {
+        if (countryId !== 0n) throw new Divergence(`shape #${id} has no live squares but country ${countryId}`);
+        continue;
+      }
+      if (countryId === 0n) {
+        // The chunk held only squares that the shape lost: nothing is minted yet.
+        if (receipt.logs.length !== 0) throw new Divergence(`shape #${id}: events, but no country`);
+        continue;
+      }
+      if (before !== 0n && countryId !== before) {
+        throw new Divergence(`shape #${id} changed country from ${before} to ${countryId}`);
+      }
+      const count = await countries.read.squareCount([countryId]);
+      const minted = parseEventLogs({
+        abi: auction.abi,
+        eventName: "ShapeSquaresSettled",
+        logs: receipt.logs,
+      });
+      const added = count - countBefore;
+      if (added === 0n ? minted.length !== 0 : minted.length !== 1) {
+        throw new Divergence(`shape #${id}: ${added} squares added, ${minted.length} ShapeSquaresSettled`);
+      }
+      if (
+        added !== 0n &&
+        (minted[0].args.shapeId !== BigInt(id) ||
+          minted[0].args.countryId !== countryId ||
+          minted[0].args.count !== added)
+      ) {
+        throw new Divergence(`shape #${id}: ShapeSquaresSettled ${JSON.stringify(minted[0].args, (_, v) => (typeof v === "bigint" ? v.toString() : v))}, model ${added} squares in ${countryId}`);
+      }
+      // The auction owns the country until the call that reaches the end of the stored squares.
+      // That call sends it to the bidder and emits ShapeSettled. It can come after the country
+      // holds all live squares, when the last stored squares were lost to later bids.
+      const owner = getAddress(await countries.read.ownerOf([countryId]));
+      if (owner !== shape.bidder && owner !== getAddress(auction.address)) {
+        throw new Divergence(`country ${countryId} of shape #${id} is at ${owner}`);
+      }
+      if (owner === shape.bidder && count !== BigInt(live.length)) {
+        throw new Divergence(`shape #${id}: country ${countryId} sent with ${count} of ${live.length} squares`);
+      }
+      const transferred = owner === shape.bidder && ownerBefore !== shape.bidder;
+      const settled = parseEventLogs({ abi: auction.abi, eventName: "ShapeSettled", logs: receipt.logs });
+      if (settled.length !== (transferred ? 1 : 0)) {
+        throw new Divergence(`shape #${id}: ${settled.length} ShapeSettled, country sent: ${transferred}`);
+      }
+      if (transferred) {
+        const a = settled[0].args;
+        if (
+          a.shapeId !== BigInt(id) ||
+          a.countryId !== countryId ||
+          getAddress(a.winner!) !== shape.bidder ||
+          a.totalSquares !== BigInt(live.length)
+        ) {
+          throw new Divergence(`shape #${id}: ShapeSettled with other values than the model`);
+        }
+      }
+    }
+    // The squares that exist in the window are exactly the squares of the model.
+    const rows = validRows(place);
+    for (const k of ALL_CELLS) {
+      if (rowOf(k) >= rows) continue;
+      const packed = packOf(place, k);
+      const exists = await squares.read.exists([latOf(packed), lngOf(packed)]);
+      if (exists !== model.squares.has(k)) {
+        throw new Divergence(`exists${fmtSquares([packed])} is ${exists}, model ${model.squares.has(k)}`);
+      }
+    }
+    log.push("all shapes settled");
+  }
+
+  /// After the last settleShape of shape `id`: its country, if any, holds exactly `live`.
+  async function checkSettled(id: number, live: number[]) {
+    const { countries, squares } = fx.land;
+    const countryId = await auction.read.shapeCountryId([BigInt(id)]);
+    if (live.length === 0) {
+      if (countryId !== 0n) throw new Divergence(`shape #${id} has no live squares but country ${countryId}`);
+      return;
+    }
+    const bidder = model.shapes.get(id)!.bidder;
+    if (countryId === 0n) throw new Divergence(`shape #${id} settled without a country`);
+    const owner = getAddress(await countries.read.ownerOf([countryId]));
+    if (owner !== bidder) throw new Divergence(`country ${countryId} of shape #${id} is at ${owner}, not ${who(bidder)}`);
+    const count = await countries.read.squareCount([countryId]);
+    if (count !== BigInt(live.length)) {
+      throw new Divergence(`country ${countryId} of shape #${id} has ${count} squares, model ${live.length}`);
+    }
+    for (const k of live) {
+      const packed = packOf(place, k);
+      const c = await squares.read.countryOf([latOf(packed), lngOf(packed)]);
+      if (c !== countryId) throw new Divergence(`countryOf${fmtSquares([packed])} is ${c}, model ${countryId}`);
+    }
   }
 
   // -------- Land sale --------
