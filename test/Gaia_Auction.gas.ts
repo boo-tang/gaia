@@ -2,7 +2,6 @@ import { expect } from "chai";
 
 import { network } from "hardhat";
 
-import { coverage } from "./helpers/setup";
 import { auctionAs, deployAuction, pack } from "./helpers/auction";
 import { deployLand } from "./helpers/land";
 
@@ -15,8 +14,8 @@ const loadFixture = networkHelpers.loadFixture.bind(networkHelpers);
 const time = networkHelpers.time;
 
 // Gas of the worst cases of a bid and of settlement, measured from transaction receipts.
-// GAS_REPORT=1 prints each measurement. The bounds are skipped under --coverage, because the
-// instrumented contracts use more gas.
+// GAS_REPORT=1 prints each measurement. The tests check no gas bounds: the requirement is the Base
+// per-transaction cap, and the values that must fit under it (BOO-44, BOO-45) are not chosen yet.
 describe("GaiaAuction: gas", function () {
   const minBid = 1000n;
   const report = process.env.GAS_REPORT === "1";
@@ -39,6 +38,7 @@ describe("GaiaAuction: gas", function () {
 
     return {
       publicClient,
+      countries,
       auction,
       alice: alice.account.address,
       bob: bob.account.address,
@@ -181,7 +181,8 @@ describe("GaiaAuction: gas", function () {
         }
         log(`settle ${n * n} in ${chunks} chunks: largest`, largest);
         log(`settle ${n * n} in ${chunks} chunks: total`, total);
-        expect(await f.auction.read.shapeSettleCursor([1n])).to.equal(BigInt(n * n));
+        const countryId = await f.auction.read.shapeCountryId([1n]);
+        expect(await f.countries.read.squareCount([countryId])).to.equal(BigInt(n * n));
       });
     }
 

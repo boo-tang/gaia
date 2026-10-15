@@ -71,11 +71,11 @@ describe("GaiaCountryMarket", function () {
 
   describe("list and cancel", function () {
     it("lists a country for its owner after an approval", async function () {
-      const { market, alice } = await loadFixture(withListing);
+      const { land, market, alice } = await loadFixture(withListing);
       const listing = await market.read.listingOf([1n]);
       expect(getAddress(listing.seller)).to.equal(getAddress(alice.account.address));
       expect(listing.price).to.equal(price);
-      expect(listing.version).to.equal(3n);
+      expect(listing.version).to.equal(await land.countries.read.compositionVersion([1n]));
     });
 
     it("rejects a listing with only an operator approval for all countries", async function () {
@@ -181,8 +181,9 @@ describe("GaiaCountryMarket", function () {
       const account = await deployAccount(land, 1n);
       await accountTransferSquare(land, alice, account, alice.account.address, 10, 12);
       const newVersion = await land.countries.read.compositionVersion([1n]);
+      const state = await (await marketAs(bob)).read.accountState([1n]);
       await expect(
-        (await marketAs(bob)).write.buy([1n, newVersion, 1n], { value: price })
+        (await marketAs(bob)).write.buy([1n, newVersion, state], { value: price })
       ).to.be.rejectedWith("ListingOutdated");
     });
 
@@ -196,11 +197,12 @@ describe("GaiaCountryMarket", function () {
       await (await marketAs(alice)).write.list([1n, price]);
       const newVersion = await land.countries.read.compositionVersion([1n]);
       expect((await market.read.listingOf([1n])).version).to.equal(newVersion);
+      const state = await market.read.accountState([1n]);
 
       await expect(
-        (await marketAs(bob)).write.buy([1n, version, 1n], { value: price })
+        (await marketAs(bob)).write.buy([1n, version, state], { value: price })
       ).to.be.rejectedWith("CompositionChanged");
-      await (await marketAs(bob)).write.buy([1n, newVersion, 1n], {
+      await (await marketAs(bob)).write.buy([1n, newVersion, state], {
         value: price,
       });
       expect(getAddress(await land.countries.read.ownerOf([1n]))).to.equal(
@@ -216,7 +218,7 @@ describe("GaiaCountryMarket", function () {
       await (await countriesAs(alice)).write.approve([market.address, 1n]);
       await (await marketAs(alice)).write.list([1n, price]);
       const version = await land.countries.read.compositionVersion([1n]);
-      const state = 1n;
+      const state = await market.read.accountState([1n]);
 
       const squaresAsAlice = await viem.getContractAt(
         "GaiaSquares",
@@ -228,8 +230,9 @@ describe("GaiaCountryMarket", function () {
         account,
         squareId(10, 12),
       ]);
+      const merged = await land.countries.read.compositionVersion([1n]);
       await expect(
-        (await marketAs(bob)).write.buy([1n, version + 1n, state], {
+        (await marketAs(bob)).write.buy([1n, merged, state], {
           value: price,
         })
       ).to.be.rejectedWith("ListingOutdated");
@@ -398,8 +401,9 @@ describe("GaiaCountryMarket", function () {
       for (const lng of [12, 11, 10]) {
         await accountTransferSquare(land, alice, account, alice.account.address, 10, lng);
       }
+      const state = await (await marketAs(bob)).read.accountState([1n]);
       await expect(
-        (await marketAs(bob)).write.buy([1n, version, 3n], { value: price })
+        (await marketAs(bob)).write.buy([1n, version, state], { value: price })
       ).to.be.rejectedWith("ERC721NonexistentToken");
     });
   });

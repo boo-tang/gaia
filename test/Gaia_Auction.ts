@@ -1,7 +1,7 @@
 import { expect } from "chai";
 import { encodeFunctionData, getAddress } from "viem";
 
-import { coverage, loadFixture, time, viem } from "./helpers/setup";
+import { loadFixture, time, viem } from "./helpers/setup";
 import {
   SHAPE_ERRORS,
   auctionAs,
@@ -756,9 +756,10 @@ describe("GaiaAuction: settleShape", function () {
 
     await time.increaseTo(end + 1n);
 
+    // One call with maxSquares 2 settles the whole row.
     await auctionAs1.write.settleShape([1n, 2n]);
-    expect(await auction.read.shapeSettleCursor([1n])).to.equal(4n);
     const countryId = await auction.read.shapeCountryId([1n]);
+    expect(await countries.read.squareCount([countryId])).to.equal(4n);
     expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(
       getAddress(bidder1.account.address)
     );
@@ -782,11 +783,15 @@ describe("GaiaAuction: settleShape", function () {
 
     await time.increaseTo(end + 1n);
 
+    // The first call settles row 30 (2 squares), and the auction keeps the country.
     await auctionAs1.write.settleShape([1n, 1n]);
-    expect(await auction.read.shapeSettleCursor([1n])).to.equal(2n);
+    const countryId = await auction.read.shapeCountryId([1n]);
+    expect(await countries.read.squareCount([countryId])).to.equal(2n);
+    expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(
+      getAddress(auction.address)
+    );
     await expect(auctionAs1.write.settleShape([1n, 1n])).to.be.fulfilled;
 
-    const countryId = await auction.read.shapeCountryId([1n]);
     expect(await countries.read.squareCount([countryId])).to.equal(5n);
     expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(
       getAddress(bidder1.account.address)
@@ -1081,26 +1086,6 @@ describe("GaiaAuction: settleShape", function () {
     expect(await countries.read.squareCount([countryId])).to.equal(
       BigInt(shape.length)
     );
-  });
-
-  it("settles a 100-square shape for less than 7.6M gas", async function () {
-    if (coverage) this.skip();
-    const { auctionAs1, minBid, end } = await loadFixture(deploySettle);
-    const publicClient = await viem.getPublicClient();
-
-    const shape = [];
-    for (let lat = 70; lat < 80; lat++) {
-      for (let lng = 10; lng < 20; lng++) shape.push({ lat, lng });
-    }
-    await auctionAs1.write.bidOnShape([pack(shape), 0n, false], {
-      value: minBid * BigInt(shape.length),
-    });
-
-    await time.increaseTo(end + 1n);
-
-    const hash = await auctionAs1.write.settleShape([1n, 0n]);
-    const { gasUsed } = await publicClient.waitForTransactionReceipt({ hash });
-    expect(gasUsed < 7_600_000n).to.equal(true);
   });
 });
 
