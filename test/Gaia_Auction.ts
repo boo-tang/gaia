@@ -2362,3 +2362,57 @@ describe("GaiaAuction: ETH that cannot be sent", function () {
     expect(await publicClient.getBalance({ address: treasury.address })).to.equal(2n * minBid);
   });
 });
+
+describe("GaiaAuction: start time, coordinates and constructor checks", function () {
+  async function deployFuture() {
+    const [admin] = await viem.getWalletClients();
+    const { countries } = await deployLand(admin.account.address);
+    const now = BigInt(await time.latest());
+    const { auction, startTime } = await deployAuction(
+      { countries },
+      { startTime: now + 100n, endTime: now + 3600n }
+    );
+    return { countries, auction, startTime };
+  }
+
+  it("rejects a bid before startTime, and accepts it at startTime", async function () {
+    const { auction, startTime } = await loadFixture(deployFuture);
+    const bid = () => auction.write.bidOnShape([pack([{ lat: 10, lng: 10 }]), 0n, false], { value: 1000n });
+    await expect(bid()).to.be.rejectedWith("AuctionNotYetStarted");
+    await time.setNextBlockTimestamp(startTime);
+    await bid();
+  });
+
+  it("rejects a longitude out of range on the first square", async function () {
+    const { auction, startTime } = await loadFixture(deployFuture);
+    await time.increaseTo(startTime);
+    await expect(
+      auction.write.bidOnShape([pack([{ lat: 10, lng: 36000 }]), 0n, false], { value: 1000n })
+    ).to.be.rejectedWith("InvalidCoordinates");
+  });
+
+  it("rejects zero addresses, an empty time window, bad shape bounds and a zero aspect ratio", async function () {
+    const { countries } = await loadFixture(deployFuture);
+    const deploy = (params: Parameters<typeof deployAuction>[1], target = countries) =>
+      deployAuction({ countries: target }, params, { register: false });
+    const now = BigInt(await time.latest());
+
+    await expect(deploy({}, { ...countries, address: zeroAddress })).to.be.rejectedWith(
+      "zero address"
+    );
+    await expect(deploy({ treasury: zeroAddress })).to.be.rejectedWith("zero address");
+    await expect(deploy({ startTime: now + 10n, endTime: now + 10n })).to.be.rejectedWith(
+      "invalid time window"
+    );
+    await expect(deploy({ minShapeSquares: 0n })).to.be.rejectedWith("invalid shape bounds");
+    await expect(deploy({ minShapeSquares: 6n, maxShapeSquares: 5n })).to.be.rejectedWith(
+      "invalid shape bounds"
+    );
+    // Longitudes keep their order only within 18000 columns of the first square.
+    await expect(deploy({ maxShapeSquares: 18_001n })).to.be.rejectedWith(
+      "shape too large for lng wrap"
+    );
+    await deploy({ maxShapeSquares: 18_000n });
+    await expect(deploy({ maxShapeAspectRatio: 0n })).to.be.rejectedWith("invalid aspect ratio");
+  });
+});

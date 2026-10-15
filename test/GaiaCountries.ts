@@ -108,6 +108,14 @@ describe("GaiaCountries", function () {
     });
   });
 
+  it("supports the ERC-165, ERC-721 and AccessControl interfaces", async function () {
+    const { countries } = await loadFixture(deployCountries);
+    for (const id of ["0x01ffc9a7", "0x80ac58cd", "0x5b5e139f", "0x7965db0b"] as const) {
+      expect(await countries.read.supportsInterface([id])).to.equal(true);
+    }
+    expect(await countries.read.supportsInterface(["0xffffffff"])).to.equal(false);
+  });
+
   describe("linking the square contract", function () {
     it("can link the square contract only once", async function () {
       const { countries, land } = await loadFixture(deployCountries);
@@ -315,6 +323,14 @@ describe("GaiaCountries", function () {
   });
 
   describe("only the owner can grow a country", function () {
+    it("rejects an empty batch", async function () {
+      const { asIssuer, alice } = await loadFixture(deployCountries);
+      await asIssuer.write.createCountry([alice.account.address, [{ lat: 10, lng: 10 }]]);
+      await expect(
+        asIssuer.write.addSquares([1n, alice.account.address, []])
+      ).to.be.rejectedWith("EmptySquares");
+    });
+
     it("rejects a buyer that does not own the country", async function () {
       const { asIssuer, alice, bob } = await loadFixture(deployCountries);
       await asIssuer.write.createCountry([

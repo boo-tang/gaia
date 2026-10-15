@@ -10,6 +10,13 @@ import {
   squareId,
 } from "./helpers/land";
 
+// Three checks of GaiaSquares have no test on purpose, because no path through the public
+// functions reaches them. They are a second line of defence:
+// - BurnNotAllowed: GaiaSquares has no public burn.
+// - NotACountryAccount: only GaiaCountries mints, and always to the account of a country.
+// - TransferNotByAccount: a square in a country belongs to the account, and the account cannot
+//   give an approval (ApprovalNotAllowed). A token approval of the wallet ends when the square
+//   moves into the country.
 describe("GaiaSquares", function () {
   async function deploy() {
     const [admin, issuer, alice, bob, carol] = await viem.getWalletClients();
@@ -466,6 +473,33 @@ describe("GaiaSquares", function () {
       ]);
       expect(await land.squares.read.countryOf([10, 12])).to.equal(1n);
       expect(await land.countries.read.squareCount([1n])).to.equal(3n);
+    });
+
+    it("lets the owner merge a square with safeTransferFrom", async function () {
+      const { land, alice, account, squaresAs } = await loadFixture(withStandalone);
+      const asAlice = await squaresAs(alice);
+      await asAlice.write.safeTransferFrom([alice.account.address, account, squareId(10, 12)]);
+      expect(await land.squares.read.countryOf([10, 12])).to.equal(1n);
+      expect(await land.countries.read.squareCount([1n])).to.equal(3n);
+    });
+
+    it("changes nothing when a square goes to its own holder", async function () {
+      const { land, alice, account, squaresAs } = await loadFixture(withStandalone);
+      const version = await land.countries.read.compositionVersion([1n]);
+
+      // A standalone square, from the wallet to the same wallet.
+      const asAlice = await squaresAs(alice);
+      await asAlice.write.transferFrom([alice.account.address, alice.account.address, squareId(10, 12)]);
+      expect(await land.squares.read.countryOf([10, 12])).to.equal(0n);
+      expect(getAddress(await land.squares.read.ownerOf([squareId(10, 12)]))).to.equal(
+        getAddress(alice.account.address)
+      );
+
+      // A square in a country, from the account to the same account.
+      await accountTransferSquare(land, alice, account, account, 10, 10);
+      expect(await land.squares.read.countryOf([10, 10])).to.equal(1n);
+      expect(await land.countries.read.squareCount([1n])).to.equal(2n);
+      expect(await land.countries.read.compositionVersion([1n])).to.equal(version);
     });
 
     it("rejects a merge of a square that does not touch the country", async function () {

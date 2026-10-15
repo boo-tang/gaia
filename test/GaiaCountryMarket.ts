@@ -110,6 +110,11 @@ describe("GaiaCountryMarket", function () {
       ).to.be.rejectedWith("MarketNotApproved");
     });
 
+    it("rejects a cancel of a country that is not listed", async function () {
+      const { marketAs, alice } = await loadFixture(deploy);
+      await expect((await marketAs(alice)).write.cancel([1n])).to.be.rejectedWith("NotListed");
+    });
+
     it("lets only the seller cancel", async function () {
       const { market, marketAs, alice, bob, version } = await loadFixture(
         withListing
@@ -181,6 +186,9 @@ describe("GaiaCountryMarket", function () {
       const { marketAs, bob, version } = await loadFixture(withListing);
       await expect(
         (await marketAs(bob)).write.buy([1n, version, 0n], { value: price - 1n })
+      ).to.be.rejectedWith("WrongPrice");
+      await expect(
+        (await marketAs(bob)).write.buy([1n, version, 0n], { value: price + 1n })
       ).to.be.rejectedWith("WrongPrice");
     });
 

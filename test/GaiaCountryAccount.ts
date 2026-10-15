@@ -169,6 +169,55 @@ describe("GaiaCountryAccount", function () {
     }
   });
 
+  describe("execute and signer rules", function () {
+    it("rejects an operation other than a call", async function () {
+      const { asAlice, token, bob } = await loadFixture(deploy);
+      const data = encodeFunctionData({
+        abi: token.abi,
+        functionName: "transfer",
+        args: [bob.account.address, 1n],
+      });
+      // 1 is delegatecall in ERC-6551.
+      await expect(asAlice.write.execute([token.address, 0n, data, 1])).to.be.rejectedWith(
+        "UnsupportedOperation"
+      );
+      expect(await asAlice.read.state()).to.equal(0n);
+    });
+
+    it("accepts only the country owner as a signer", async function () {
+      const { asAlice, alice, bob } = await loadFixture(deploy);
+      // IERC6551Account.isValidSigner.selector
+      expect(await asAlice.read.isValidSigner([alice.account.address, "0x"])).to.equal(
+        "0x523e3260"
+      );
+      expect(await asAlice.read.isValidSigner([bob.account.address, "0x"])).to.equal(
+        "0x00000000"
+      );
+    });
+  });
+
+  describe("receiving tokens", function () {
+    it("receives ERC-1155 tokens by safe transfer, one and in a batch", async function () {
+      const { account, alice } = await loadFixture(deploy);
+      const nft = await viem.deployContract("MockERC1155");
+      await nft.write.mint([alice.account.address, 1n, 5n]);
+      await nft.write.mint([alice.account.address, 2n, 5n]);
+      const asAliceNft = await viem.getContractAt("MockERC1155", nft.address, {
+        client: { wallet: alice },
+      });
+      await asAliceNft.write.safeTransferFrom([alice.account.address, account, 1n, 2n, "0x"]);
+      await asAliceNft.write.safeBatchTransferFrom([
+        alice.account.address,
+        account,
+        [1n, 2n],
+        [1n, 3n],
+        "0x",
+      ]);
+      expect(await nft.read.balanceOf([account, 1n])).to.equal(3n);
+      expect(await nft.read.balanceOf([account, 2n])).to.equal(3n);
+    });
+  });
+
   describe("transfers through execute", function () {
     it("sends an ERC-20 token", async function () {
       const { account, asAlice, token, bob } = await loadFixture(deploy);
