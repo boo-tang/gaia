@@ -17,8 +17,12 @@ const time = networkHelpers.time;
 // Gas of the land operations after the auction, measured from transaction receipts: a split of
 // one square out of a country, a merge of one square into a country, a country transfer (plain
 // ERC-721 and through GaiaCountryMarket), and purchases from GaiaLandSale. GAS_REPORT=1 prints
-// each measurement. Each test checks an upper bound, except under --coverage, because the
-// instrumented contracts use more gas.
+// each measurement. Each test checks an upper bound of two times its measurement, except under
+// --coverage, because the instrumented contracts use more gas. These operations are far below the
+// Base gas cap, so gas is only a cost to the user, and no requirement sets the bounds. A bound
+// finds a large regression (for example an operation that becomes proportional to the size of
+// the country). A failure means "look at the change", not "a bug": if the change is correct,
+// update the measurement.
 describe("Land: gas", function () {
   const report = process.env.GAS_REPORT === "1";
 
@@ -121,6 +125,11 @@ describe("Land: gas", function () {
     return receipt.gasUsed;
   }
 
+  // `measured` is the gas at 45889d1 (GAS_REPORT=1).
+  function expectBelowTwice(gas: bigint, measured: bigint) {
+    expect(gas < 2n * measured, `gas ${gas} is more than 2 x ${measured}`).to.equal(true);
+  }
+
   function log(label: string, gas: bigint) {
     if (report) console.log(`      ${label}: ${gas.toLocaleString("en-US")}`);
   }
@@ -153,7 +162,7 @@ describe("Land: gas", function () {
       log("split (corner)", gas);
       expect(await f.land.countries.read.squareCount([1n])).to.equal(99n);
       if (coverage) this.skip();
-      expect(gas < 160_000n).to.equal(true);
+      expectBelowTwice(gas, 138_861n);
     });
 
     it("splits an edge square of a 10 x 10 country to a wallet", async function () {
@@ -161,7 +170,7 @@ describe("Land: gas", function () {
       const gas = await split(f, f.account, f.aliceAddress, { lat: 100, lng: 105 });
       log("split (edge)", gas);
       if (coverage) this.skip();
-      expect(gas < 160_000n).to.equal(true);
+      expectBelowTwice(gas, 138_922n);
     });
 
     it("splits the last square of a country (burns the country)", async function () {
@@ -171,7 +180,7 @@ describe("Land: gas", function () {
       log("split (last square, burn)", gas);
       expect(await f.land.countries.read.squareCount([2n])).to.equal(0n);
       if (coverage) this.skip();
-      expect(gas < 140_000n).to.equal(true);
+      expectBelowTwice(gas, 116_502n);
     });
 
     it("merges a square from a wallet into a 10 x 10 country", async function () {
@@ -181,7 +190,7 @@ describe("Land: gas", function () {
       log("merge (into the notch)", gas);
       expect(await f.land.countries.read.squareCount([1n])).to.equal(100n);
       if (coverage) this.skip();
-      expect(gas < 125_000n).to.equal(true);
+      expectBelowTwice(gas, 107_835n);
     });
 
     it("merges a square from a wallet onto the edge of a 10 x 10 country", async function () {
@@ -196,7 +205,7 @@ describe("Land: gas", function () {
       log("merge (onto the edge)", gas);
       expect(await f.land.countries.read.squareCount([1n])).to.equal(101n);
       if (coverage) this.skip();
-      expect(gas < 125_000n).to.equal(true);
+      expectBelowTwice(gas, 107_732n);
     });
   });
 
@@ -212,7 +221,7 @@ describe("Land: gas", function () {
         log(`sale buy ${n}`, gas);
         expect(await f.land.countries.read.squareCount([3n])).to.equal(BigInt(n));
         if (coverage) this.skip();
-        expect(gas < (n === 1 ? 300_000n : 1_000_000n)).to.equal(true);
+        expectBelowTwice(gas, n === 1 ? 266_509n : 898_319n);
       });
 
       it(`buys ${n} squares into a 10 x 10 country`, async function () {
@@ -226,7 +235,7 @@ describe("Land: gas", function () {
         log(`sale buyInto ${n}`, gas);
         expect(await f.land.countries.read.squareCount([1n])).to.equal(100n + BigInt(n));
         if (coverage) this.skip();
-        expect(gas < (n === 1 ? 190_000n : 900_000n)).to.equal(true);
+        expectBelowTwice(gas, n === 1 ? 163_522n : 785_816n);
       });
     }
   });
@@ -239,7 +248,7 @@ describe("Land: gas", function () {
       const gas = await gasOf(f, hash);
       log("country transferFrom", gas);
       if (coverage) this.skip();
-      expect(gas < 75_000n).to.equal(true);
+      expectBelowTwice(gas, 62_164n);
     });
 
     it("sells a country through GaiaCountryMarket.buy", async function () {
@@ -257,8 +266,8 @@ describe("Land: gas", function () {
       log("market buy", gas);
       expect(getAddress(await f.land.countries.read.ownerOf([1n]))).to.equal(f.bobAddress);
       if (coverage) this.skip();
-      expect(listGas < 120_000n).to.equal(true);
-      expect(gas < 115_000n).to.equal(true);
+      expectBelowTwice(listGas, 102_115n);
+      expectBelowTwice(gas, 95_481n);
     });
   });
 });
