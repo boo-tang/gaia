@@ -38,9 +38,9 @@ import { deployLand } from "./helpers/land";
  * (`empty`, `single`, `too large`, `thin`): then it expects the error of that rule.
  *
  * Remainder rule: each shape that a bid cuts into must keep zero squares, or a valid shape of at
- * least `minShapeSquares` squares. A remainder that is too small gives
- * OverlapWouldInvalidateShape; an invalid remainder gives any shape error. When a bid also sends
- * too little ETH, the model accepts InsufficientValue or the remainder error.
+ * least `minShapeSquares` squares. Each invalid remainder (too small, or not a valid shape) gives
+ * OverlapWouldInvalidateShape. When a bid also sends too little ETH, the model accepts
+ * InsufficientValue or OverlapWouldInvalidateShape.
  *
  * A run uses one window of WINDOW x WINDOW squares, so that bids collide often. Each window has a
  * fixed place: an ordinary place, across longitude 0, at latitude 0 (also across longitude 0), or
@@ -375,9 +375,8 @@ class AuctionModel {
     for (const shape of affected) {
       const rest = this.liveCells(shape);
       if (rest.length === 0) continue;
-      if (rest.length < MIN_SHAPE) remainderErrors.add("OverlapWouldInvalidateShape");
-      else if (!isHVConvex(this.place, rest.map((k) => packOf(this.place, k)))) {
-        for (const e of SHAPE_ERRORS) remainderErrors.add(e);
+      if (!isHVConvex(this.place, rest.map((k) => packOf(this.place, k)))) {
+        remainderErrors.add("OverlapWouldInvalidateShape");
       }
     }
     this.remainderError = remainderErrors.size > 0;

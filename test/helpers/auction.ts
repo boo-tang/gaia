@@ -27,10 +27,6 @@ export const SHAPE_ERRORS = [
   "AspectRatioExceeded",
 ] as const;
 
-/// The errors of a bid that leaves a shape it cuts into with an invalid remainder: too few
-/// squares (OverlapWouldInvalidateShape), or a remainder that breaks the shape rule.
-export const REMAINDER_ERRORS = [...SHAPE_ERRORS, "OverlapWouldInvalidateShape"] as const;
-
 /// Expects `call` to revert with one of `errors`.
 export async function expectRevertWithOneOf(
   call: Promise<unknown>,

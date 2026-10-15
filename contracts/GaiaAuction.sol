@@ -21,6 +21,8 @@ import {IGaiaAuction} from "./interfaces/IGaiaAuction.sol";
  *   - Bounding-box aspect ratio must satisfy max(width,height) <= min(width,height) * maxShapeAspectRatio.
  *   - A bid that partially overlaps an existing active shape is accepted only if each affected
  *     shape's remaining squares are either zero (full takeover) or still form a valid shape.
+ *     Otherwise it reverts with OverlapWouldInvalidateShape(shapeId) of the affected shape. The
+ *     shape errors (GapBetweenLongitudes and the others) are only for the squares of the bid.
  *
  * Partial takeover: when a different bidder takes some squares of a shape, the first bidder gets
  * back the bid on each lost square through `withdraw`. The first bidder cannot cancel. They pay
@@ -613,17 +615,34 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         }
     }
 
-    /// The shape validator, for a new bid and for the remainder of each affected shape. Reverts
-    /// on any shape-validity failure. `squares` are packed `(uint32(lat) << 16) | lng`.
+    /// The shape validator for a new bid. Reverts with the error of the first rule that fails.
+    /// `squares` are packed `(uint32(lat) << 16) | lng`.
     function _validateShape(uint32[] memory squares) internal view {
         uint256 len = squares.length;
         if (len == 0) revert EmptyShape();
         if (len < minShapeSquares) revert ShapeTooSmall(len, minShapeSquares);
         if (len > maxShapeSquares) revert ShapeTooLarge(len, maxShapeSquares);
 
+        bytes4 err = _shapeError(squares);
+        if (err != bytes4(0)) {
+            assembly {
+                mstore(0, err)
+                revert(0, 4)
+            }
+        }
+    }
+
+    /// The shape rule without the size limits. Returns the selector of the error of the first rule
+    /// that fails, or 0 if the squares are a valid shape. For a new bid (_validateShape) and for
+    /// the remainder of each affected shape (_validateShapeRemainder). `squares` must not be
+    /// empty.
+    function _shapeError(
+        uint32[] memory squares
+    ) internal view returns (bytes4) {
+        uint256 len = squares.length;
         uint16 refLng = uint16(squares[0]);
         // Check raw values: normalisation is modulo LOC_MAX_LNG and would hide out-of-range values.
-        if (refLng >= LOC_MAX_LNG) revert InvalidCoordinates();
+        if (refLng >= LOC_MAX_LNG) return InvalidCoordinates.selector;
 
         ShapeState memory s;
         s.currentLat = uint16(squares[0] >> 16);
@@ -641,11 +660,11 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             uint32 square = squares[i];
             uint16 lat = uint16(square >> 16);
             uint16 lng = uint16(square);
-            if (lng >= LOC_MAX_LNG) revert InvalidCoordinates();
+            if (lng >= LOC_MAX_LNG) return InvalidCoordinates.selector;
             lng = _normLng(lng, refLng);
 
             if (lat == s.currentLat) {
-                if (lng != s.prevLngInLat + 1) revert GapBetweenLongitudes();
+                if (lng != s.prevLngInLat + 1) return GapBetweenLongitudes.selector;
                 s.prevLngInLat = lng;
                 s.longitudeRangeEnd = lng;
                 if (lng > s.globalMaxLng) s.globalMaxLng = lng;
@@ -659,11 +678,11 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
                     }
                 }
             } else {
-                if (lat < s.currentLat) revert Unsorted();
-                if (lat != s.currentLat + 1) revert NonConsecutiveLatitudes();
+                if (lat < s.currentLat) return Unsorted.selector;
+                if (lat != s.currentLat + 1) return NonConsecutiveLatitudes.selector;
 
                 if (!s.isFirstLat) {
-                    if (!s.latHasAdjacent) revert NoLatAdjacency();
+                    if (!s.latHasAdjacent) return NoLatAdjacency.selector;
                     if (
                         s.longitudeRangeEnd < s.prevLongitudeRangeEnd &&
                         !s.rightDirectionFlipped
@@ -673,7 +692,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
                         s.rightDirectionFlipped &&
                         s.longitudeRangeEnd > s.prevLongitudeRangeEnd
                     ) {
-                        revert NotConvexEnd();
+                        return NotConvexEnd.selector;
                     }
                 }
 
@@ -696,7 +715,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
                     s.leftDirectionFlipped &&
                     lng < s.prevLongitudeRangeStart
                 ) {
-                    revert NotConvexStart();
+                    return NotConvexStart.selector;
                 }
 
                 s.isFirstLat = false;
@@ -715,7 +734,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         }
 
         if (!s.isFirstLat) {
-            if (!s.latHasAdjacent) revert NoLatAdjacency();
+            if (!s.latHasAdjacent) return NoLatAdjacency.selector;
             if (
                 s.longitudeRangeEnd < s.prevLongitudeRangeEnd &&
                 !s.rightDirectionFlipped
@@ -725,19 +744,22 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
                 s.rightDirectionFlipped &&
                 s.longitudeRangeEnd > s.prevLongitudeRangeEnd
             ) {
-                revert NotConvexEnd();
+                return NotConvexEnd.selector;
             }
         }
 
         // Sorting guarantees the last square has the highest lat.
-        if (squares[len - 1] >> 16 >= LOC_MAX_LAT) revert InvalidCoordinates();
+        if (squares[len - 1] >> 16 >= LOC_MAX_LAT) return InvalidCoordinates.selector;
 
-        _checkAspectRatio(
-            uint16(squares[0] >> 16),
-            uint16(squares[len - 1] >> 16),
-            s.globalMinLng,
-            s.globalMaxLng
-        );
+        if (
+            !_aspectRatioOk(
+                uint16(squares[0] >> 16),
+                uint16(squares[len - 1] >> 16),
+                s.globalMinLng,
+                s.globalMaxLng
+            )
+        ) return AspectRatioExceeded.selector;
+        return bytes4(0);
     }
 
     /// Moves the squares to `newShapeId`. A square of a different bidder: the previous bidder gets
@@ -868,18 +890,18 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         }
     }
 
-    /// Reverts if max(width, height) > min(width, height) * maxShapeAspectRatio.
-    function _checkAspectRatio(
+    /// False if max(width, height) > min(width, height) * maxShapeAspectRatio.
+    function _aspectRatioOk(
         uint16 minLat,
         uint16 maxLat,
         uint16 minLng,
         uint16 maxLng
-    ) internal view {
+    ) internal view returns (bool) {
         uint256 height = uint256(maxLat) - uint256(minLat) + 1;
         uint256 width = uint256(maxLng) - uint256(minLng) + 1;
         uint256 longer = height > width ? height : width;
         uint256 shorter = height > width ? width : height;
-        if (longer > shorter * maxShapeAspectRatio) revert AspectRatioExceeded();
+        return longer <= shorter * maxShapeAspectRatio;
     }
 
     /// Validates the remainder of each affected shape (0 entries: full takeover, no check). All
@@ -967,8 +989,12 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             mstore(buffer, remainCount)
         }
 
-        // The remainder must itself be a valid shape (contiguous, convex, within bounds).
-        _validateShape(buffer);
+        // The remainder must itself be a valid shape. It is not larger than the stored shape, so
+        // it is not above maxShapeSquares. One error for each invalid remainder: the shape errors
+        // are about the squares of the bid, and the remainder is not.
+        if (_shapeError(buffer) != bytes4(0)) {
+            revert OverlapWouldInvalidateShape(shapeId);
+        }
     }
 
     /// Scans the stored squares from `from` (a multiple of 256) to the end of its bitmap word or
