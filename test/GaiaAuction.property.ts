@@ -1,7 +1,7 @@
 import { type Abi, type Hex, getAddress, parseEventLogs, zeroAddress } from "viem";
 
 import { loadFixture, networkHelpers, time, viem } from "./helpers/setup";
-import { auctionAs, deployAuction, deploySale } from "./helpers/auction";
+import { SHAPE_ERRORS, auctionAs, deployAuction, deploySale } from "./helpers/auction";
 import { deployLand } from "./helpers/land";
 
 /*
@@ -29,18 +29,18 @@ import { deployLand } from "./helpers/land";
  *   squares.
  * - Cancel: each bidder withdraws exactly the ETH that they sent, and the treasury gets nothing.
  *
- * Shape rule. The model has two parts:
- * - `shapeError` gives the error of a square list. It reads the squares in the same order as the
- *   contract, so that it can name the first error that the contract finds.
- * - `isHVConvex` is an independent check of the rule from its definition: the squares are in sort
- *   order, have no duplicates, each row and each column is one unbroken run, and the shape is
- *   4-connected. It also checks the coordinates, the size and the aspect ratio.
- * The test fails if the two parts do not agree. Thus the contract is compared with the definition
- * of the rule, not only with a copy of its code.
+ * Shape rule. `isHVConvex` checks the rule from its definition: the squares are in sort order,
+ * have no duplicates, each row and each column is one unbroken run, and the shape is
+ * 4-connected. It also checks the coordinates, the size and the aspect ratio. Thus the contract
+ * is compared with the definition of the rule, not with a copy of its code. The error names are
+ * part of the interface, but when a list breaks more than one rule, the error that comes first is
+ * not. So the model expects any shape error, except for generators that break exactly one rule
+ * (`empty`, `single`, `too large`, `thin`): then it expects the error of that rule.
  *
  * Remainder rule: each shape that a bid cuts into must keep zero squares, or a valid shape of at
- * least `minShapeSquares` squares. The contract checks the remainder in the stored order of the
- * shape, so the model does the same.
+ * least `minShapeSquares` squares. A remainder that is too small gives
+ * OverlapWouldInvalidateShape; an invalid remainder gives any shape error. When a bid also sends
+ * too little ETH, the model accepts InsufficientValue or the remainder error.
  *
  * A run uses one window of WINDOW x WINDOW squares, so that bids collide often. Each window has a
  * fixed place: an ordinary place, across longitude 0, at latitude 0 (also across longitude 0), or
@@ -64,7 +64,6 @@ const ONLY_SEED =
 const WINDOW = 10;
 const MAX_LAT = 18000;
 const MAX_LNG = 36000;
-const LNG_ORIGIN = MAX_LNG / 2;
 
 // Auction parameters. Small shapes, so that the window holds several shapes.
 const MIN_BID = 1000n;
@@ -161,88 +160,6 @@ const validRows = (place: Place) =>
 
 // -------- Shape rule --------
 
-/// Same normalisation as GaiaAuction._normLng.
-const normLng = (lng: number, ref: number) =>
-  (lng + MAX_LNG + LNG_ORIGIN - ref) % MAX_LNG;
-
-/// The error of `_validateShape` for a list of packed squares, or undefined if the list is a
-/// valid shape. It reads the squares in the same order as the contract.
-function shapeError(squares: number[]): string | undefined {
-  const len = squares.length;
-  if (len === 0) return "EmptyShape";
-  if (len < MIN_SHAPE) return "ShapeTooSmall";
-  if (len > MAX_SHAPE) return "ShapeTooLarge";
-  const ref = lngOf(squares[0]);
-  if (ref >= MAX_LNG) return "InvalidCoordinates";
-
-  let lat = latOf(squares[0]);
-  let prev = LNG_ORIGIN;
-  let start = LNG_ORIGIN;
-  let end = LNG_ORIGIN;
-  let prevStart = LNG_ORIGIN;
-  let prevEnd = LNG_ORIGIN;
-  let minLng = LNG_ORIGIN;
-  let maxLng = LNG_ORIGIN;
-  let leftFlipped = false;
-  let rightFlipped = false;
-  let firstRow = true;
-  let touches = true;
-
-  // Checks the right edge of the row that ends. Its end must rise, then fall.
-  const closeRow = (): string | undefined => {
-    if (firstRow) return undefined;
-    if (!touches) return "NoLatAdjacency";
-    if (end < prevEnd && !rightFlipped) rightFlipped = true;
-    else if (rightFlipped && end > prevEnd) return "NotConvexEnd";
-    return undefined;
-  };
-
-  for (let i = 1; i < len; i++) {
-    const rowLat = latOf(squares[i]);
-    const raw = lngOf(squares[i]);
-    if (raw >= MAX_LNG) return "InvalidCoordinates";
-    const lng = normLng(raw, ref);
-    if (rowLat === lat) {
-      if (lng !== prev + 1) return "GapBetweenLongitudes";
-      prev = lng;
-      end = lng;
-      if (lng > maxLng) maxLng = lng;
-      if (!firstRow && !touches && lng >= prevStart && lng <= prevEnd) {
-        touches = true;
-      }
-      continue;
-    }
-    if (rowLat < lat) return "Unsorted";
-    if (rowLat !== lat + 1) return "NonConsecutiveLatitudes";
-    const err = closeRow();
-    if (err !== undefined) return err;
-
-    prevStart = start;
-    prevEnd = end;
-    lat = rowLat;
-    prev = lng;
-    start = lng;
-    end = lng;
-    if (lng < minLng) minLng = lng;
-    if (lng > maxLng) maxLng = lng;
-    // The start of a row must fall, then rise.
-    if (lng > prevStart && !leftFlipped) leftFlipped = true;
-    else if (leftFlipped && lng < prevStart) return "NotConvexStart";
-    firstRow = false;
-    touches = lng >= prevStart && lng <= prevEnd;
-  }
-  const err = closeRow();
-  if (err !== undefined) return err;
-
-  if (latOf(squares[len - 1]) >= MAX_LAT) return "InvalidCoordinates";
-  const height = latOf(squares[len - 1]) - latOf(squares[0]) + 1;
-  const width = maxLng - minLng + 1;
-  if (Math.max(height, width) > Math.min(height, width) * MAX_RATIO) {
-    return "AspectRatioExceeded";
-  }
-  return undefined;
-}
-
 /// The shape rule from its definition. True if the list is a valid shape: coordinates on the
 /// map, size and aspect ratio in the limits, sort order, no duplicates, each row and each column
 /// one unbroken run, and 4-connected. Columns count east from the west edge of the window, so a
@@ -309,6 +226,12 @@ function bidAmount(current: bigint, floor: bigint): bigint {
   }
   return floor > next ? floor : next;
 }
+
+/// The expected revert of a call: one error name, or a list of names when any of them is correct.
+type Expected = string | readonly string[] | undefined;
+
+const namesOf = (expected: string | readonly string[]) =>
+  typeof expected === "string" ? [expected] : [...expected];
 
 type SquareRecord = { amount: bigint; shape: number };
 type ShapeRecord = { bidder: Address; cells: number[] };
@@ -408,19 +331,16 @@ class AuctionModel {
     floor: bigint,
     raise: boolean,
     value: bigint,
-  ): string | undefined {
+    shapeFault?: string,
+  ): Expected {
     if (this.ended) return "AuctionAlreadyEnded";
     if (this.cancelled) return "AuctionIsCancelled";
     if (this.paused) return "AuctionIsPaused";
-    const err = shapeError(squares);
     const valid = isHVConvex(this.place, squares);
-    if ((err === undefined) !== valid) {
-      throw new Divergence(
-        `model parts disagree: shapeError ${err ?? "none"}, isHVConvex ${valid}, ` +
-          `squares ${fmtSquares(squares)}`,
-      );
+    if (shapeFault !== undefined && valid) {
+      throw new Divergence(`generator for ${shapeFault} made a valid shape ${fmtSquares(squares)}`);
     }
-    if (err !== undefined) return err;
+    if (!valid) return shapeFault ?? SHAPE_ERRORS;
 
     const id = this.nextShape++;
     const cells = squares.map((packed) => cellOf(this.place, packed)!);
@@ -451,17 +371,18 @@ class AuctionModel {
       }
       this.squares.set(k, { amount: next, shape: id });
     }
-    if (value < paid) return "InsufficientValue";
-
+    const remainderErrors = new Set<string>();
     for (const shape of affected) {
       const rest = this.liveCells(shape);
       if (rest.length === 0) continue;
-      this.remainderError = true;
-      if (rest.length < MIN_SHAPE) return "OverlapWouldInvalidateShape";
-      const restError = shapeError(rest.map((k) => packOf(this.place, k)));
-      if (restError !== undefined) return restError;
-      this.remainderError = false;
+      if (rest.length < MIN_SHAPE) remainderErrors.add("OverlapWouldInvalidateShape");
+      else if (!isHVConvex(this.place, rest.map((k) => packOf(this.place, k)))) {
+        for (const e of SHAPE_ERRORS) remainderErrors.add(e);
+      }
     }
+    this.remainderError = remainderErrors.size > 0;
+    if (value < paid) return ["InsufficientValue", ...remainderErrors];
+    if (remainderErrors.size > 0) return [...remainderErrors];
 
     if (value > paid) this.pending.set(sender, this.pendingOf(sender) + value - paid);
     this.proceeds += increase;
@@ -623,12 +544,13 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
   /// only if the call succeeds.
   async function attempt(
     label: string,
-    predict: (m: AuctionModel) => string | undefined,
+    predict: (m: AuctionModel) => Expected,
     send: () => Promise<unknown>,
   ): Promise<boolean> {
     const next = model.clone();
     const expected = predict(next);
-    log.push(`${label} -> expect ${expected ?? "success"}`);
+    const shown = expected === undefined ? "success" : namesOf(expected).join(" | ");
+    log.push(`${label} -> expect ${shown}`);
     let actual: string | undefined;
     let message = "";
     try {
@@ -641,16 +563,17 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
       throw new Divergence(`model expects success, contract reverted: ${message}`);
     }
     if (expected !== undefined && actual === undefined) {
-      throw new Divergence(`model expects ${expected}, contract succeeded`);
+      throw new Divergence(`model expects ${shown}, contract succeeded`);
     }
     if (expected !== undefined) {
-      if (!new RegExp(`\\b${expected}\\(`).test(message)) {
-        throw new Divergence(
-          `model expects ${expected}, contract reverted with: ${message}`,
-        );
+      const matched = namesOf(expected).find((name) =>
+        new RegExp(`\\b${name}\\(`).test(message),
+      );
+      if (matched === undefined) {
+        throw new Divergence(`model expects ${shown}, contract reverted with: ${message}`);
       }
       counts.reverted++;
-      const outcome = next.remainderError ? `${expected} (remainder)` : expected;
+      const outcome = next.remainderError ? `${matched} (remainder)` : matched;
       outcomes.set(outcome, (outcomes.get(outcome) ?? 0) + 1);
       return false;
     }
@@ -711,7 +634,8 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
   const packCells = (cells: number[]) => cells.map((k) => packOf(place, k));
 
   /// A square list that breaks a rule, of a random kind.
-  function badSquares(): { kind: string; squares: number[] } | undefined {
+  /// `fault` is set when the list breaks exactly one rule: the error of that rule.
+  function badSquares(): { kind: string; squares: number[]; fault?: string } | undefined {
     const kind = rng.pick([
       "swap",
       "drop square",
@@ -728,20 +652,24 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
       "reverse",
       "empty",
     ]);
-    if (kind === "empty") return { kind, squares: [] };
+    if (kind === "empty") return { kind, squares: [], fault: "EmptyShape" };
     if (kind === "single") {
-      return { kind, squares: packCells([rng.pick(ALL_CELLS.filter((k) => rowOf(k) < validRows(place)))]) };
+      return {
+        kind,
+        squares: packCells([rng.pick(ALL_CELLS.filter((k) => rowOf(k) < validRows(place)))]),
+        fault: "ShapeTooSmall",
+      };
     }
     if (kind === "too large") {
       const rect: number[] = [];
       for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) rect.push(key(r, c));
-      return { kind, squares: packCells(rect) };
+      return { kind, squares: packCells(rect), fault: "ShapeTooLarge" };
     }
     if (kind === "thin") {
       const len = MAX_RATIO + 1 + rng.int(WINDOW - MAX_RATIO - 1);
       const r0 = rng.int(validRows(place));
       const line = Array.from({ length: len }, (_, c) => key(r0, c));
-      return { kind, squares: packCells(line) };
+      return { kind, squares: packCells(line), fault: "AspectRatioExceeded" };
     }
     if (kind === "dent west" || kind === "dent east") {
       // Three rows. The middle row is shorter on one side, so one column has a gap.
@@ -804,7 +732,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     label: string,
     sender: Address,
     squares: number[],
-    options: { floor?: bigint; raise?: boolean; short?: boolean } = {},
+    options: { floor?: bigint; raise?: boolean; short?: boolean; fault?: string } = {},
   ) {
     lastSquares = squares;
     const floor = options.floor ?? randomFloor();
@@ -817,7 +745,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     await attempt(
       `${label}: ${who(sender)} bids on ${squares.length} squares ${fmtSquares(squares)}, ` +
         `floor ${floor}, raise ${raise}, value ${value}`,
-      (m) => m.bid(sender, squares, floor, raise, value),
+      (m) => m.bid(sender, squares, floor, raise, value, options.fault),
       () =>
         as.get(sender)!.write.bidOnShape([squares, floor, raise], { value }),
     );
@@ -871,7 +799,9 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
       run: async () => {
         const bad = badSquares();
         if (bad === undefined) return;
-        await sendBid(`invalid (${bad.kind})`, rng.pick(bidders), bad.squares);
+        await sendBid(`invalid (${bad.kind})`, rng.pick(bidders), bad.squares, {
+          fault: bad.fault,
+        });
       },
     },
     {

@@ -2,7 +2,14 @@ import { expect } from "chai";
 import { encodeFunctionData, getAddress } from "viem";
 
 import { coverage, loadFixture, time, viem } from "./helpers/setup";
-import { auctionAs, deployAuction, pack } from "./helpers/auction";
+import {
+  REMAINDER_ERRORS,
+  SHAPE_ERRORS,
+  auctionAs,
+  deployAuction,
+  expectRevertWithOneOf,
+  pack,
+} from "./helpers/auction";
 import { deployAccount, deployLand, executeAs, squareId } from "./helpers/land";
 
 describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
@@ -165,7 +172,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 33, lng: 69 },
       { lat: 33, lng: 69 },
     ];
-    await expect(auction.write.bidOnShape([pack(shape), 0n, false])).to.be.rejectedWith("GapBetweenLongitudes");
+    await expectRevertWithOneOf(auction.write.bidOnShape([pack(shape), 0n, false]), SHAPE_ERRORS);
   });
 
   it("rejects decreasing longitude within a row", async function () {
@@ -174,7 +181,7 @@ describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
       { lat: 33, lng: 70 },
       { lat: 33, lng: 69 },
     ];
-    await expect(auction.write.bidOnShape([pack(shape), 0n, false])).to.be.rejectedWith("GapBetweenLongitudes");
+    await expectRevertWithOneOf(auction.write.bidOnShape([pack(shape), 0n, false]), SHAPE_ERRORS);
   });
 });
 
@@ -462,9 +469,10 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
       { lat: 80, lng: 11 },
       { lat: 81, lng: 11 },
     ];
-    await expect(
-      auctionAs2.write.bidOnShape([pack(bobShape), 0n, false], { value: minBid * 3n })
-    ).to.be.rejectedWith("GapBetweenLongitudes");
+    await expectRevertWithOneOf(
+      auctionAs2.write.bidOnShape([pack(bobShape), 0n, false], { value: minBid * 3n }),
+      REMAINDER_ERRORS
+    );
   });
 
   // Bob bids on the two leftmost squares — leaves Alice with the two rightmost: still a valid 1×2 row.
@@ -550,8 +558,7 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
   });
 
   // Alice has two rows that touch only at lng 41. Bob takes (100,41), which would leave two
-  // rows that do not touch. Tests that the NoLatAdjacency check fires for the simulated
-  // remainder.
+  // rows that do not touch.
   it("rejects an overlap that would leave a non-contiguous remainder across rows", async function () {
     const { auction, auctionAs2, minBid } = await loadFixture(deployAntiGrief);
 
@@ -566,15 +573,16 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
       value: minBid * BigInt(aliceShape.length),
     });
 
-    // Bob takes (100,41) — the sole overlap cell — and (99,41) below it, breaking adjacency
-    // between Alice's rows. Two squares: a one-square bid fails on minShapeSquares first.
+    // Bob takes (100,41) — the sole overlap cell — and (99,41) below it. Alice's two rows then do
+    // not touch. Two squares: a one-square bid fails on minShapeSquares first.
     const bobShape = [
       { lat: 99, lng: 41 },
       { lat: 100, lng: 41 },
     ];
-    await expect(
-      auctionAs2.write.bidOnShape([pack(bobShape), 0n, false], { value: minBid * 3n })
-    ).to.be.rejectedWith("NoLatAdjacency");
+    await expectRevertWithOneOf(
+      auctionAs2.write.bidOnShape([pack(bobShape), 0n, false], { value: minBid * 3n }),
+      REMAINDER_ERRORS
+    );
   });
 
   // Rectangle of `rows` x `cols` squares with its south-west square at (lat, lng), in bid order.
@@ -610,11 +618,12 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
     await auctionAs2.write.bidOnShape([pack(row.slice(0, 2)), 0n, false], { value: minBid * 4n });
 
     // Taking 13 would leave 12, 14, 15.
-    await expect(
+    await expectRevertWithOneOf(
       auctionAs2.write.bidOnShape([pack([{ lat: 80, lng: 13 }, { lat: 81, lng: 13 }]), 0n, false], {
         value: minBid * 3n,
-      })
-    ).to.be.rejectedWith("GapBetweenLongitudes");
+      }),
+      REMAINDER_ERRORS
+    );
     // Taking 12 and 13 leaves 14 and 15. The lost squares 10 and 11 are not part of the remainder.
     await expect(
       auctionAs2.write.bidOnShape([pack(row.slice(2, 4)), 0n, false], { value: minBid * 4n })
@@ -633,9 +642,10 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
     expect(await auction.read.shapeLiveSquares([1n])).to.equal(260n);
 
     // A middle column splits the remainder.
-    await expect(
-      auctionAs2.write.bidOnShape([pack(rect(100, 26, 10, 1)), 0n, false], { value: minBid * 20n })
-    ).to.be.rejectedWith("GapBetweenLongitudes");
+    await expectRevertWithOneOf(
+      auctionAs2.write.bidOnShape([pack(rect(100, 26, 10, 1)), 0n, false], { value: minBid * 20n }),
+      REMAINDER_ERRORS
+    );
     // The new west column of the remainder leaves a valid 10 x 25 rectangle.
     await auctionAs2.write.bidOnShape([pack(rect(100, 12, 10, 1)), 0n, false], { value: minBid * 20n });
     expect(await auction.read.shapeLiveSquares([1n])).to.equal(250n);
@@ -1182,9 +1192,10 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
       { lat: 50, lng: 0 },
       { lat: 50, lng: 35999 },
     ];
-    await expect(
-      auctionAs1.write.bidOnShape([pack(shape), 0n, false], { value: minBid * 2n })
-    ).to.be.rejectedWith("GapBetweenLongitudes");
+    await expectRevertWithOneOf(
+      auctionAs1.write.bidOnShape([pack(shape), 0n, false], { value: minBid * 2n }),
+      SHAPE_ERRORS
+    );
   });
 
   it("rejects a crossing shape with a concave left edge", async function () {
@@ -1280,11 +1291,12 @@ describe("GaiaAuction: shapes that cross the antimeridian", function () {
       { lat: 81, lng: 35999 },
       { lat: 81, lng: 0 },
     ];
-    await expect(
+    await expectRevertWithOneOf(
       auctionAs2.write.bidOnShape([pack(bobShape), 0n, false], {
         value: (minBid + minBid) * BigInt(bobShape.length),
-      })
-    ).to.be.rejectedWith("GapBetweenLongitudes");
+      }),
+      REMAINDER_ERRORS
+    );
   });
 });
 
@@ -1957,12 +1969,14 @@ describe("GaiaAuction: re-bid on own squares", function () {
     await f.asAlice.write.bidOnShape([pack(row), 0n, false], { value: 4n * minBid });
 
     // Taking (10, 11) leaves (10, 10) and (10, 12..13): two parts.
-    await expect(
-      f.asAlice.write.bidOnShape([pack([row[1]]), 0n, false])
-    ).to.be.rejectedWith("GapBetweenLongitudes");
-    await expect(
-      f.asAlice.write.bidOnShape([pack([row[1]]), 0n, true], { value: minBid })
-    ).to.be.rejectedWith("GapBetweenLongitudes");
+    await expectRevertWithOneOf(
+      f.asAlice.write.bidOnShape([pack([row[1]]), 0n, false]),
+      REMAINDER_ERRORS
+    );
+    await expectRevertWithOneOf(
+      f.asAlice.write.bidOnShape([pack([row[1]]), 0n, true], { value: minBid }),
+      REMAINDER_ERRORS
+    );
     await expectActiveBidsEqualProceeds(f);
   });
 });

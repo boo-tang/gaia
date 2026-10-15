@@ -1,3 +1,5 @@
+import { expect } from "chai";
+
 import { viem } from "./setup";
 import type { Land } from "./land";
 
@@ -7,6 +9,35 @@ type Wallet = Awaited<ReturnType<typeof viem.getWalletClients>>[number];
 /// Packs squares as `bidOnShape` takes them: `(lat << 16) | lng`.
 export const pack = (locs: readonly Loc[]): number[] =>
   locs.map(({ lat, lng }) => lat * 65536 + lng);
+
+/// The errors of the shape rule (GaiaAuction._validateShape). The names are part of the
+/// interface, but when a square list breaks more than one rule, the error that comes first is
+/// not. A test of such a list accepts any of these errors.
+export const SHAPE_ERRORS = [
+  "EmptyShape",
+  "ShapeTooSmall",
+  "ShapeTooLarge",
+  "InvalidCoordinates",
+  "GapBetweenLongitudes",
+  "Unsorted",
+  "NonConsecutiveLatitudes",
+  "NoLatAdjacency",
+  "NotConvexStart",
+  "NotConvexEnd",
+  "AspectRatioExceeded",
+] as const;
+
+/// The errors of a bid that leaves a shape it cuts into with an invalid remainder: too few
+/// squares (OverlapWouldInvalidateShape), or a remainder that breaks the shape rule.
+export const REMAINDER_ERRORS = [...SHAPE_ERRORS, "OverlapWouldInvalidateShape"] as const;
+
+/// Expects `call` to revert with one of `errors`.
+export async function expectRevertWithOneOf(
+  call: Promise<unknown>,
+  errors: readonly string[]
+) {
+  await expect(call).to.be.rejectedWith(new RegExp(`\\b(${errors.join("|")})\\(`));
+}
 
 /// The constructor values of GaiaAuction, without the GaiaCountries address.
 export type AuctionParams = {
