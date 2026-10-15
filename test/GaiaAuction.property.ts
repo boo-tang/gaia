@@ -52,12 +52,15 @@ import { Rng } from "./helpers/random";
  *
  * Environment variables:
  * - AUCTION_FUZZ_RUNS: number of seeds (default 12).
+ * - AUCTION_FUZZ_FIRST_SEED: the first seed (default 1). The seeds are FIRST_SEED to
+ *   FIRST_SEED + RUNS - 1. The scheduled CI run starts at a different seed each day.
  * - AUCTION_FUZZ_OPS: operations for each seed (default 60).
  * - AUCTION_FUZZ_SEED: run only this seed (to repeat a failed run).
  * - AUCTION_FUZZ_VERBOSE=1: print a summary of each run.
  */
 
 const RUNS = Number(process.env.AUCTION_FUZZ_RUNS ?? "12");
+const FIRST_SEED = Number(process.env.AUCTION_FUZZ_FIRST_SEED ?? "1");
 const OPS = Number(process.env.AUCTION_FUZZ_OPS ?? "60");
 const ONLY_SEED =
   process.env.AUCTION_FUZZ_SEED === undefined
@@ -475,7 +478,7 @@ describe("Auction bid rules: model-based random tests", function () {
 
   const seeds =
     ONLY_SEED === undefined
-      ? Array.from({ length: RUNS }, (_, i) => i + 1)
+      ? Array.from({ length: RUNS }, (_, i) => FIRST_SEED + i)
       : [ONLY_SEED];
 
   for (const seed of seeds) {

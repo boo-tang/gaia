@@ -33,11 +33,14 @@ import { Rng } from "./helpers/random";
  *
  * Environment variables:
  * - LAND_FUZZ_RUNS: number of seeds (default 20).
+ * - LAND_FUZZ_FIRST_SEED: the first seed (default 1). The seeds are FIRST_SEED to
+ *   FIRST_SEED + RUNS - 1. The scheduled CI run starts at a different seed each day.
  * - LAND_FUZZ_OPS: operations for each seed (default 60).
  * - LAND_FUZZ_SEED: run only this seed (to repeat a failed run).
  */
 
 const RUNS = Number(process.env.LAND_FUZZ_RUNS ?? "20");
+const FIRST_SEED = Number(process.env.LAND_FUZZ_FIRST_SEED ?? "1");
 const OPS = Number(process.env.LAND_FUZZ_OPS ?? "60");
 const ONLY_SEED =
   process.env.LAND_FUZZ_SEED === undefined
@@ -397,7 +400,7 @@ type Fixture = Awaited<ReturnType<typeof deploy>>;
 describe("Land rules: model-based random tests", function () {
   const seeds =
     ONLY_SEED === undefined
-      ? Array.from({ length: RUNS }, (_, i) => i + 1)
+      ? Array.from({ length: RUNS }, (_, i) => FIRST_SEED + i)
       : [ONLY_SEED];
 
   for (const seed of seeds) {

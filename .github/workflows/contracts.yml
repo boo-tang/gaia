@@ -1,6 +1,8 @@
 # Compiles the contracts and runs the contract tests.
-# The fuzz tests use their default settings, which are short. To run more fuzz seeds, start the
-# workflow by hand (Actions > Contracts > Run workflow) and set "fuzz_runs".
+# On push and pull request, the fuzz tests use their default settings, which are short. Each day,
+# a scheduled run tests 200 seeds of each fuzz test, from a different first seed each day. The test
+# names show the seeds, and a failure prints the command to repeat it. To run more seeds by hand,
+# start the workflow (Actions > Contracts > Run workflow) and set "fuzz_runs".
 name: Contracts
 
 on:
@@ -8,6 +10,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
   workflow_dispatch:
     inputs:
       fuzz_runs:
@@ -15,8 +19,10 @@ on:
         required: false
         default: ""
 
+# A push cancels the older run of the same branch. The scheduled run has its own group, so a push
+# does not cancel it.
 concurrency:
-  group: contracts-${{ github.ref }}
+  group: contracts-${{ github.event_name == 'schedule' && 'schedule' || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -45,6 +51,13 @@ jobs:
           LAND_FUZZ_RUNS: ${{ inputs.fuzz_runs }}
           AUCTION_FUZZ_RUNS: ${{ inputs.fuzz_runs }}
         run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            # 200 seeds of each fuzz test. The first seed changes each day.
+            first=$(( $(date -u +%s) / 86400 * 1000 ))
+            export LAND_FUZZ_RUNS=200 AUCTION_FUZZ_RUNS=200
+            export LAND_FUZZ_FIRST_SEED=$first AUCTION_FUZZ_FIRST_SEED=$first
+            echo "Fuzz seeds $first to $(( first + 199 ))"
+          fi
           # An empty value means the default. Remove the empty variables.
           for name in LAND_FUZZ_RUNS AUCTION_FUZZ_RUNS; do
             if [ -z "${!name}" ]; then unset "$name"; fi
