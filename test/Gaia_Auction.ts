@@ -11,6 +11,7 @@ import {
   pack,
 } from "./helpers/auction";
 import { balanceChange, walletExec, walletExecResult } from "./helpers/eth";
+import { eventsIn } from "./helpers/events";
 import { deployAccount, deployLand, executeAs, squareId } from "./helpers/land";
 import { rect } from "./helpers/shapes";
 
@@ -1352,12 +1353,15 @@ describe("GaiaAuction: treasury proceeds", function () {
     const before = await publicClient.getBalance({
       address: treasury.account.address,
     });
-    await expect(auctionAs1.write.withdrawProceeds()).to.be.fulfilled;
+    const hash = await auctionAs1.write.withdrawProceeds();
     const after = await publicClient.getBalance({
       address: treasury.account.address,
     });
 
     expect(after - before).to.equal(winningTotal);
+    expect(await eventsIn(hash, auction.abi, "ProceedsWithdrawn")).to.deep.equal([
+      { treasury: getAddress(treasury.account.address), amount: winningTotal },
+    ]);
     expect(await auction.read.proceeds()).to.equal(0n);
     expect(
       await publicClient.getBalance({ address: auction.address })
@@ -2049,13 +2053,15 @@ describe("GaiaAuction: pause and cancel", function () {
     const [as1] = f.asBidders;
     const loc = { lat: 30, lng: 30 };
 
-    await f.asAdmin.write.pause();
+    const paused = await f.asAdmin.write.pause();
+    expect(await eventsIn(paused, f.auction.abi, "AuctionPaused")).to.have.lengthOf(1);
     await expect(f.asAdmin.write.pause()).to.be.rejectedWith("AuctionIsPaused");
     await expect(
       as1.write.bidOnShape([pack([loc]), 0n, false], { value: minBid })
     ).to.be.rejectedWith("AuctionIsPaused");
 
-    await f.asAdmin.write.unpause();
+    const unpaused = await f.asAdmin.write.unpause();
+    expect(await eventsIn(unpaused, f.auction.abi, "AuctionUnpaused")).to.have.lengthOf(1);
     await expect(f.asAdmin.write.unpause()).to.be.rejectedWith("AuctionNotPaused");
     await expect(as1.write.bidOnShape([pack([loc]), 0n, false], { value: minBid })).to.be
       .fulfilled;
@@ -2124,7 +2130,10 @@ describe("GaiaAuction: pause and cancel", function () {
     ).to.equal(total);
 
     await f.asAdmin.write.pause();
-    await f.asAdmin.write.cancel();
+    const cancelled = await f.asAdmin.write.cancel();
+    expect(await eventsIn(cancelled, f.auction.abi, "AuctionCancelled")).to.deep.equal([
+      { by: getAddress(f.owner.account.address) },
+    ]);
     expect(await f.auction.read.cancelled()).to.equal(true);
     expect(await f.auction.read.proceeds()).to.equal(0n);
 

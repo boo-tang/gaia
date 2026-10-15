@@ -4,6 +4,7 @@ import { encodeFunctionData, getAddress, zeroAddress } from "viem";
 import { loadFixture, viem } from "./helpers/setup";
 import { auctionAs, deployAuction, pack } from "./helpers/auction";
 import { deployAccount, deployLand } from "./helpers/land";
+import { eventsIn } from "./helpers/events";
 
 describe("GaiaCountries", function () {
   async function deployCountries() {
@@ -273,7 +274,10 @@ describe("GaiaCountries", function () {
         value: 1000n,
       });
 
-      await countries.write.addAuction([auction.address]);
+      const added = await countries.write.addAuction([auction.address]);
+      expect(await eventsIn(added, countries.abi, "AuctionAdded")).to.deep.equal([
+        { auction: getAddress(auction.address) },
+      ]);
       expect(
         (await countries.read.auctions()).map((a) => getAddress(a))
       ).to.deep.equal([getAddress(auction.address)]);
@@ -285,7 +289,10 @@ describe("GaiaCountries", function () {
         ])
       ).to.be.rejectedWith("SquareReserved");
 
-      await countries.write.removeAuction([auction.address]);
+      const removed = await countries.write.removeAuction([auction.address]);
+      expect(await eventsIn(removed, countries.abi, "AuctionRemoved")).to.deep.equal([
+        { auction: getAddress(auction.address) },
+      ]);
       expect(await countries.read.auctions()).to.deep.equal([]);
       await expect(
         asIssuer.write.createCountry([

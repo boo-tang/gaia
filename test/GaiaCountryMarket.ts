@@ -3,6 +3,7 @@ import { encodeFunctionData, getAddress, parseEther, zeroAddress } from "viem";
 
 import { loadFixture, viem } from "./helpers/setup";
 import { walletExec } from "./helpers/eth";
+import { eventsIn } from "./helpers/events";
 import { row } from "./helpers/shapes";
 import {
   accountTransferSquare,
@@ -73,6 +74,15 @@ describe("GaiaCountryMarket", function () {
       expect(getAddress(listing.seller)).to.equal(getAddress(alice.account.address));
       expect(listing.price).to.equal(price);
       expect(listing.version).to.equal(await land.countries.read.compositionVersion([1n]));
+      const listed = await market.getEvents.Listed({}, { fromBlock: 0n });
+      expect(listed.map((e) => e.args)).to.deep.equal([
+        {
+          countryId: 1n,
+          seller: getAddress(alice.account.address),
+          price,
+          version: listing.version,
+        },
+      ]);
     });
 
     it("rejects a listing with only an operator approval for all countries", async function () {
@@ -107,7 +117,10 @@ describe("GaiaCountryMarket", function () {
       await expect((await marketAs(bob)).write.cancel([1n])).to.be.rejectedWith(
         "NotSeller"
       );
-      await (await marketAs(alice)).write.cancel([1n]);
+      const cancelled = await (await marketAs(alice)).write.cancel([1n]);
+      expect(await eventsIn(cancelled, market.abi, "Cancelled")).to.deep.equal([
+        { countryId: 1n, seller: getAddress(alice.account.address) },
+      ]);
       expect((await market.read.listingOf([1n])).price).to.equal(0n);
       await expect(
         (await marketAs(bob)).write.buy([1n, version, 0n], { value: price })

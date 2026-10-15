@@ -1,4 +1,4 @@
-import { encodeFunctionData, getAddress } from "viem";
+import { encodeFunctionData, getAddress, zeroAddress } from "viem";
 
 import { loadFixture, viem, provider } from "./helpers/setup";
 import {
@@ -23,6 +23,9 @@ import { Rng } from "./helpers/random";
  *   8-connectivity.
  * - The first square of a country is always allowed. The removal of the last square is always
  *   allowed, and it burns the country.
+ *
+ * At the end of each run, the test rebuilds the land state from the events only, as the indexer
+ * does, and compares it with the model (see `checkEventRebuild`).
  *
  * A run uses one window of WINDOW x WINDOW squares, so that shapes collide often. Each window
  * has a fixed place: an ordinary place, across longitude 0, at latitude 0, or at latitude 17999
@@ -413,6 +416,7 @@ class Divergence extends Error {}
 async function runHistory(seed: number, place: Place, fx: Fixture) {
   const rng = new Rng(seed);
   const { land, asIssuer } = fx;
+  const startBlock = await (await viem.getPublicClient()).getBlockNumber();
   const accountOf = (id: bigint) => fx.accounts[Number(id)];
   let model = new LandModel(place, accountOf);
   const users = fx.users.map((u) => getAddress(u.account.address));
@@ -1068,6 +1072,73 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     if (problems.length > 0) throw new Divergence(problems.join("\n"));
   }
 
+  // -------- Rebuild from events --------
+
+  /// Rebuilds the land state from the events of the run only, as the indexer does: Transfer of
+  /// countries and squares, CountryCreated and CountryCompositionChanged, in log order. A square
+  /// is in a country when a Transfer puts it at the account of a country that exists at that time
+  /// (CountryCreated comes before the mints of a new country). The result must equal the model,
+  /// which checkInvariants compares with the contracts after each operation.
+  async function checkEventRebuild() {
+    const range = { fromBlock: startBlock };
+    const all = [
+      ...(await land.countries.getEvents.Transfer({}, range)).map((e) => ({ kind: "country" as const, e })),
+      ...(await land.squares.getEvents.Transfer({}, range)).map((e) => ({ kind: "square" as const, e })),
+      ...(await land.countries.getEvents.CountryCreated({}, range)).map((e) => ({ kind: "created" as const, e })),
+      ...(await land.countries.getEvents.CountryCompositionChanged({}, range)).map((e) => ({
+        kind: "composition" as const,
+        e,
+      })),
+    ];
+    all.sort((a, b) =>
+      a.e.blockNumber !== b.e.blockNumber
+        ? Number(a.e.blockNumber - b.e.blockNumber)
+        : a.e.logIndex - b.e.logIndex,
+    );
+
+    const countryOfAccount = new Map<Address, bigint>();
+    const owners = new Map<bigint, Address | undefined>();
+    const versions = new Map<bigint, { version: bigint; squareCount: bigint }>();
+    const holders = new Map<bigint, { holder: Address; country: bigint }>();
+    for (const { kind, e } of all) {
+      if (kind === "created") {
+        countryOfAccount.set(getAddress(e.args.account!), e.args.countryId!);
+      } else if (kind === "composition") {
+        versions.set(e.args.countryId!, { version: e.args.version!, squareCount: e.args.squareCount! });
+      } else if (kind === "country") {
+        const to = getAddress(e.args.to!);
+        owners.set(e.args.tokenId!, to === zeroAddress ? undefined : to);
+      } else {
+        const to = getAddress(e.args.to!);
+        holders.set(e.args.tokenId!, { holder: to, country: countryOfAccount.get(to) ?? 0n });
+      }
+    }
+
+    const problems: string[] = [];
+    for (const [id, c] of model.countries) {
+      if (owners.get(id) !== c.owner) problems.push(`owner of #${id}: events ${owners.get(id)}, model ${c.owner}`);
+      const v = versions.get(id);
+      const count = BigInt(model.cellsOf(id).size);
+      if (v?.version !== c.version || v?.squareCount !== count) {
+        problems.push(`#${id}: events version ${v?.version} count ${v?.squareCount}, model ${c.version} ${count}`);
+      }
+    }
+    if (owners.size !== model.countries.size) {
+      problems.push(`events name ${owners.size} countries, model ${model.countries.size}`);
+    }
+    for (const [k, sq] of model.squares) {
+      const { lat, lng } = locOf(k);
+      const h = holders.get(squareId(lat, lng));
+      if (h?.holder !== sq.holder || h?.country !== sq.country) {
+        problems.push(`square ${fmt(k)}: events ${h?.holder} in ${h?.country}, model ${sq.holder} in ${sq.country}`);
+      }
+    }
+    if (holders.size !== model.squares.size) {
+      problems.push(`events name ${holders.size} squares, model ${model.squares.size}`);
+    }
+    if (problems.length > 0) throw new Divergence(`rebuild from events:\n${problems.join("\n")}`);
+  }
+
   // -------- Run --------
 
   try {
@@ -1085,6 +1156,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
       await op.run();
       await checkInvariants();
     }
+    await checkEventRebuild();
   } catch (e) {
     const tail = log.slice(-40).join("\n  ");
     const message = e instanceof Error ? e.message : String(e);
