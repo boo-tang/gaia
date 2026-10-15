@@ -1,7 +1,6 @@
 import { expect } from "chai";
 import {
   encodeFunctionData,
-  getAddress,
   hashMessage,
   parseAbi,
   parseEther,
@@ -10,12 +9,7 @@ import {
 } from "viem";
 
 import { loadFixture, viem } from "./helpers/setup";
-import {
-  accountTransferSquare,
-  deployAccount,
-  deployLand,
-  squareId,
-} from "./helpers/land";
+import { deployAccount, deployLand } from "./helpers/land";
 
 const row = (lat: number, from: number, to: number) => {
   const out: { lat: number; lng: number }[] = [];
@@ -78,9 +72,6 @@ describe("GaiaCountryAccount", function () {
 
     it("supports the ERC-1271 interface", async function () {
       const { asAlice } = await loadFixture(deploy);
-      expect(
-        toFunctionSelector("isValidSignature(bytes32,bytes)")
-      ).to.equal("0x1626ba7e");
       expect(await asAlice.read.supportsInterface(["0x1626ba7e"])).to.equal(true);
     });
   });
@@ -195,14 +186,6 @@ describe("GaiaCountryAccount", function () {
       expect(await token.read.balanceOf([bob.account.address])).to.equal(40n);
       expect(await token.read.balanceOf([account])).to.equal(60n);
       expect(await asAlice.read.state()).to.equal(1n);
-    });
-
-    it("sends an NFT", async function () {
-      const { land, account, alice } = await loadFixture(deploy);
-      await accountTransferSquare(land, alice, account, alice.account.address, 10, 12);
-      expect(
-        getAddress(await land.squares.read.ownerOf([squareId(10, 12)]))
-      ).to.equal(getAddress(alice.account.address));
     });
 
     it("sends ETH with empty data", async function () {

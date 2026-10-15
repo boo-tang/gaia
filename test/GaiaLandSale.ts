@@ -264,9 +264,8 @@ describe("GaiaLandSale", function () {
         2n * startPrice
       );
       expect(await f.countries.read.squareCount([1n])).to.equal(3n);
-      expect(await f.countries.read.compositionVersion([1n])).to.be.greaterThan(
-        version
-      );
+      // One step for each added square.
+      expect(await f.countries.read.compositionVersion([1n])).to.equal(version + 2n);
       expect(await f.squares.read.countryOf([51, 51])).to.equal(1n);
     });
 

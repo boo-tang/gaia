@@ -9,9 +9,10 @@ import {
   expectRevertWithOneOf,
   pack,
 } from "./helpers/auction";
+import { balanceChange } from "./helpers/eth";
 import { deployAccount, deployLand, executeAs, squareId } from "./helpers/land";
 
-describe("GaiaAuction::_validateConvexShape via bidOnShape", function () {
+describe("GaiaAuction: bid shape rule", function () {
   async function deployAll() {
     const [owner] = await viem.getWalletClients();
 
@@ -258,10 +259,11 @@ describe("GaiaAuction: totals and refunds", function () {
       value: (minBid + minBid) * 2n,
     });
 
-    await expect(auction.write.withdraw()).to.be.fulfilled;
-
-    const refund = await auction.read.pendingReturns([owner.account.address]);
-    expect(refund).to.equal(0n);
+    const { change } = await balanceChange(owner.account.address, () =>
+      auction.write.withdraw()
+    );
+    expect(change).to.equal(minBid * 2n);
+    expect(await auction.read.pendingReturns([owner.account.address])).to.equal(0n);
   });
 
   it("mixes existing and new squares in one bid correctly", async function () {
@@ -353,15 +355,16 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
 
   it("rejects a bid exceeding maxShapeSquares", async function () {
     const { auction, minBid } = await loadFixture(deployBounded);
-    // 7 squares in a row — maxShapeSquares is 6
+    // 7 squares (rows of 3 and 4) — maxShapeSquares is 6. Ratio 4:2 is inside 3:1, so only the
+    // size rule fails.
     const shape = [
       { lat: 50, lng: 50 },
       { lat: 50, lng: 51 },
       { lat: 50, lng: 52 },
-      { lat: 50, lng: 53 },
-      { lat: 50, lng: 54 },
-      { lat: 50, lng: 55 },
-      { lat: 50, lng: 56 },
+      { lat: 51, lng: 50 },
+      { lat: 51, lng: 51 },
+      { lat: 51, lng: 52 },
+      { lat: 51, lng: 53 },
     ];
     const total = minBid * BigInt(shape.length);
     await expect(
@@ -415,16 +418,13 @@ describe("GaiaAuction: shape size and aspect-ratio bounds", function () {
     ).to.be.rejectedWith("AspectRatioExceeded");
   });
 
-  it("accepts a shape just within the aspect ratio", async function () {
+  it("accepts a shape exactly at the aspect ratio", async function () {
     const { auction, minBid } = await loadFixture(deployBounded);
-    // 2 rows × 6 columns → width=6, height=2 → ratio=3 == maxAspectRatio=3
+    // 1 row × 3 columns → ratio 3 == maxAspectRatio 3
     const shape = [
       { lat: 70, lng: 10 },
       { lat: 70, lng: 11 },
       { lat: 70, lng: 12 },
-      { lat: 71, lng: 10 },
-      { lat: 71, lng: 11 },
-      { lat: 71, lng: 12 },
     ];
     const total = minBid * BigInt(shape.length);
     await expect(auction.write.bidOnShape([pack(shape), 0n, false], { value: total })).to.be
@@ -451,7 +451,7 @@ describe("GaiaAuction: anti-griefing overlap rules", function () {
   // Alice holds a 1×3 row: (80,10), (80,11), (80,12)
   // Bob bids on (80,11) — the middle square — and (81,11), leaving Alice with
   // (80,10) and (80,12) which have a gap: invalid remainder.
-  it("rejects a single-square bid that would leave a gap in an existing shape", async function () {
+  it("rejects a bid that would leave a gap in an existing shape", async function () {
     const { auction, auctionAs2, minBid } = await loadFixture(deployAntiGrief);
 
     const aliceShape = [
