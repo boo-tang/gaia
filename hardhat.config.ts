@@ -37,7 +37,8 @@ export default defineConfig({
     },
   },
   // 1337 is the chain ID of wagmi's `localhost` chain, which the frontend uses. `default` runs
-  // tests and scripts in-process; `node` is the chain `hardhat node` serves.
+  // tests and scripts in-process; `node` is the chain `hardhat node` serves. `anvil` is a local
+  // Anvil node (`npm run chain:local`), which `npm run deploy:local` deploys to.
   networks: {
     default: {
       type: "edr-simulated",
@@ -46,6 +47,16 @@ export default defineConfig({
     node: {
       type: "edr-simulated",
       chainId: 1337,
+    },
+    anvil: {
+      type: "http",
+      // LOCAL_RPC_URL overrides the URL, for example when another program uses port 8545.
+      url: process.env.LOCAL_RPC_URL ?? "http://127.0.0.1:8545",
+      chainId: 31337,
+      // The public test mnemonic of Anvil and Hardhat. Use these accounts only on a local node.
+      accounts: {
+        mnemonic: "test test test test test test test test test test test junk",
+      },
     },
   },
 });
