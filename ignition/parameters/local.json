@@ -1,0 +1,20 @@
+{
+  "GaiaModule": {
+    "admin": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "registry": "0x000000006551c19487814612e58FE06813775758",
+    "treasury": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+    "extensionWindow": "900n",
+    "minBidPerSquareWei": "1000000000000000n",
+    "minBidIncrementBps": "500n",
+    "minShapeSquares": "1n",
+    "maxShapeSquares": "200n",
+    "maxShapeAspectRatio": "10n"
+  },
+  "GaiaLandSaleModule": {
+    "treasury": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+    "startPrice": "10000000000000000n",
+    "endPrice": "1000000000000000n",
+    "holdDuration": "600n",
+    "dropDuration": "1800n"
+  }
+}

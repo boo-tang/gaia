@@ -8,7 +8,9 @@
     "serve": "vite preview",
     "typecheck": "tsc --noEmit -p frontend/tsconfig.json",
     "compile": "hardhat build",
-    "test": "hardhat test"
+    "test": "hardhat test",
+    "chain:local": "anvil",
+    "deploy:local": "hardhat run scripts/deploy-local.ts --network anvil"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3",

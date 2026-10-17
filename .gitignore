@@ -9,3 +9,4 @@ frontend/artifacts/
 *.tmp.ts
 .cursor/
 coverage/
+deployments/
