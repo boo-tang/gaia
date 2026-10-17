@@ -10,7 +10,8 @@
     "compile": "hardhat build",
     "test": "hardhat test",
     "chain:local": "anvil",
-    "deploy:local": "hardhat run scripts/deploy-local.ts --network anvil"
+    "deploy:local": "hardhat run scripts/deploy-local.ts --network anvil",
+    "seed:local": "hardhat run scripts/seed-local.ts --network anvil"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3",
