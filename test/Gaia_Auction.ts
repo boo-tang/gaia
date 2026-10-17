@@ -269,6 +269,26 @@ describe("GaiaAuction: totals and refunds", function () {
     expect(await auction.read.pendingReturns([owner.account.address])).to.equal(0n);
   });
 
+  it("emits Withdrawn with the amount sent, and nothing when there is nothing to send", async function () {
+    const { auction, owner, other, minBid } = await loadFixture(deployAll);
+    const shape = [
+      { lat: 21, lng: 20 },
+      { lat: 21, lng: 21 },
+    ];
+    await auction.write.bidOnShape([pack(shape), 0n, false], { value: minBid * 2n });
+    const auctionAsOther = await auctionAs(auction.address, other);
+    await auctionAsOther.write.bidOnShape([pack(shape), 0n, false], {
+      value: (minBid + minBid) * 2n,
+    });
+
+    const hash = await auction.write.withdraw();
+    expect(await eventsIn(hash, auction.abi, "Withdrawn")).to.deep.equal([
+      { bidder: getAddress(owner.account.address), amount: minBid * 2n },
+    ]);
+    const again = await auction.write.withdraw();
+    expect(await eventsIn(again, auction.abi, "Withdrawn")).to.deep.equal([]);
+  });
+
   it("mixes existing and new squares in one bid correctly", async function () {
     const { auction, minBid } = await loadFixture(deployAll);
     const first = [
@@ -2150,6 +2170,19 @@ describe("GaiaAuction: pause and cancel", function () {
     ).to.equal(0n);
   });
 
+  it("emits Withdrawn with the refunds and the bids after a cancel", async function () {
+    const f = await loadFixture(deployPausable);
+    const paid = await placeBids(f);
+    await f.asAdmin.write.pause();
+    await f.asAdmin.write.cancel();
+    for (let i = 0; i < 3; i++) {
+      const hash = await f.asBidders[i].write.withdraw();
+      expect(await eventsIn(hash, f.auction.abi, "Withdrawn")).to.deep.equal([
+        { bidder: getAddress(f.bidders[i].account.address), amount: paid[i] },
+      ]);
+    }
+  });
+
   it("refunds a bidder who withdrew the outbid amounts before the cancel", async function () {
     const f = await loadFixture(deployPausable);
     const paid = await placeBids(f);
@@ -2285,13 +2318,17 @@ describe("GaiaAuction: ETH that cannot be sent", function () {
     await f.wallet.write.setAcceptEth([false]);
 
     expect(await f.withdrawReturns()).to.equal(false);
-    await f.withdraw();
+    const failed = await f.withdraw();
+    expect(await eventsIn(failed, f.auction.abi, "Withdrawn")).to.deep.equal([]);
     expect(await f.auction.read.pendingReturns([f.wallet.address])).to.equal(2n * minBid);
     expect(await f.balanceOf(f.auction.address)).to.equal(held);
 
     await f.wallet.write.setAcceptEth([true]);
     expect(await f.withdrawReturns()).to.equal(true);
-    await f.withdraw();
+    const sent = await f.withdraw();
+    expect(await eventsIn(sent, f.auction.abi, "Withdrawn")).to.deep.equal([
+      { bidder: getAddress(f.wallet.address), amount: 2n * minBid },
+    ]);
     expect(await f.balanceOf(f.wallet.address)).to.equal(2n * minBid);
     expect(await f.auction.read.pendingReturns([f.wallet.address])).to.equal(0n);
   });

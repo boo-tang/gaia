@@ -240,6 +240,9 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         address indexed winner,
         uint256 totalSquares
     );
+    /// A bidder took out ETH with `withdraw`: refunds, and after a cancel also their bids. Only a
+    /// successful send emits it.
+    event Withdrawn(address indexed bidder, uint256 amount);
     event ProceedsWithdrawn(address indexed treasury, uint256 amount);
     event AuctionExtended(uint64 endTime);
     event AuctionPaused();
@@ -417,6 +420,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
             return false;
         }
 
+        emit Withdrawn(msg.sender, amount);
         return true;
     }
 

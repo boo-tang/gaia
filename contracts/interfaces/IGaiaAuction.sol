@@ -23,6 +23,8 @@ interface IGaiaAuction {
 
     /// @notice Withdraws refunds for outbid amounts and overpayments. After a cancel, also
     ///         withdraws the caller's current highest bids. Works also when the auction is paused.
+    ///         Emits `Withdrawn(bidder, amount)` when it sends ETH. Returns false, with no event and
+    ///         no change, when the send fails.
     function withdraw() external returns (bool);
 
     /// @notice Sends the sum of all winning bids to the treasury after the auction ends.
