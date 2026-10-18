@@ -1,0 +1,44 @@
+# Type check and unit tests of the workspace packages (packages/*, apps/*). Also checks that the
+# ABI files in packages/core are the same as the contract build.
+name: Packages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A push cancels the older run of the same branch.
+concurrency:
+  group: packages-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:packages
+
+      - name: Compile contracts
+        run: npx hardhat compile
+
+      - name: Check the ABI files
+        run: npm run abis:check -w @gaia/core

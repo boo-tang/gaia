@@ -53,4 +53,4 @@ On Base, the admin multisig grants `ISSUER_ROLE` to the land sale only after the
 
 ## Web app
 
-The web app (`apps/web`) and the server (`apps/server`) are not written yet. Shared code is in `packages/core`.
+The web app (`apps/web`) and the server (`apps/server`) are not written yet. Shared code is in `packages/core`. Run `npm run typecheck` and `npm run test:packages` for all workspace packages.

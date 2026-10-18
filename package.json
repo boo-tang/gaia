@@ -10,6 +10,8 @@
   "scripts": {
     "compile": "hardhat build",
     "test": "hardhat test",
+    "test:packages": "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
     "chain:local": "anvil",
     "deploy:local": "hardhat run scripts/deploy-local.ts --network anvil",
     "seed:local": "hardhat run scripts/seed-local.ts --network anvil"
