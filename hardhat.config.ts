@@ -13,13 +13,15 @@ export default defineConfig({
     hardhatIgnitionViem,
     hardhatVerify,
   ],
+  // The deployable contracts have the exact pragma 0.8.37. Base runs the osaka rules since its Azul
+  // upgrade (May 2026). Change the version, the pragmas and the EVM version only together.
   solidity: {
-    version: "0.8.24",
+    version: "0.8.37",
     // Compiles the reference ERC-6551 registry so tests can deploy it.
     npmFilesToBuild: ["erc6551/ERC6551Registry.sol"],
     settings: {
       optimizer: { enabled: true, runs: 200 },
-      evmVersion: "cancun",
+      evmVersion: "osaka",
     },
   },
   // `default` runs tests and scripts in-process. `node` is the chain `hardhat node` serves.
