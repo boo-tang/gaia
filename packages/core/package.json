@@ -1,0 +1,18 @@
+{
+  "name": "@gaia/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Code that the Gaia web app, server and scripts share: grid, shape rules, prices, ABIs, deployment loader and API types.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
