@@ -19,6 +19,7 @@ export default defineConfig({
     npmFilesToBuild: ["erc6551/ERC6551Registry.sol"],
     settings: {
       optimizer: { enabled: true, runs: 200 },
+      evmVersion: "cancun",
     },
   },
   // `default` runs tests and scripts in-process. `node` is the chain `hardhat node` serves.

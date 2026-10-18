@@ -10,6 +10,7 @@ import {
   expectRevertWithOneOf,
   pack,
 } from "./helpers/auction";
+import { expectRevert } from "./helpers/errors";
 import { balanceChange, walletExec, walletExecResult } from "./helpers/eth";
 import { eventsIn } from "./helpers/events";
 import { deployAccount, deployLand, executeAs, squareId } from "./helpers/land";
@@ -1447,7 +1448,7 @@ describe("GaiaAuction: treasury proceeds", function () {
     const f = await loadFixture(deployProceeds);
     await placeBids(f);
 
-    await expect(f.auctionAs1.write.withdrawProceeds()).to.be.rejectedWith("AuctionNotYetEnded");
+    await expectRevert(f.auctionAs1.write.withdrawProceeds(), f.auction.abi, "AuctionNotYetEnded");
   });
 });
 

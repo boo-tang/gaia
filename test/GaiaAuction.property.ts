@@ -3,6 +3,7 @@ import { type Abi, type Hex, getAddress, parseEventLogs, zeroAddress } from "vie
 import { loadFixture, networkHelpers, time, viem } from "./helpers/setup";
 import { SHAPE_ERRORS, auctionAs, deployAuction, deploySale } from "./helpers/auction";
 import { deployLand } from "./helpers/land";
+import { revertMessage } from "./helpers/errors";
 import { balanceChange } from "./helpers/eth";
 import { Rng } from "./helpers/random";
 
@@ -508,6 +509,8 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     a === admin ? "admin" : (NAMES[bidders.indexOf(a)] ?? a);
   // The squares of the last bid, for the checks after it.
   let lastSquares: number[] = [];
+  // The errors that a call can revert with, to name an error that Hardhat does not name.
+  const errorAbi: Abi = [...auction.abi, ...sale.abi];
 
   /// Runs one contract call. The model predicts the result on a copy. The copy becomes the model
   /// only if the call succeeds.
@@ -525,7 +528,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     try {
       await send();
     } catch (e) {
-      message = e instanceof Error ? e.message : String(e);
+      message = revertMessage(e, errorAbi);
       actual = "revert";
     }
     if (expected === undefined && actual !== undefined) {
