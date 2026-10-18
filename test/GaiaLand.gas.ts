@@ -141,7 +141,7 @@ describe("Land: gas", function () {
       log("split (corner)", gas);
       expect(await f.land.countries.read.squareCount([1n])).to.equal(99n);
       if (coverage) this.skip();
-      expectBelowTwice(gas, 138_861n);
+      expectBelowTwice(gas, 138_791n);
     });
 
     it("splits an edge square of a 10 x 10 country to a wallet", async function () {
@@ -149,7 +149,7 @@ describe("Land: gas", function () {
       const gas = await split(f, f.account, f.aliceAddress, { lat: 100, lng: 105 });
       log("split (edge)", gas);
       if (coverage) this.skip();
-      expectBelowTwice(gas, 138_922n);
+      expectBelowTwice(gas, 138_852n);
     });
 
     it("splits the last square of a country (burns the country)", async function () {
@@ -159,7 +159,7 @@ describe("Land: gas", function () {
       log("split (last square, burn)", gas);
       expect(await f.land.countries.read.squareCount([2n])).to.equal(0n);
       if (coverage) this.skip();
-      expectBelowTwice(gas, 116_502n);
+      expectBelowTwice(gas, 116_481n);
     });
 
     it("merges a square from a wallet into a 10 x 10 country", async function () {
@@ -169,7 +169,7 @@ describe("Land: gas", function () {
       log("merge (into the notch)", gas);
       expect(await f.land.countries.read.squareCount([1n])).to.equal(100n);
       if (coverage) this.skip();
-      expectBelowTwice(gas, 107_835n);
+      expectBelowTwice(gas, 107_782n);
     });
 
     it("merges a square from a wallet onto the edge of a 10 x 10 country", async function () {
@@ -184,7 +184,7 @@ describe("Land: gas", function () {
       log("merge (onto the edge)", gas);
       expect(await f.land.countries.read.squareCount([1n])).to.equal(101n);
       if (coverage) this.skip();
-      expectBelowTwice(gas, 107_732n);
+      expectBelowTwice(gas, 107_679n);
     });
   });
 
@@ -200,7 +200,7 @@ describe("Land: gas", function () {
         log(`sale buy ${n}`, gas);
         expect(await f.land.countries.read.squareCount([3n])).to.equal(BigInt(n));
         if (coverage) this.skip();
-        expectBelowTwice(gas, n === 1 ? 266_509n : 898_319n);
+        expectBelowTwice(gas, n === 1 ? 266_577n : 897_928n);
       });
 
       it(`buys ${n} squares into a 10 x 10 country`, async function () {
@@ -214,7 +214,7 @@ describe("Land: gas", function () {
         log(`sale buyInto ${n}`, gas);
         expect(await f.land.countries.read.squareCount([1n])).to.equal(100n + BigInt(n));
         if (coverage) this.skip();
-        expectBelowTwice(gas, n === 1 ? 163_522n : 785_816n);
+        expectBelowTwice(gas, n === 1 ? 163_539n : 785_374n);
       });
     }
   });
@@ -227,7 +227,7 @@ describe("Land: gas", function () {
       const gas = await gasOf(f, hash);
       log("country transferFrom", gas);
       if (coverage) this.skip();
-      expectBelowTwice(gas, 62_164n);
+      expectBelowTwice(gas, 62_162n);
     });
 
     it("sells a country through GaiaCountryMarket.buy", async function () {
@@ -245,8 +245,8 @@ describe("Land: gas", function () {
       log("market buy", gas);
       expect(getAddress(await f.land.countries.read.ownerOf([1n]))).to.equal(f.bobAddress);
       if (coverage) this.skip();
-      expectBelowTwice(listGas, 102_115n);
-      expectBelowTwice(gas, 95_481n);
+      expectBelowTwice(listGas, 102_096n);
+      expectBelowTwice(gas, 95_499n);
     });
   });
 });

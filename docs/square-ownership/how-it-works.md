@@ -106,15 +106,15 @@ Settlement and `withdrawProceeds` wait for the current `endTime`. Read `endTime(
 
 ### Bid gas
 
-Base does not accept a transaction above 16,777,216 gas (EIP-7825). Measured costs (`test/Gaia_Auction.gas.ts`, run with `GAS_REPORT=1`):
+Base does not accept a transaction above 16,777,216 gas (EIP-7825). Measured costs (`test/Gaia_Auction.gas.ts`, run with `GAS_REPORT=1`; solc 0.8.37, EVM version osaka):
 
 - A new square costs about 27,000 gas. A new 10 x 10 bid costs 2.8M gas. A new 20 x 20 bid costs 10.7M gas.
 - A square that the bid takes from a different bidder costs about 11,000 gas when the squares come from a small number of shapes.
 - For each shape that the bid cuts into and that keeps squares, the auction checks the remaining squares. They must be a valid shape of at least `minShapeSquares` squares. If not, the bid reverts with `OverlapWouldInvalidateShape(shapeId)`, with the ID of that shape. The other shape errors (for example `GapBetweenLongitudes`) are only for the squares of the bid itself. The check reads one slot for each eight rows that the shape still holds. It does not read the squares that the shape lost before. When a bid takes all remaining squares of a shape, there is no check.
 - The worst bid: each square of the bid comes from a different shape, and each shape has a different bidder. This costs about 56,000 gas for each square of the bid. About 27,000 of it is the refund to a bidder who had no refund before. The cost does not depend on the size of the shapes that the bid cuts.
-- Settlement costs about 63,000 to 65,000 gas for each square. A settlement chunk always continues to the end of its row, so the widest row of a shape must settle in one call.
+- Settlement costs about 63,000 to 65,000 gas for each square. A settlement chunk always continues to the end of its row, so the widest row of a shape must settle in one call. One row of 250 squares costs 16.6M gas to settle. A row of about 250 squares or less settles below 16,777,216 gas, and about 180 or less below 12M.
 
-`maxShapeSquares` and `maxShapeAspectRatio` must keep each bid and each settlement chunk below the cap. With the worst bid above, `maxShapeSquares` of about 290 or less keeps each bid below 16,777,216 gas, and about 210 or less keeps it below 12M. A limit on the number of shapes that one bid can cut into is not necessary. These values are not chosen yet.
+`maxShapeSquares` and `maxShapeAspectRatio` must keep each bid and each settlement chunk below the cap. With the worst bid above, `maxShapeSquares` of about 300 or less keeps each bid below 16,777,216 gas (300 squares: 16.6M), and about 215 or less keeps it below 12M. A limit on the number of shapes that one bid can cut into is not necessary. These values are not chosen yet.
 
 How the auction stores bids:
 
