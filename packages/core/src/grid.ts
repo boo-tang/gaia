@@ -23,10 +23,19 @@ export interface Bounds {
 
 const wrapColumn = (column: number) => ((column % LNG_COLUMNS) + LNG_COLUMNS) % LNG_COLUMNS;
 
+// Degrees plus `offset`, in grid units (1/100 degree). A value within 1e-6 units (about 1 mm) of
+// a whole unit becomes that unit. Without this, floating-point errors put a point on an edge
+// (for example -179.99°) into the square before it.
+const toUnits = (deg: number, offset: number) => {
+  const units = (deg + offset) * PRECISION;
+  const nearest = Math.round(units);
+  return Math.abs(units - nearest) < 1e-6 ? nearest : units;
+};
+
 /** The square that contains a map point. `lngDeg` can be outside -180..180 (world copies). */
 export const squareAt = (latDeg: number, lngDeg: number): Square => ({
-  lat: Math.min(LAT_ROWS - 1, Math.max(0, Math.floor((latDeg + 90) * PRECISION))),
-  lng: wrapColumn(Math.floor((lngDeg + 180) * PRECISION)),
+  lat: Math.min(LAT_ROWS - 1, Math.max(0, Math.floor(toUnits(latDeg, 90)))),
+  lng: wrapColumn(Math.floor(toUnits(lngDeg, 180))),
 });
 
 /** The edges of a square in degrees, from its south-west corner. */
@@ -46,8 +55,8 @@ export const unpackSquare = (key: number): Square => ({ lat: Math.floor(key / 65
  * no lines in a direction when there are more than `maxLines` (too dense to see).
  */
 export const gridLines = (bounds: Bounds, maxLines = 400): { lats: number[]; lngs: number[] } => {
-  const first = (deg: number, offset: number) => Math.ceil((deg + offset) * PRECISION);
-  const last = (deg: number, offset: number) => Math.floor((deg + offset) * PRECISION);
+  const first = (deg: number, offset: number) => Math.ceil(toUnits(deg, offset));
+  const last = (deg: number, offset: number) => Math.floor(toUnits(deg, offset));
 
   const latFrom = Math.max(0, first(bounds.south, 90));
   const latTo = Math.min(LAT_ROWS, last(bounds.north, 90));
