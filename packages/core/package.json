@@ -9,7 +9,9 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "abis": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/gen-abis.ts",
+    "abis:check": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/gen-abis.ts --check"
   },
   "devDependencies": {
     "typescript": "~5.9.3",
