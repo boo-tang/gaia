@@ -8,16 +8,10 @@ A valid shape is convex along rows and columns: each row and each column of the 
 
 ## Install Locally
 
-Install TypeScript packages
+Use Node 22 (see `.nvmrc`). The repository is an npm workspace. Install all packages from the root:
 
 ```
-yarn install
-```
-
-Build Typescript project
-
-```
-yarn build
+npm install
 ```
 
 Compile Solidity contracts
@@ -62,7 +56,7 @@ On Base, the admin multisig grants `ISSUER_ROLE` to the land sale only after the
 Start web app
 
 ```
-yarn dev
+npm run dev
 ```
 
 Then navigate to the localhost page exported by vite!

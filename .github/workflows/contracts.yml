@@ -37,11 +37,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: yarn
+          node-version-file: .nvmrc
+          cache: npm
 
       - name: Install
-        run: yarn install --frozen-lockfile
+        run: npm ci
 
       - name: Compile
         run: npx hardhat compile
