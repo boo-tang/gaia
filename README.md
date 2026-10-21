@@ -8,7 +8,7 @@ A valid shape is convex along rows and columns: each row and each column of the 
 
 ## Install Locally
 
-Use Node 22 (see `.nvmrc`). The repository is an npm workspace. Install all packages from the root:
+Use Node 22.23.4 or later (see `.nvmrc`). The repository is an npm workspace. Install all packages from the root:
 
 ```
 npm install
