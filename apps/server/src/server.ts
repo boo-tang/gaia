@@ -1,0 +1,90 @@
+// Starts the whole server: the RPC client, the in-memory store, the indexer (backfill, then
+// polls) and the HTTP API.
+
+import { serve, type ServerType } from '@hono/node-server';
+import type { Deployment } from '@gaia/core';
+import type { AddressInfo } from 'node:net';
+
+import { createApp } from './api/app';
+import { createClient, readRefund, readRules } from './chain';
+import type { Config } from './config';
+import { Indexer } from './indexer/indexer';
+import { Hub } from './live';
+import { MemoryStore } from './store/memory';
+import type { Store } from './store/store';
+
+export interface RunningServer {
+  /** The base URL of the HTTP API. */
+  url: string;
+  store: Store;
+  indexer: Indexer;
+  hub: Hub;
+  /** Stops the polls and the HTTP server. Open streams are closed. */
+  close(): Promise<void>;
+}
+
+export const startServer = async (
+  config: Config,
+  deployment: Deployment,
+  log: (message: string) => void = console.log,
+): Promise<RunningServer> => {
+  const client = createClient(config.rpcUrls);
+  const chainId = await client.getChainId();
+  if (chainId !== deployment.chainId) {
+    throw new Error(`The RPC has chain ID ${chainId}, but the deployment file is for chain ${deployment.chainId}.`);
+  }
+  const auction = deployment.contracts.GaiaAuction;
+  const rules = await readRules(client, deployment);
+
+  const store = new MemoryStore({
+    start: { block: deployment.deployBlock - 1, logIndex: -1 },
+    status: { endTime: deployment.auction.endTime, paused: false, cancelled: false },
+    undoDepth: config.reorgDepth,
+  });
+  const hub = new Hub();
+  const indexer = new Indexer({
+    client,
+    store,
+    hub,
+    auction,
+    deployBlock: deployment.deployBlock,
+    logRange: config.logRange,
+    pollIntervalMs: config.pollIntervalMs,
+    log,
+  });
+
+  // Backfill before the API opens, so that the first snapshot is complete.
+  const started = Date.now();
+  await indexer.syncOnce();
+  log(`Backfill done in ${Date.now() - started} ms: at block ${(await store.position()).block}.`);
+  indexer.start();
+
+  const app = createApp({
+    store,
+    hub,
+    rules,
+    refundOf: (bidder, cancelled) => readRefund(client, auction, bidder, cancelled),
+    maxSnapshotBids: config.maxSnapshotBids,
+  });
+  const server: ServerType = await new Promise((resolve) => {
+    const s = serve({ fetch: app.fetch, port: config.port }, () => resolve(s));
+  });
+  const { port } = server.address() as AddressInfo;
+  const url = `http://127.0.0.1:${port}`;
+  log(`Gaia server on ${url} (auction ${auction}, chain ${chainId}).`);
+
+  return {
+    url,
+    store,
+    indexer,
+    hub,
+    close: async () => {
+      await indexer.stop();
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+        // Open streams keep their connections; close them too.
+        if ('closeAllConnections' in server) server.closeAllConnections();
+      });
+    },
+  };
+};

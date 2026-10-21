@@ -13,7 +13,6 @@
   "dependencies": {
     "@gaia/core": "*",
     "@hono/node-server": "^2.1.5",
-    "@hono/zod-validator": "^0.9.1",
     "hono": "^4.13.13",
     "viem": "^2.57.8",
     "zod": "^4.6.7"
