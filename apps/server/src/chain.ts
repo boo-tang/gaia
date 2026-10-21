@@ -9,6 +9,8 @@ import { AUCTION_EVENT_NAMES, type AuctionEvent } from './indexer/events';
 /** One client for all RPC URLs: the first is the main provider, the others are fallbacks. */
 export const createClient = (rpcUrls: string[]): PublicClient =>
   createPublicClient({
+    // viem keeps the block number for `cacheTime` (default 4 s). The indexer polls more often.
+    cacheTime: 0,
     transport: fallback(rpcUrls.map((url) => http(url, { retryCount: 2 }))),
   });
 

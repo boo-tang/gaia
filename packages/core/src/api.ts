@@ -116,7 +116,7 @@ export interface Shape {
   /** The number of squares that settlement gave to the country of the shape. */
   settledSquares: number;
   /** The country of the shape, after the first settlement chunk. */
-  countryId: string | undefined;
+  countryId?: string;
   /** True when the winner has the country (`ShapeSettled`). */
   settled: boolean;
 }
