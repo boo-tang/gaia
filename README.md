@@ -51,6 +51,40 @@ Optional data for app work: `npm run seed:local` places three bids. `SEED_END=1 
 
 On Base, the admin multisig grants `ISSUER_ROLE` to the land sale only after the auction ends. The Base networks and the Base parameters are not ready yet.
 
+`LOCAL_DEPLOYMENT_ID` (default `local`) changes the names of the deployment files (`deployments/<id>.json`, `deployments/<id>.parameters.json`, `ignition/deployments/<id>`), for `deploy:local` and `seed:local`. The server test uses it for its own Anvil node.
+
+## Server
+
+`apps/server` indexes the auction events and serves the data for the map: an HTTP API and a live stream (SSE). The browser reads only this server for display. It writes through the wallet.
+
+Run it against the local node, after `npm run chain:local`, `npm run deploy:local` and (optional) `npm run seed:local`:
+
+```
+npm start -w @gaia/server
+```
+
+The server keeps all data in memory. At each start it reads all events again from the deploy block (backfill), then it polls the chain about every 2 s. Configuration (environment variables, all optional for the local node):
+
+| Variable | Default | Use |
+| --- | --- | --- |
+| `RPC_URLS` | `http://127.0.0.1:8545` | RPC URLs, separated by commas. The first is the main provider; the others are fallbacks. |
+| `DEPLOYMENT_FILE` | `deployments/local.json` | The deployment file (a relative path starts at the repository root). |
+| `PORT` | `8787` | The HTTP port. |
+| `REORG_DEPTH` | `64` | The number of blocks that a reorg can undo. A deeper reorg clears the data and starts a new backfill. |
+| `POLL_INTERVAL_MS` | `2000` | The time between two polls. |
+| `LOG_RANGE` | `2000` | The largest block range of one `eth_getLogs` request. |
+| `MAX_SNAPSHOT_BIDS` | `50000` | A snapshot with more bids gets HTTP 400 ("zoom in"). |
+
+Endpoints (types in `packages/core/src/api.ts`; amounts in wei as decimal strings, squares packed as `(lat << 16) \| lng`):
+
+- `GET /auction`: the auction rules, the status (`endTime`, paused, cancelled) and the position.
+- `GET /bids?south=&north=&west=&east=`: the bids in a viewport (rows and columns of the grid, edges included; `west > east` crosses the antimeridian), with the position of the data.
+- `GET /bidder/:address`: the shapes of a bidder (with the squares they still hold), their history, and the refund that `withdraw` sends now (read from the contract).
+- `GET /stream?after=<block>:<logIndex>&bidder=`: the live stream. One message per event, with the id `<block>:<logIndex>`. Get a snapshot, then open the stream with `after` = the position of the snapshot. The browser resumes with `Last-Event-ID` after a reconnect. A `reorg` message means: get a new snapshot.
+- `GET /health`: the position and the last block.
+
+Tests: `npm test -w @gaia/server`. The test against Anvil starts its own node on a free port, so it can run next to `npm run chain:local`. It needs `anvil` and the contract build (`npx hardhat compile`); without `anvil` it is skipped.
+
 ## Web app
 
 The web app (`apps/web`) and the server (`apps/server`) are not written yet. Shared code is in `packages/core`. Run `npm run typecheck` and `npm run test:packages` for all workspace packages.
