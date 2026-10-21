@@ -1,4 +1,4 @@
-// The server entry point: `npm start -w @gaia/server`. See README "Server".
+// The server entry point: `yarn workspace @gaia/server start`. See README "Server".
 
 import { parseDeployment } from '@gaia/core';
 import fs from 'node:fs';
@@ -8,7 +8,7 @@ import { startServer } from './server';
 
 const config = loadConfig();
 if (!fs.existsSync(config.deploymentFile)) {
-  throw new Error(`No deployment file at ${config.deploymentFile}. Run \`npm run deploy:local\`, or set DEPLOYMENT_FILE.`);
+  throw new Error(`No deployment file at ${config.deploymentFile}. Run \`yarn deploy:local\`, or set DEPLOYMENT_FILE.`);
 }
 const deployment = parseDeployment(JSON.parse(fs.readFileSync(config.deploymentFile, 'utf8')));
 const server = await startServer(config, deployment);

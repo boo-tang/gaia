@@ -1399,7 +1399,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     const message = e instanceof Error ? e.message : String(e);
     throw new Error(
       `auction fuzz failed: seed ${seed}, window ${place.name}\n` +
-        `repeat: AUCTION_FUZZ_SEED=${seed} AUCTION_FUZZ_OPS=${OPS} npx hardhat test test/GaiaAuction.property.ts\n` +
+        `repeat: AUCTION_FUZZ_SEED=${seed} AUCTION_FUZZ_OPS=${OPS} yarn hardhat test test/GaiaAuction.property.ts\n` +
         `${message}\noperation log (last 40):\n  ${tail}`,
     );
   }

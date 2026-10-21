@@ -1,5 +1,5 @@
 // The server configuration, from environment variables. Each value has a default for a local
-// Anvil node (`npm run chain:local`, `npm run deploy:local`).
+// Anvil node (`yarn chain:local`, `yarn deploy:local`).
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

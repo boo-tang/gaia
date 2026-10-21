@@ -9,3 +9,7 @@ dist/
 .cursor/
 coverage/
 deployments/
+.yarn/*
+!.yarn/patches
+!.yarn/releases
+.pnp.*

@@ -35,16 +35,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Corepack gives the Yarn version of `packageManager` in package.json.
+      - name: Enable Corepack
+        run: corepack enable
+
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-          cache: npm
+          cache: yarn
 
       - name: Install
-        run: npm ci
+        run: yarn install --immutable
 
       - name: Compile
-        run: npx hardhat compile
+        run: yarn hardhat compile
 
       - name: Test
         env:
@@ -62,4 +66,4 @@ jobs:
           for name in LAND_FUZZ_RUNS AUCTION_FUZZ_RUNS; do
             if [ -z "${!name}" ]; then unset "$name"; fi
           done
-          npx hardhat test
+          yarn hardhat test

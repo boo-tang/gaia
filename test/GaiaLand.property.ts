@@ -1165,7 +1165,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     const message = e instanceof Error ? e.message : String(e);
     throw new Error(
       `land fuzz failed: seed ${seed}, window ${place.name}\n` +
-        `repeat: LAND_FUZZ_SEED=${seed} LAND_FUZZ_OPS=${OPS} npx hardhat test test/GaiaLand.property.ts\n` +
+        `repeat: LAND_FUZZ_SEED=${seed} LAND_FUZZ_OPS=${OPS} yarn hardhat test test/GaiaLand.property.ts\n` +
         `${message}\noperation log (last 40):\n  ${tail}`,
     );
   }

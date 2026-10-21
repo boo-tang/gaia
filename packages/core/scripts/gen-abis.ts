@@ -1,10 +1,10 @@
 // Writes the ABIs of the Gaia contracts as typed TypeScript (`as const`) into src/abis/.
 //
 // The source is the Hardhat build output, artifacts/contracts/<Name>.sol/<Name>.json at the root
-// of the repository. Run `npx hardhat compile` first.
+// of the repository. Run `yarn hardhat compile` first.
 //
-//   npm run abis -w @gaia/core          writes the files
-//   npm run abis:check -w @gaia/core    fails if a file is not the same as the artifacts
+//   yarn workspace @gaia/core abis          writes the files
+//   yarn workspace @gaia/core abis:check    fails if a file is not the same as the artifacts
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -32,7 +32,7 @@ const abiName = (contract: string) => `${contract[0].toLowerCase()}${contract.sl
 const readAbi = (contract: string): unknown[] => {
   const file = path.join(artifactsDir, `${contract}.sol`, `${contract}.json`);
   if (!fs.existsSync(file)) {
-    throw new Error(`${path.relative(repoRoot, file)} not found. Run "npx hardhat compile" first.`);
+    throw new Error(`${path.relative(repoRoot, file)} not found. Run "yarn hardhat compile" first.`);
   }
   return JSON.parse(fs.readFileSync(file, 'utf8')).abi;
 };
@@ -63,7 +63,7 @@ for (const [name, content] of files) {
 if (check && stale.length > 0) {
   console.error(
     `These ABI files are not the same as the artifacts: ${stale.join(', ')}.\n` +
-      'Run "npx hardhat compile" and "npm run abis -w @gaia/core", then commit the files.',
+      'Run "yarn hardhat compile" and "yarn workspace @gaia/core abis", then commit the files.',
   );
   process.exit(1);
 }

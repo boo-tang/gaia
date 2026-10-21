@@ -9,11 +9,11 @@ Code that the web app (`packages/web`), the server (`packages/server`) and the r
 - `api`: the types of the server API (auction state, viewport snapshot, stream messages). First draft.
 - `abis`: the ABIs of the six Gaia contracts, as `as const` TypeScript, for typed viem and wagmi calls.
 
-The ABI files in `src/abis/` are generated from `artifacts/` and are in git. After a contract change, run `npx hardhat compile` and `npm run abis -w @gaia/core`, then commit the files. CI runs `npm run abis:check -w @gaia/core`, which fails if the files are not the same as the artifacts.
+The ABI files in `src/abis/` are generated from `artifacts/` and are in git. After a contract change, run `yarn hardhat compile` and `yarn workspace @gaia/core abis`, then commit the files. CI runs `yarn workspace @gaia/core abis:check`, which fails if the files are not the same as the artifacts.
 
 The package exports its TypeScript source. The web app and the server compile it with their own build tool.
 
 ```
-npm test -w @gaia/core
-npm run typecheck -w @gaia/core
+yarn workspace @gaia/core test
+yarn workspace @gaia/core typecheck
 ```

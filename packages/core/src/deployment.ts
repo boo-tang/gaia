@@ -1,6 +1,6 @@
 // The deployment file: the addresses and the start values of one Gaia deployment.
 //
-// `npm run deploy:local` writes deployments/local.json. A Base deployment uses the same format.
+// `yarn deploy:local` writes deployments/local.json. A Base deployment uses the same format.
 // This module does not read files, so it works in Node and in the browser. Give it the parsed
 // JSON.
 

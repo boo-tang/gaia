@@ -9,7 +9,7 @@ import { pack } from "./helpers/auction";
 import { ignition, loadFixture, provider, time, viem } from "./helpers/setup";
 
 /*
- * The deployment of `npm run deploy:local`: the Ignition modules with
+ * The deployment of `yarn deploy:local`: the Ignition modules with
  * ignition/parameters/local.json, the registry at its canonical address, and the issuer grant of
  * the land sale. The contracts cannot change after deployment, so a wrong role or a missing step
  * here is a real risk.

@@ -1,9 +1,9 @@
 // The integration test against a real Anvil node. It starts its own Anvil on a free port,
-// deploys with `npm run deploy:local` and seeds with `npm run seed:local` (deployment id
+// deploys with `yarn deploy:local` and seeds with `yarn seed:local` (deployment id
 // `server-test-<port>`, so deployments/local.json does not change), then starts the server with
 // an empty store.
 //
-// It needs `anvil` (Foundry) on the PATH and the contract build (`npx hardhat compile`). Without
+// It needs `anvil` (Foundry) on the PATH and the contract build (`yarn hardhat compile`). Without
 // `anvil` the test is skipped.
 
 import { execFile, spawn, spawnSync, type ChildProcess } from 'node:child_process';
@@ -116,7 +116,7 @@ describe.skipIf(!hasAnvil)('server against Anvil', { timeout: 30_000 }, () => {
     await until(() => client.getChainId().then(() => true).catch(() => undefined), 'Anvil starts');
 
     const hardhat = (script: string) =>
-      run('npx', ['hardhat', 'run', script, '--network', 'anvil'], { cwd: REPO_ROOT, env: env() });
+      run('yarn', ['hardhat', 'run', script, '--network', 'anvil'], { cwd: REPO_ROOT, env: env() });
     await hardhat('scripts/deploy-local.ts');
     await hardhat('scripts/seed-local.ts');
     const file = path.join(REPO_ROOT, 'deployments', `${deploymentId}.json`);

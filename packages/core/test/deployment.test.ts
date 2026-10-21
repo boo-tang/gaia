@@ -21,7 +21,7 @@ const local = {
 };
 
 describe('parseDeployment', () => {
-  it('accepts the file of npm run deploy:local', () => {
+  it('accepts the file of yarn deploy:local', () => {
     const deployment = parseDeployment(JSON.parse(JSON.stringify(local)));
     expect(deployment).toEqual(local);
     const auction: `0x${string}` = deployment.contracts.GaiaAuction;

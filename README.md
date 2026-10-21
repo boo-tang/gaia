@@ -8,16 +8,17 @@ A valid shape is convex along rows and columns: each row and each column of the 
 
 ## Install Locally
 
-Use Node 22.23.4 or later (see `.nvmrc`). The repository is an npm workspace. Install all packages from the root:
+Use Node 22.23.4 or later (see `.nvmrc`). The repository is a Yarn workspace (Yarn 4, from `packageManager` in `package.json`). Enable Corepack once, then install all packages from the root:
 
 ```
-npm install
+corepack enable
+yarn install
 ```
 
 Compile Solidity contracts
 
 ```
-npx hardhat compile
+yarn hardhat compile
 ```
 
 ## Deploy
@@ -27,13 +28,13 @@ npx hardhat compile
 Install [Foundry](https://book.getfoundry.sh/getting-started/installation) for `anvil`. Start the node in one terminal (chain ID 31337, port 8545):
 
 ```
-npm run chain:local
+yarn chain:local
 ```
 
 Deploy all contracts in a second terminal:
 
 ```
-npm run deploy:local
+yarn deploy:local
 ```
 
 The script puts the ERC-6551 registry at its canonical address (`0x000000006551c19487814612e58FE06813775758`, the same as on Base), deploys `ignition/modules/GaiaSystem.ts` with `ignition/parameters/local.json`, and grants `ISSUER_ROLE` to the land sale from the admin account. It writes the addresses, the deploy block, the admin, the treasury and the auction times to `deployments/local.json` (not in git).
@@ -43,7 +44,7 @@ The script puts the ERC-6551 registry at its canonical address (`0x000000006551c
 - If port 8545 is in use, start `anvil --port 8546` and set `LOCAL_RPC_URL=http://127.0.0.1:8546` for each command.
 - A second run on the same node changes nothing. After a restart of Anvil, the script deploys again.
 
-Optional data for app work: `npm run seed:local` places three bids. `SEED_END=1 npm run seed:local` also moves the chain clock past the end of the auction and settles one shape. After that, the auction is closed; restart Anvil and deploy again for a new auction.
+Optional data for app work: `yarn seed:local` places three bids. `SEED_END=1 yarn seed:local` also moves the chain clock past the end of the auction and settles one shape. After that, the auction is closed; restart Anvil and deploy again for a new auction.
 
 ### Modules
 
@@ -57,10 +58,10 @@ On Base, the admin multisig grants `ISSUER_ROLE` to the land sale only after the
 
 `packages/server` indexes the auction events and serves the data for the map: an HTTP API and a live stream (SSE). The browser reads only this server for display. It writes through the wallet.
 
-Run it against the local node, after `npm run chain:local`, `npm run deploy:local` and (optional) `npm run seed:local`:
+Run it against the local node, after `yarn chain:local`, `yarn deploy:local` and (optional) `yarn seed:local`:
 
 ```
-npm start -w @gaia/server
+yarn workspace @gaia/server start
 ```
 
 The server keeps all data in memory. At each start it reads all events again from the deploy block (backfill), then it polls the chain about every 2 s. Configuration (environment variables, all optional for the local node):
@@ -83,8 +84,8 @@ Endpoints (types in `packages/core/src/api.ts`; amounts in wei as decimal string
 - `GET /stream?after=<block>:<logIndex>&bidder=`: the live stream. One message per event, with the id `<block>:<logIndex>`. Get a snapshot, then open the stream with `after` = the position of the snapshot. The browser resumes with `Last-Event-ID` after a reconnect. A `reorg` message means: get a new snapshot.
 - `GET /health`: the position and the last block.
 
-Tests: `npm test -w @gaia/server`. The test against Anvil starts its own node on a free port, so it can run next to `npm run chain:local`. It needs `anvil` and the contract build (`npx hardhat compile`); without `anvil` it is skipped.
+Tests: `yarn workspace @gaia/server test`. The test against Anvil starts its own node on a free port, so it can run next to `yarn chain:local`. It needs `anvil` and the contract build (`yarn hardhat compile`); without `anvil` it is skipped.
 
 ## Web app
 
-The web app (`packages/web`) is not written yet. The server is in `packages/server` (see Server) and the shared code in `packages/core`. Run `npm run typecheck` and `npm run test:packages` for all workspace packages.
+The web app (`packages/web`) is not written yet. The server is in `packages/server` (see Server) and the shared code in `packages/core`. Run `yarn typecheck` and `yarn test:packages` for all workspace packages.

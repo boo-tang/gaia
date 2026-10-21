@@ -16,9 +16,9 @@ import { CANONICAL_REGISTRY, ensureRegistry } from "./lib/registry";
 import { grantSaleIssuer } from "./lib/sale-issuer";
 
 /*
- * Deploys all Gaia contracts to a local Anvil node (`npm run chain:local`):
+ * Deploys all Gaia contracts to a local Anvil node (`yarn chain:local`):
  *
- *   npm run deploy:local
+ *   yarn deploy:local
  *
  * 1. Checks that the node answers and has chain ID 31337.
  * 2. Puts the ERC-6551 registry at its canonical address, if that address has no code.
@@ -57,7 +57,7 @@ try {
   const config = connection.networkConfig;
   const url = config.type === "http" ? await config.url.get() : connection.networkName;
   throw new Error(
-    `No node answers at ${url}. Start Anvil with \`npm run chain:local\`, or set LOCAL_RPC_URL.`
+    `No node answers at ${url}. Start Anvil with \`yarn chain:local\`, or set LOCAL_RPC_URL.`
   );
 }
 if (chainId !== CHAIN_ID) {

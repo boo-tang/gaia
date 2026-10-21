@@ -4,10 +4,10 @@ import path from "node:path";
 import { zeroAddress } from "viem";
 
 /*
- * Puts a small amount of data on the local deployment of `npm run deploy:local`, for app work:
+ * Puts a small amount of data on the local deployment of `yarn deploy:local`, for app work:
  *
- *   npm run seed:local               # three bids from Anvil accounts 3, 4 and 5
- *   SEED_END=1 npm run seed:local    # also moves the chain clock past endTime and settles shape 1
+ *   yarn seed:local               # three bids from Anvil accounts 3, 4 and 5
+ *   SEED_END=1 yarn seed:local    # also moves the chain clock past endTime and settles shape 1
  *
  * LOCAL_DEPLOYMENT_ID (default "local") selects deployments/<id>.json, as in deploy-local.ts.
  *
@@ -17,18 +17,18 @@ import { zeroAddress } from "viem";
  */
 
 const OUT_FILE = path.join("deployments", `${process.env.LOCAL_DEPLOYMENT_ID || "local"}.json`);
-if (!fs.existsSync(OUT_FILE)) throw new Error(`No ${OUT_FILE}. Run \`npm run deploy:local\` first.`);
+if (!fs.existsSync(OUT_FILE)) throw new Error(`No ${OUT_FILE}. Run \`yarn deploy:local\` first.`);
 const deployment = JSON.parse(fs.readFileSync(OUT_FILE, "utf8"));
 
 const connection = await network.getOrCreate();
 const { viem, provider } = connection;
 const publicClient = await viem.getPublicClient();
 if ((await publicClient.getChainId()) !== deployment.chainId) {
-  throw new Error(`The node is not the chain of ${OUT_FILE}. Run \`npm run deploy:local\`.`);
+  throw new Error(`The node is not the chain of ${OUT_FILE}. Run \`yarn deploy:local\`.`);
 }
 const auctionAddress = deployment.contracts.GaiaAuction as `0x${string}`;
 if ((await publicClient.getCode({ address: auctionAddress })) === undefined) {
-  throw new Error(`No auction at ${auctionAddress}. Run \`npm run deploy:local\` on this node.`);
+  throw new Error(`No auction at ${auctionAddress}. Run \`yarn deploy:local\` on this node.`);
 }
 const auction = await viem.getContractAt("GaiaAuction", auctionAddress);
 const wallets = await viem.getWalletClients();

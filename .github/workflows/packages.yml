@@ -24,25 +24,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Corepack gives the Yarn version of `packageManager` in package.json.
+      - name: Enable Corepack
+        run: corepack enable
+
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-          cache: npm
+          cache: yarn
 
       - name: Install Foundry (Anvil)
         uses: foundry-rs/foundry-toolchain@v1
 
       - name: Install
-        run: npm ci
+        run: yarn install --immutable
 
       - name: Compile contracts
-        run: npx hardhat compile
+        run: yarn hardhat compile
 
       - name: Type check
-        run: npm run typecheck
+        run: yarn typecheck
 
       - name: Tests
-        run: npm run test:packages
+        run: yarn test:packages
 
       - name: Check the ABI files
-        run: npm run abis:check -w @gaia/core
+        run: yarn workspace @gaia/core abis:check

@@ -25,7 +25,7 @@ export default defineConfig({
     },
   },
   // `default` runs tests and scripts in-process. `node` is the chain `hardhat node` serves.
-  // `anvil` is a local Anvil node (`npm run chain:local`), which `npm run deploy:local` deploys to.
+  // `anvil` is a local Anvil node (`yarn chain:local`), which `yarn deploy:local` deploys to.
   networks: {
     default: {
       type: "edr-simulated",
