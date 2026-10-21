@@ -1,4 +1,4 @@
-// Types of the server API (apps/server), which the web app and the server share.
+// Types of the server API (packages/server), which the web app and the server share.
 //
 // JSON has no bigint: wei amounts, shape IDs and country IDs are decimal strings. A square ID is
 // the packed value `(lat << 16) | lng` of the contracts (see grid.ts).

@@ -55,7 +55,7 @@ On Base, the admin multisig grants `ISSUER_ROLE` to the land sale only after the
 
 ## Server
 
-`apps/server` indexes the auction events and serves the data for the map: an HTTP API and a live stream (SSE). The browser reads only this server for display. It writes through the wallet.
+`packages/server` indexes the auction events and serves the data for the map: an HTTP API and a live stream (SSE). The browser reads only this server for display. It writes through the wallet.
 
 Run it against the local node, after `npm run chain:local`, `npm run deploy:local` and (optional) `npm run seed:local`:
 
@@ -87,4 +87,4 @@ Tests: `npm test -w @gaia/server`. The test against Anvil starts its own node on
 
 ## Web app
 
-The web app (`apps/web`) and the server (`apps/server`) are not written yet. Shared code is in `packages/core`. Run `npm run typecheck` and `npm run test:packages` for all workspace packages.
+The web app (`packages/web`) is not written yet. The server is in `packages/server` (see Server) and the shared code in `packages/core`. Run `npm run typecheck` and `npm run test:packages` for all workspace packages.

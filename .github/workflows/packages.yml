@@ -1,4 +1,4 @@
-# Type check and tests of the workspace packages (packages/*, apps/*). Also checks that the ABI
+# Type check and tests of the workspace packages (packages/*). Also checks that the ABI
 # files in packages/core are the same as the contract build. The server test against Anvil needs
 # Foundry and the contract build.
 name: Packages

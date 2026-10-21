@@ -7,7 +7,6 @@
     "node": ">=22.23.4"
   },
   "workspaces": [
-    "apps/*",
     "packages/*"
   ],
   "scripts": {
