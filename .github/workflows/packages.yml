@@ -1,5 +1,6 @@
-# Type check and unit tests of the workspace packages (packages/*, apps/*). Also checks that the
-# ABI files in packages/core are the same as the contract build.
+# Type check and tests of the workspace packages (packages/*, apps/*). Also checks that the ABI
+# files in packages/core are the same as the contract build. The server test against Anvil needs
+# Foundry and the contract build.
 name: Packages
 
 on:
@@ -28,17 +29,20 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
+      - name: Install Foundry (Anvil)
+        uses: foundry-rs/foundry-toolchain@v1
+
       - name: Install
         run: npm ci
+
+      - name: Compile contracts
+        run: npx hardhat compile
 
       - name: Type check
         run: npm run typecheck
 
-      - name: Unit tests
+      - name: Tests
         run: npm run test:packages
-
-      - name: Compile contracts
-        run: npx hardhat compile
 
       - name: Check the ABI files
         run: npm run abis:check -w @gaia/core
