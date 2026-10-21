@@ -1,6 +1,6 @@
 # How land works now
 
-This is a plain-language guide to the live token model after the ERC-6551 country-account work. It uses one small map and follows those squares through auction, split, sale, and later growth.
+This is a plain-language guide to the token model. It uses one small map and follows those squares through auction, split, sale, and later growth.
 
 Coordinates here are examples only. The contracts use integer latitude and longitude.
 
