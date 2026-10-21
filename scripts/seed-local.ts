@@ -9,12 +9,14 @@ import { zeroAddress } from "viem";
  *   npm run seed:local               # three bids from Anvil accounts 3, 4 and 5
  *   SEED_END=1 npm run seed:local    # also moves the chain clock past endTime and settles shape 1
  *
+ * LOCAL_DEPLOYMENT_ID (default "local") selects deployments/<id>.json, as in deploy-local.ts.
+ *
  * Only for a local node. A second run skips the bids that are already there and a shape that is
  * already settled. After SEED_END=1 the auction is closed and the land sale is open; restart
  * Anvil and deploy again for a new auction.
  */
 
-const OUT_FILE = path.join("deployments", "local.json");
+const OUT_FILE = path.join("deployments", `${process.env.LOCAL_DEPLOYMENT_ID || "local"}.json`);
 if (!fs.existsSync(OUT_FILE)) throw new Error(`No ${OUT_FILE}. Run \`npm run deploy:local\` first.`);
 const deployment = JSON.parse(fs.readFileSync(OUT_FILE, "utf8"));
 

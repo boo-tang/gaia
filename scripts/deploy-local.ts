@@ -28,17 +28,21 @@ import { grantSaleIssuer } from "./lib/sale-issuer";
  * 4. Grants ISSUER_ROLE to the land sale, from the admin account.
  * 5. Writes deployments/local.json with all addresses.
  *
+ * LOCAL_DEPLOYMENT_ID (default "local") changes the names of the deployment files, for example
+ * for a test node next to the normal one: deployments/<id>.json, deployments/<id>.parameters.json
+ * and ignition/deployments/<id>.
+ *
  * A second run on the same node resumes the Ignition deployment with the same parameters and
  * changes nothing. A run on a new node (a new genesis block) removes the old local deployment
  * files and deploys again.
  */
 
 const CHAIN_ID = 31337;
-const DEPLOYMENT_ID = "local";
+const DEPLOYMENT_ID = process.env.LOCAL_DEPLOYMENT_ID || "local";
 const IGNITION_DIR = path.join("ignition", "deployments", DEPLOYMENT_ID);
-const OUT_FILE = path.join("deployments", "local.json");
+const OUT_FILE = path.join("deployments", `${DEPLOYMENT_ID}.json`);
 // The parameters of the last deployment, with the genesis block hash of its node.
-const STATE_FILE = path.join("deployments", "local.parameters.json");
+const STATE_FILE = path.join("deployments", `${DEPLOYMENT_ID}.parameters.json`);
 
 type State = { genesisHash: string; deployBlock: string; parameters: DeploymentParameters };
 
@@ -66,7 +70,7 @@ const publicClient = await viem.getPublicClient();
 const genesisHash = (await publicClient.getBlock({ blockNumber: 0n })).hash;
 let state = readState();
 if (state !== undefined && state.genesisHash === genesisHash && fs.existsSync(IGNITION_DIR)) {
-  console.log(`Resuming the deployment on this node (deployments/local.parameters.json).`);
+  console.log(`Resuming the deployment on this node (${STATE_FILE}).`);
 } else {
   if (fs.existsSync(IGNITION_DIR) || state !== undefined) {
     console.log("The local deployment files are from another node. Removing them.");
