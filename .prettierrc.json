@@ -6,6 +6,6 @@
   "importOrder": ["^@gaia/(.*)$", "<THIRD_PARTY_MODULES>", "^\\./|\\.\\./"],
   "importOrderSeparation": true,
   "importOrderSortSpecifiers": true,
-  "importOrderParserPlugins": ["importAssertions", "typescript", "decorators", "explicitResourceManagement"],
+  "importOrderParserPlugins": ["importAssertions", "typescript", "jsx", "decorators", "explicitResourceManagement"],
   "plugins": ["@trivago/prettier-plugin-sort-imports"]
 }

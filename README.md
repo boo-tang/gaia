@@ -88,4 +88,34 @@ Tests: `yarn workspace @gaia/server test`. The test against Anvil starts its own
 
 ## Web app
 
-The web app (`packages/web`) is not written yet. The server is in `packages/server` (see Server) and the shared code in `packages/core`. Run `yarn lint`, `yarn typecheck` and `yarn test:packages` for all workspace packages. `yarn format` runs Prettier on the whole repository.
+`packages/web` is the web app: React, Vite, wagmi, RainbowKit and TanStack Query. It shows only the data of the server (see Server) and writes through the wallet. The shared code is in `packages/core`.
+
+Run it against the local node, each command in its own terminal:
+
+```
+yarn chain:local
+yarn deploy:local
+yarn seed:local
+yarn workspace @gaia/server start
+yarn workspace @gaia/web dev
+```
+
+Then open http://localhost:5173. In development, Vite sends `/api/*` to the server (the server has no CORS). To connect on Anvil, use a browser wallet (for example MetaMask or Rabby) with an Anvil account key and the network `http://127.0.0.1:8545`, chain ID 31337. Base Account does not work on Anvil.
+
+Configuration: copy `packages/web/.env.example` to `packages/web/.env.local`. All variables are optional for the local node.
+
+| Variable | Default | Use |
+| --- | --- | --- |
+| `DEPLOYMENT_FILE` | `deployments/local.json` | The deployment file (a relative path starts at the repository root). Its chain ID selects the chain of the app: 31337 (Anvil) or 84532 (Base Sepolia). A missing or wrong file stops `dev` and `build`. |
+| `API_PROXY_TARGET` | `http://localhost:8787` | Development only: the server for `/api/*`. |
+| `VITE_API_URL` | `/api` | The API base URL in the browser. A production build sets the URL of the server. |
+| `VITE_RPC_URL` | `http://127.0.0.1:8545` on Anvil | The RPC URL of the chain. Required for Base Sepolia. |
+| `VITE_WALLETCONNECT_PROJECT_ID` | (empty) | The WalletConnect project ID. With no ID, the wallet list has only the browser wallet and Base Account. |
+
+Base Sepolia: set `DEPLOYMENT_FILE` to the Base Sepolia deployment file, `VITE_RPC_URL` and `VITE_API_URL`, then `yarn workspace @gaia/web build`. The files are in `packages/web/dist`.
+
+Layout: on a screen narrower than 768 px, the app shows the view-only layout (map, bidder view, "Withdraw") with no bid panel.
+
+Scripts: `dev`, `build`, `preview`, `typecheck` and `test` (`yarn workspace @gaia/web <script>`). The tests use `packages/web/test/fixtures/deployment.json`, not the local deployment.
+
+Run `yarn lint`, `yarn typecheck` and `yarn test:packages` for all workspace packages. `yarn format` runs Prettier on the whole repository.

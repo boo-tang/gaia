@@ -2,6 +2,8 @@ import js from '@eslint/js';
 import eslintConfigPrettier from 'eslint-config-prettier/flat';
 import importPlugin from 'eslint-plugin-import';
 import noOnlyTests from 'eslint-plugin-no-only-tests';
+import reactPlugin from 'eslint-plugin-react';
+import reactHooks from 'eslint-plugin-react-hooks';
 import { globalIgnores } from 'eslint/config';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
@@ -9,7 +11,14 @@ import tseslint from 'typescript-eslint';
 import noNonPrimitiveInCollections from './eslint-rules/no-non-primitive-in-collections.js';
 
 // Only the workspace packages are linted. The root Hardhat tests and scripts are not.
-const PACKAGE_FILES = ['packages/*/{src,test,scripts}/**/*.ts'];
+const PACKAGE_FILES = ['packages/*/{src,test,scripts}/**/*.{ts,tsx}', 'packages/*/*.ts'];
+// The browser code of the web app. Its Vite config and plugin run in Node.
+const WEB_FILES = ['packages/web/{src,test}/**/*.{ts,tsx}'];
+
+const NO_DIST_IMPORTS = {
+  group: ['dist'],
+  message: 'You should not be importing from a build directory. Did you accidentally do a relative import?',
+};
 
 export default [
   globalIgnores(['**/node_modules/**', '**/dist/**', '*.js', 'packages/core/src/abis/**']),
@@ -80,12 +89,7 @@ export default [
       'no-restricted-imports': [
         'error',
         {
-          patterns: [
-            {
-              group: ['dist'],
-              message: 'You should not be importing from a build directory. Did you accidentally do a relative import?',
-            },
-          ],
+          patterns: [NO_DIST_IMPORTS],
         },
       ],
       'import/no-unresolved': 'error',
@@ -95,4 +99,51 @@ export default [
       'gaia-custom/no-non-primitive-in-collections': 'error',
     },
   }),
+  {
+    files: WEB_FILES,
+    ...reactPlugin.configs.flat.recommended,
+    ...reactPlugin.configs.flat['jsx-runtime'],
+    ...reactHooks.configs.flat.recommended,
+    plugins: {
+      react: reactPlugin,
+      'react-hooks': reactHooks,
+    },
+    settings: {
+      react: { version: 'detect' },
+      // The Vite plugin in packages/web/deployment-plugin.ts makes this module.
+      'import/core-modules': ['virtual:gaia-deployment'],
+    },
+    languageOptions: {
+      ...reactPlugin.configs.flat.recommended.languageOptions,
+      globals: {
+        ...globals.browser,
+      },
+    },
+    rules: {
+      ...reactPlugin.configs.flat.recommended.rules,
+      ...reactPlugin.configs.flat['jsx-runtime'].rules,
+      ...reactHooks.configs.flat.recommended.rules,
+      // TypeScript checks the props.
+      'react/prop-types': 'off',
+      // Only src/wallet/ knows the wallet kit. The rest of the app uses wagmi hooks.
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            NO_DIST_IMPORTS,
+            {
+              group: ['@rainbow-me/rainbowkit', '@rainbow-me/rainbowkit/*'],
+              message: 'Use wagmi hooks. Only packages/web/src/wallet/ uses the wallet kit.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['packages/web/src/wallet/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [NO_DIST_IMPORTS] }],
+    },
+  },
 ];

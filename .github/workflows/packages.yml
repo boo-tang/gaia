@@ -1,6 +1,7 @@
 # Lint, type check and tests of the workspace packages (packages/*), and the Prettier check of the
 # whole repository. Also checks that the ABI files in packages/core are the same as the contract
-# build. The server test against Anvil needs Foundry and the contract build.
+# build, and builds the web app with a fixture deployment file (deployments/ is not in git). The
+# server test against Anvil needs Foundry and the contract build.
 name: Packages
 
 on:
@@ -56,3 +57,8 @@ jobs:
 
       - name: Check the ABI files
         run: yarn workspace @gaia/core abis:check
+
+      - name: Build the web app
+        run: yarn workspace @gaia/web build
+        env:
+          DEPLOYMENT_FILE: packages/web/test/fixtures/deployment.json

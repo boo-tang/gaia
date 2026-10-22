@@ -13,3 +13,8 @@ deployments/
 !.yarn/patches
 !.yarn/releases
 .pnp.*
+
+# Local env files of the web app (packages/web/.env.example is in git)
+.env
+.env.*
+!.env.example
