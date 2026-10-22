@@ -3,10 +3,10 @@
 import { parseDeployment } from '@gaia/core';
 import fs from 'node:fs';
 
-import { loadConfig } from './config';
-import { startServer } from './server';
+import { loadServerConfig } from './server-config';
+import { startServer } from './start-server';
 
-const config = loadConfig();
+const config = loadServerConfig();
 if (!fs.existsSync(config.deploymentFile)) {
   throw new Error(`No deployment file at ${config.deploymentFile}. Run \`yarn deploy:local\`, or set DEPLOYMENT_FILE.`);
 }

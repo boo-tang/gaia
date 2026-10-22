@@ -16,16 +16,16 @@
 import type { Address } from '@gaia/core';
 import type { PublicClient } from 'viem';
 
-import { blockHashAt, fetchAuctionEvents, type ChainEvent } from '../chain';
-import type { Hub } from '../live';
-import { UndoTooDeepError, type AuctionStore } from '../store/auction-store';
-import type { AuctionEvent } from './events';
-import { reduceBlock } from './reducer';
+import { readBlockHash, fetchAuctionEvents, type AuctionEventLog } from '../auction-rpc';
+import type { LiveMessageBus } from '../live-message-bus';
+import { UndoWindowExceededError, type AuctionStore } from '../store/auction-store';
+import type { AuctionEvent } from './auction-events';
+import { reduceAuctionBlock } from './auction-reducer';
 
-export interface IndexerOptions {
+export interface AuctionIndexerOptions {
   client: PublicClient;
   store: AuctionStore;
-  hub: Hub;
+  liveMessageBus: LiveMessageBus;
   auction: Address;
   deployBlock: number;
   logRange: number;
@@ -33,19 +33,19 @@ export interface IndexerOptions {
   log?: (message: string) => void;
 }
 
-export class Indexer {
-  private readonly o: IndexerOptions;
+export class AuctionIndexer {
+  private readonly o: AuctionIndexerOptions;
   private queue: Promise<void> = Promise.resolve();
   private timer: NodeJS.Timeout | undefined;
   private running = false;
 
-  constructor(options: IndexerOptions) {
+  constructor(options: AuctionIndexerOptions) {
     this.o = options;
   }
 
   /** Runs one step of the loop, after the step that runs now (if any). */
   syncOnce(): Promise<void> {
-    const step = this.queue.then(() => this.sync());
+    const step = this.queue.then(() => this.syncToHead());
     this.queue = step.catch(() => undefined);
     return step;
   }
@@ -58,7 +58,7 @@ export class Indexer {
       try {
         await this.syncOnce();
       } catch (error) {
-        this.log(`Indexer step failed: ${error instanceof Error ? error.message : String(error)}`);
+        this.log(`AuctionIndexer step failed: ${error instanceof Error ? error.message : String(error)}`);
       }
       if (this.running) this.timer = setTimeout(tick, this.o.pollIntervalMs);
     };
@@ -76,9 +76,9 @@ export class Indexer {
     (this.o.log ?? console.log)(message);
   }
 
-  private async sync() {
+  private async syncToHead() {
     const { client, store } = this.o;
-    if (await this.reorged()) return;
+    if (await this.undoReorgedBlocks()) return;
 
     const head = Number(await client.getBlockNumber());
     const lastBlock = await store.lastBlock();
@@ -88,7 +88,7 @@ export class Indexer {
     while (from <= head) {
       const to = Math.min(from + this.o.logRange - 1, head);
       const events = await fetchAuctionEvents(client, this.o.auction, from, to);
-      for (const group of groupByBlock(events)) await this.apply(group);
+      for (const group of groupEventLogsByBlock(events)) await this.apply(group);
       from = to + 1;
     }
 
@@ -101,7 +101,7 @@ export class Indexer {
     }
   }
 
-  private async apply(group: ChainEvent[]) {
+  private async apply(group: AuctionEventLog[]) {
     const { blockNumber, blockHash } = group[0];
     let timestamp = group[0].blockTimestamp;
     if (timestamp === undefined) {
@@ -111,40 +111,40 @@ export class Indexer {
   }
 
   private async applyBlock(number: number, hash: `0x${string}`, timestamp: number, events: AuctionEvent[]) {
-    const changes = await reduceBlock(this.o.store, { block: { number, hash }, timestamp, events });
+    const changes = await reduceAuctionBlock(this.o.store, { block: { number, hash }, timestamp, events });
     await this.o.store.applyBlock(changes);
-    this.o.hub.publish(changes.messages);
+    this.o.liveMessageBus.publish(changes.messages);
   }
 
   // True when the chain no longer has the last applied block. Then undoes the dropped blocks.
-  private async reorged(): Promise<boolean> {
-    const { client, store, hub } = this.o;
+  private async undoReorgedBlocks(): Promise<boolean> {
+    const { client, store, liveMessageBus } = this.o;
     const lastBlock = await store.lastBlock();
     if (lastBlock === undefined) return false;
-    if ((await blockHashAt(client, lastBlock.number)) === lastBlock.hash) return false;
+    if ((await readBlockHash(client, lastBlock.number)) === lastBlock.hash) return false;
 
     for (const block of await store.recentBlocks()) {
-      if ((await blockHashAt(client, block.number)) !== block.hash) continue;
+      if ((await readBlockHash(client, block.number)) !== block.hash) continue;
       try {
         await store.undoAfter(block.number);
         this.log(`Reorg: undid the blocks after ${block.number}.`);
       } catch (error) {
-        if (!(error instanceof UndoTooDeepError)) throw error;
+        if (!(error instanceof UndoWindowExceededError)) throw error;
         await store.reset();
         this.log('Reorg deeper than the undo window: cleared the store, backfill again.');
       }
-      hub.publish([{ type: 'reorg', lastEventId: await store.lastEventId() }]);
+      liveMessageBus.publish([{ type: 'reorg', lastEventId: await store.lastEventId() }]);
       return true;
     }
     await store.reset();
     this.log('Reorg deeper than the undo window: cleared the store, backfill again.');
-    hub.publish([{ type: 'reorg', lastEventId: await store.lastEventId() }]);
+    liveMessageBus.publish([{ type: 'reorg', lastEventId: await store.lastEventId() }]);
     return true;
   }
 }
 
-const groupByBlock = (events: ChainEvent[]): ChainEvent[][] => {
-  const groups: ChainEvent[][] = [];
+const groupEventLogsByBlock = (events: AuctionEventLog[]): AuctionEventLog[][] => {
+  const groups: AuctionEventLog[][] = [];
   for (const event of events) {
     const last = groups[groups.length - 1];
     if (last !== undefined && last[0].blockNumber === event.blockNumber) last.push(event);

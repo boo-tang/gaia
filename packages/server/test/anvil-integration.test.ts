@@ -31,9 +31,9 @@ import { createPublicClient, createWalletClient, getAddress, http, zeroAddress, 
 import { mnemonicToAccount } from 'viem/accounts';
 import { anvil } from 'viem/chains';
 
-import { loadConfig } from '../src/config';
-import { startServer, type RunningServer } from '../src/server';
-import { SseReader } from './sse';
+import { loadServerConfig } from '../src/server-config';
+import { startServer, type RunningServer } from '../src/start-server';
+import { SseReader } from './sse-reader';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const MNEMONIC = 'test test test test test test test test test test test junk';
@@ -81,7 +81,7 @@ describe.skipIf(!hasAnvil)('server against Anvil', { timeout: 30_000 }, () => {
   const env = () => ({ ...process.env, LOCAL_RPC_URL: rpcUrl, LOCAL_DEPLOYMENT_ID: deploymentId });
   const start = async () =>
     startServer(
-      { ...loadConfig({ RPC_URLS: rpcUrl, PORT: '0', POLL_INTERVAL_MS: '100', LOG_RANGE: '5' }) },
+      { ...loadServerConfig({ RPC_URLS: rpcUrl, PORT: '0', POLL_INTERVAL_MS: '100', LOG_RANGE: '5' }) },
       deployment,
       () => undefined,
     );

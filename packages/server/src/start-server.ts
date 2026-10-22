@@ -5,11 +5,11 @@ import { serve, type ServerType } from '@hono/node-server';
 import type { Deployment } from '@gaia/core';
 import type { AddressInfo } from 'node:net';
 
-import { createApp } from './api/app';
-import { createClient, readRefund, readRules } from './chain';
-import type { Config } from './config';
-import { Indexer } from './indexer/indexer';
-import { Hub } from './live';
+import { createHttpApi } from './api/http-api';
+import { createRpcClient, readBidderRefund, readAuctionRules } from './auction-rpc';
+import type { ServerConfig } from './server-config';
+import { AuctionIndexer } from './indexer/auction-indexer';
+import { LiveMessageBus } from './live-message-bus';
 import type { AuctionStore } from './store/auction-store';
 import { MemoryAuctionStore } from './store/memory-auction-store';
 
@@ -17,34 +17,34 @@ export interface RunningServer {
   /** The base URL of the HTTP API. */
   url: string;
   store: AuctionStore;
-  indexer: Indexer;
-  hub: Hub;
+  indexer: AuctionIndexer;
+  liveMessageBus: LiveMessageBus;
   /** Stops the polls and the HTTP server. Open streams are closed. */
   close(): Promise<void>;
 }
 
 export const startServer = async (
-  config: Config,
+  config: ServerConfig,
   deployment: Deployment,
   log: (message: string) => void = console.log,
 ): Promise<RunningServer> => {
-  const client = createClient(config.rpcUrls);
+  const client = createRpcClient(config.rpcUrls);
   const chainId = await client.getChainId();
   if (chainId !== deployment.chainId) {
     throw new Error(`The RPC has chain ID ${chainId}, but the deployment file is for chain ${deployment.chainId}.`);
   }
   const auction = deployment.contracts.GaiaAuction;
-  const rules = await readRules(client, deployment);
+  const rules = await readAuctionRules(client, deployment);
 
   const store = new MemoryAuctionStore({
     status: { endTime: deployment.auction.endTime, paused: false, cancelled: false },
     undoDepth: config.reorgDepth,
   });
-  const hub = new Hub();
-  const indexer = new Indexer({
+  const liveMessageBus = new LiveMessageBus();
+  const indexer = new AuctionIndexer({
     client,
     store,
-    hub,
+    liveMessageBus,
     auction,
     deployBlock: deployment.deployBlock,
     logRange: config.logRange,
@@ -58,11 +58,11 @@ export const startServer = async (
   log(`Backfill done in ${Date.now() - started} ms: at block ${(await store.lastBlock())?.number}.`);
   indexer.start();
 
-  const app = createApp({
+  const app = createHttpApi({
     store,
-    hub,
+    liveMessageBus,
     rules,
-    refundOf: (bidder, cancelled) => readRefund(client, auction, bidder, cancelled),
+    refundOf: (bidder, cancelled) => readBidderRefund(client, auction, bidder, cancelled),
     maxSnapshotBids: config.maxSnapshotBids,
   });
   const server: ServerType = await new Promise((resolve) => {
@@ -76,7 +76,7 @@ export const startServer = async (
     url,
     store,
     indexer,
-    hub,
+    liveMessageBus,
     close: async () => {
       await indexer.stop();
       await new Promise<void>((resolve) => {

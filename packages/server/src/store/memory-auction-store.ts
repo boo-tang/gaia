@@ -13,15 +13,15 @@ import {
 } from '@gaia/core';
 
 import {
-  messageMatches,
-  UndoTooDeepError,
+  matchesStreamMessageFilter,
+  UndoWindowExceededError,
   type AuctionStore,
-  type BlockChanges,
-  type BlockRef,
-  type MessageFilter,
+  type AuctionBlockChanges,
+  type BlockNumberAndHash,
+  type StreamMessageFilter,
   type StoredBidderView,
   type StoredShape,
-  type StoredSquare,
+  type StoredSquareBid,
 } from './auction-store';
 
 export interface MemoryAuctionStoreOptions {
@@ -36,24 +36,24 @@ export interface MemoryAuctionStoreOptions {
  * An undefined square or shape did not exist before the block.
  */
 interface AppliedBlock {
-  block: BlockRef;
+  block: BlockNumberAndHash;
   before: {
     lastEventId: EventId | undefined;
     status: AuctionStatus;
-    squares: Map<number, StoredSquare | undefined>;
+    squares: Map<number, StoredSquareBid | undefined>;
     shapes: Map<number, StoredShape | undefined>;
     messageCount: number;
   };
 }
 
-const key = (address: Address) => address.toLowerCase();
+const addressKey = (address: Address) => address.toLowerCase();
 
 export class MemoryAuctionStore implements AuctionStore {
   private readonly options: MemoryAuctionStoreOptions;
   private currentLastEventId: EventId | undefined;
   private currentStatus: AuctionStatus;
-  private currentLastBlock: BlockRef | undefined;
-  private readonly squareMap = new Map<number, StoredSquare>();
+  private currentLastBlock: BlockNumberAndHash | undefined;
+  private readonly squareMap = new Map<number, StoredSquareBid>();
   private readonly shapeMap = new Map<number, StoredShape>();
   // Indexes: the held squares of each shape, and the shapes of each bidder.
   private readonly heldSquareIds = new Map<number, Set<number>>();
@@ -62,7 +62,7 @@ export class MemoryAuctionStore implements AuctionStore {
   // The last `undoDepth` applied blocks, oldest first.
   private appliedBlocks: AppliedBlock[] = [];
   // The newest block that left `appliedBlocks`. It cannot be undone.
-  private droppedBlock: BlockRef | undefined;
+  private droppedBlock: BlockNumberAndHash | undefined;
 
   constructor(options: MemoryAuctionStoreOptions) {
     this.options = options;
@@ -81,7 +81,7 @@ export class MemoryAuctionStore implements AuctionStore {
     return this.appliedBlocks.map((a) => a.block).reverse();
   }
 
-  async applyBlock(changes: BlockChanges) {
+  async applyBlock(changes: AuctionBlockChanges) {
     if (this.currentLastBlock !== undefined && changes.block.number <= this.currentLastBlock.number) {
       throw new Error(`Block ${changes.block.number} is not after block ${this.currentLastBlock.number}.`);
     }
@@ -118,7 +118,7 @@ export class MemoryAuctionStore implements AuctionStore {
 
   async undoAfter(block: number) {
     if (this.currentLastBlock === undefined || this.currentLastBlock.number <= block) return;
-    if (this.droppedBlock !== undefined && this.droppedBlock.number > block) throw new UndoTooDeepError(block);
+    if (this.droppedBlock !== undefined && this.droppedBlock.number > block) throw new UndoWindowExceededError(block);
     while (this.appliedBlocks.length > 0 && this.appliedBlocks[this.appliedBlocks.length - 1].block.number > block) {
       const { before } = this.appliedBlocks.pop() as AppliedBlock;
       for (const [squareId, square] of before.squares) this.setSquare(squareId, square);
@@ -145,7 +145,7 @@ export class MemoryAuctionStore implements AuctionStore {
   }
 
   async squares(squareIds: readonly number[]) {
-    const result: StoredSquare[] = [];
+    const result: StoredSquareBid[] = [];
     for (const id of squareIds) {
       const square = this.squareMap.get(id);
       if (square !== undefined) result.push(square);
@@ -192,7 +192,7 @@ export class MemoryAuctionStore implements AuctionStore {
   }
 
   async bidder(address: Address): Promise<StoredBidderView> {
-    const ids = [...(this.bidderShapes.get(key(address)) ?? [])].sort((a, b) => a - b);
+    const ids = [...(this.bidderShapes.get(addressKey(address)) ?? [])].sort((a, b) => a - b);
     const shapes: Shape[] = ids.map((id) => {
       const shape = this.shapeMap.get(id) as StoredShape;
       const held = this.heldSquareIds.get(id) ?? new Set<number>();
@@ -207,12 +207,12 @@ export class MemoryAuctionStore implements AuctionStore {
       };
     });
     const history = this.messages.filter(
-      (m) => m.type !== 'auctionStatus' && messageMatches(m, { bidder: address }),
+      (m) => m.type !== 'auctionStatus' && matchesStreamMessageFilter(m, { bidder: address }),
     );
     return { lastEventId: this.currentLastEventId, bidder: address, shapes, history };
   }
 
-  async messagesAfter(after: EventId | undefined, filter: MessageFilter = {}) {
+  async messagesAfter(after: EventId | undefined, filter: StreamMessageFilter = {}) {
     // Binary search for the first message after `after`.
     let lo = 0;
     let hi = this.messages.length;
@@ -224,10 +224,10 @@ export class MemoryAuctionStore implements AuctionStore {
         else lo = mid + 1;
       }
     }
-    return this.messages.slice(lo).filter((m) => messageMatches(m, filter));
+    return this.messages.slice(lo).filter((m) => matchesStreamMessageFilter(m, filter));
   }
 
-  private setSquare(squareId: number, square: StoredSquare | undefined) {
+  private setSquare(squareId: number, square: StoredSquareBid | undefined) {
     const old = this.squareMap.get(squareId);
     if (old !== undefined) this.heldSquareIds.get(old.shapeId)?.delete(squareId);
     if (square === undefined) {
@@ -247,14 +247,14 @@ export class MemoryAuctionStore implements AuctionStore {
     const old = this.shapeMap.get(shapeId);
     if (shape === undefined) {
       this.shapeMap.delete(shapeId);
-      if (old !== undefined) this.bidderShapes.get(key(old.bidder))?.delete(shapeId);
+      if (old !== undefined) this.bidderShapes.get(addressKey(old.bidder))?.delete(shapeId);
       return;
     }
     this.shapeMap.set(shapeId, shape);
-    let set = this.bidderShapes.get(key(shape.bidder));
+    let set = this.bidderShapes.get(addressKey(shape.bidder));
     if (set === undefined) {
       set = new Set();
-      this.bidderShapes.set(key(shape.bidder), set);
+      this.bidderShapes.set(addressKey(shape.bidder), set);
     }
     set.add(shapeId);
   }

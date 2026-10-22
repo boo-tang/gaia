@@ -1,6 +1,6 @@
 // A small SSE reader for the tests: reads messages from a stream response.
 
-export interface SseEvent {
+export interface ParsedSseMessage {
   id: string | undefined;
   event: string | undefined;
   data: string;
@@ -19,14 +19,14 @@ export class SseReader {
   }
 
   /** The next message. Fails after `timeoutMs`. */
-  async next(timeoutMs = 5000): Promise<SseEvent> {
+  async next(timeoutMs = 5000): Promise<ParsedSseMessage> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       const end = this.buffer.indexOf('\n\n');
       if (end !== -1) {
         const block = this.buffer.slice(0, end);
         this.buffer = this.buffer.slice(end + 2);
-        const event = parse(block);
+        const event = parseSseBlock(block);
         if (event === undefined) {
           this.heartbeats++;
           continue;
@@ -60,7 +60,7 @@ export class SseReader {
 }
 
 // One SSE block. Returns undefined for a block with only comments.
-const parse = (block: string): SseEvent | undefined => {
+const parseSseBlock = (block: string): ParsedSseMessage | undefined => {
   let id: string | undefined;
   let event: string | undefined;
   const data: string[] = [];

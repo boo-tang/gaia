@@ -9,7 +9,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 
 const positiveInt = z.coerce.number().int().positive();
 
-const envSchema = z.object({
+const serverEnvSchema = z.object({
   /**
    * The RPC URLs, separated by commas. The first is the main provider; the others are fallbacks
    * (viem `fallback` transport), in this order.
@@ -38,7 +38,7 @@ const envSchema = z.object({
   MAX_SNAPSHOT_BIDS: positiveInt.default(50_000),
 });
 
-export type Config = {
+export type ServerConfig = {
   rpcUrls: string[];
   deploymentFile: string;
   port: number;
@@ -49,8 +49,8 @@ export type Config = {
 };
 
 /** Reads the configuration. Throws an error that names each wrong variable. */
-export const loadConfig = (env: NodeJS.ProcessEnv = process.env): Config => {
-  const result = envSchema.safeParse(env);
+export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerConfig => {
+  const result = serverEnvSchema.safeParse(env);
   if (!result.success) {
     const problems = result.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`);
     throw new Error(`Invalid server configuration:\n  ${problems.join('\n  ')}`);

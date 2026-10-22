@@ -2,12 +2,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Address, AuctionRules, AuctionStatus, BidderView, StreamMessage } from '@gaia/core';
 import type { Hex } from 'viem';
 
-import { createApp } from '../src/api/app';
-import type { AuctionEvent } from '../src/indexer/events';
-import { reduceBlock } from '../src/indexer/reducer';
-import { Hub } from '../src/live';
+import { createHttpApi } from '../src/api/http-api';
+import type { AuctionEvent } from '../src/indexer/auction-events';
+import { reduceAuctionBlock } from '../src/indexer/auction-reducer';
+import { LiveMessageBus } from '../src/live-message-bus';
 import { MemoryAuctionStore } from '../src/store/memory-auction-store';
-import { SseReader } from './sse';
+import { SseReader } from './sse-reader';
 
 const ALICE: Address = '0x00000000000000000000000000000000000A11cE';
 const BOB: Address = '0x0000000000000000000000000000000000000B0b';
@@ -34,11 +34,11 @@ const bid = (logIndex: number, shapeId: bigint, bidder: Address, squares: number
 
 const setup = async () => {
   const store = new MemoryAuctionStore({ status: STATUS, undoDepth: 10 });
-  const hub = new Hub();
+  const liveMessageBus = new LiveMessageBus();
   const refunds: [Address, boolean][] = [];
-  const app = createApp({
+  const app = createHttpApi({
     store,
-    hub,
+    liveMessageBus,
     rules: RULES,
     refundOf: async (bidder, cancelled) => {
       refunds.push([bidder, cancelled]);
@@ -49,11 +49,11 @@ const setup = async () => {
   });
   // As the indexer: apply a block, then publish its messages.
   const apply = async (number: number, events: AuctionEvent[]) => {
-    const changes = await reduceBlock(store, { block: { number, hash: hash(number) }, timestamp: 100 + number, events });
+    const changes = await reduceAuctionBlock(store, { block: { number, hash: hash(number) }, timestamp: 100 + number, events });
     await store.applyBlock(changes);
-    hub.publish(changes.messages);
+    liveMessageBus.publish(changes.messages);
   };
-  return { store, hub, app, apply, refunds };
+  return { store, liveMessageBus, app, apply, refunds };
 };
 
 const readers: SseReader[] = [];
@@ -202,14 +202,14 @@ describe('API', () => {
   });
 
   it('GET /stream sends a reorg message, live and to a client that is ahead', async () => {
-    const { app, apply, store, hub } = await setup();
+    const { app, apply, store, liveMessageBus } = await setup();
     await apply(5, [bid(0, 1n, ALICE, [sq(1, 1)], 1000n)]);
     await apply(6, [bid(0, 2n, BOB, [sq(1, 1)], 2000n)]);
     const stream = await open(app, '/stream?after=6:0');
 
     // The indexer undoes block 6 and publishes the reorg; then the new block 6 comes.
     await store.undoAfter(5);
-    hub.publish([{ type: 'reorg', lastEventId: await store.lastEventId() }]);
+    liveMessageBus.publish([{ type: 'reorg', lastEventId: await store.lastEventId() }]);
     await apply(6, [bid(0, 2n, ALICE, [sq(1, 2)], 1000n)]);
     const [reorg, replacement] = await stream.json<StreamMessage>(2);
     expect(reorg).toEqual({ type: 'reorg', lastEventId: { block: 5, logIndex: 0 } });
@@ -223,14 +223,14 @@ describe('API', () => {
   });
 
   it('removes the listener when the client closes the stream', async () => {
-    const { app, hub, apply } = await setup();
+    const { app, liveMessageBus, apply } = await setup();
     const stream = await open(app, '/stream');
     await apply(5, [bid(0, 1n, ALICE, [sq(1, 1)], 1000n)]);
     await stream.next();
-    expect(hub.size).toBe(1);
+    expect(liveMessageBus.size).toBe(1);
     await stream.close();
     readers.length = 0;
     await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(hub.size).toBe(0);
+    expect(liveMessageBus.size).toBe(0);
   });
 });

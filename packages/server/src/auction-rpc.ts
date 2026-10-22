@@ -4,10 +4,10 @@
 import { gaiaAuctionAbi, type Address, type AuctionRules, type Deployment } from '@gaia/core';
 import { BlockNotFoundError, createPublicClient, fallback, http, type Hex, type PublicClient } from 'viem';
 
-import { AUCTION_EVENT_NAMES, type AuctionEvent } from './indexer/events';
+import { AUCTION_EVENT_NAMES, type AuctionEvent } from './indexer/auction-events';
 
 /** One client for all RPC URLs: the first is the main provider, the others are fallbacks. */
-export const createClient = (rpcUrls: string[]): PublicClient =>
+export const createRpcClient = (rpcUrls: string[]): PublicClient =>
   createPublicClient({
     // viem keeps the block number for `cacheTime` (default 4 s). The indexer polls more often.
     cacheTime: 0,
@@ -15,7 +15,7 @@ export const createClient = (rpcUrls: string[]): PublicClient =>
   });
 
 /** Reads the constructor values of the auction. They never change, so the server reads them once. */
-export const readRules = async (client: PublicClient, deployment: Deployment): Promise<AuctionRules> => {
+export const readAuctionRules = async (client: PublicClient, deployment: Deployment): Promise<AuctionRules> => {
   const address = deployment.contracts.GaiaAuction;
   const read = <F extends 'startTime' | 'maxEndTime' | 'extensionWindow' | 'minBidPerSquareWei' | 'minBidIncrementBps' | 'minShapeSquares' | 'maxShapeSquares' | 'maxShapeAspectRatio'>(
     functionName: F,
@@ -47,7 +47,7 @@ export const readRules = async (client: PublicClient, deployment: Deployment): P
 /**
  * What `withdraw` sends to `bidder` now: `pendingReturns`, plus `activeBids` after a cancel.
  */
-export const readRefund = async (client: PublicClient, auction: Address, bidder: Address, cancelled: boolean) => {
+export const readBidderRefund = async (client: PublicClient, auction: Address, bidder: Address, cancelled: boolean) => {
   const pending = await client.readContract({ address: auction, abi: gaiaAuctionAbi, functionName: 'pendingReturns', args: [bidder] });
   if (!cancelled) return pending;
   const bids = await client.readContract({ address: auction, abi: gaiaAuctionAbi, functionName: 'activeBids', args: [bidder] });
@@ -55,7 +55,7 @@ export const readRefund = async (client: PublicClient, auction: Address, bidder:
 };
 
 /** The hash of a block, or undefined when the chain has no such block (for example after a reorg). */
-export const blockHashAt = async (client: PublicClient, number: number): Promise<Hex | undefined> => {
+export const readBlockHash = async (client: PublicClient, number: number): Promise<Hex | undefined> => {
   try {
     return (await client.getBlock({ blockNumber: BigInt(number) })).hash;
   } catch (error) {
@@ -65,7 +65,7 @@ export const blockHashAt = async (client: PublicClient, number: number): Promise
 };
 
 /** An auction event with the block that holds it. */
-export interface ChainEvent {
+export interface AuctionEventLog {
   blockNumber: number;
   blockHash: Hex;
   /** Unix seconds, when the RPC gives it in the log. */
@@ -74,7 +74,7 @@ export interface ChainEvent {
 }
 
 /** The auction events of blocks `from` to `to`, in (block, log index) order. */
-export const fetchAuctionEvents = async (client: PublicClient, auction: Address, from: number, to: number): Promise<ChainEvent[]> => {
+export const fetchAuctionEvents = async (client: PublicClient, auction: Address, from: number, to: number): Promise<AuctionEventLog[]> => {
   const logs = await client.getContractEvents({
     address: auction,
     abi: gaiaAuctionAbi,
@@ -82,7 +82,7 @@ export const fetchAuctionEvents = async (client: PublicClient, auction: Address,
     toBlock: BigInt(to),
     strict: true,
   });
-  const events: ChainEvent[] = [];
+  const events: AuctionEventLog[] = [];
   for (const log of logs) {
     if (!(AUCTION_EVENT_NAMES as readonly string[]).includes(log.eventName)) continue;
     const timestamp = (log as { blockTimestamp?: bigint | Hex }).blockTimestamp;

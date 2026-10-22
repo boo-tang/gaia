@@ -15,13 +15,13 @@ import type {
 import { isAddressEqual, type Hex } from 'viem';
 
 /** A block that the store has applied. */
-export interface BlockRef {
+export interface BlockNumberAndHash {
   number: number;
   hash: Hex;
 }
 
 /** The current highest bid on one square. The bidder is the bidder of the shape. */
-export interface StoredSquare {
+export interface StoredSquareBid {
   squareId: number;
   shapeId: number;
   /** Wei. */
@@ -43,10 +43,10 @@ export interface StoredShape {
 }
 
 /** All changes of one block. The store applies them in one step. */
-export interface BlockChanges {
-  block: BlockRef;
+export interface AuctionBlockChanges {
+  block: BlockNumberAndHash;
   /** The new value of each square that changed. */
-  squares: StoredSquare[];
+  squares: StoredSquareBid[];
   /** The new value of each shape that is new or changed. */
   shapes: StoredShape[];
   /** The new status, if it changed. */
@@ -56,7 +56,7 @@ export interface BlockChanges {
 }
 
 /** A filter for stream messages. */
-export interface MessageFilter {
+export interface StreamMessageFilter {
   /**
    * Only the messages about this bidder (their bids, the squares they lost, their settlements),
    * and all auction status messages.
@@ -68,21 +68,21 @@ export interface MessageFilter {
 export type StoredBidderView = Omit<BidderView, 'refund'>;
 
 export interface AuctionStore {
-  // --- Indexer ---
+  // --- AuctionIndexer ---
 
   /** The ID of the last applied event, or undefined before the first event. */
   lastEventId(): Promise<EventId | undefined>;
   /** The last applied block (also a block with no event), or undefined when there is none. */
-  lastBlock(): Promise<BlockRef | undefined>;
+  lastBlock(): Promise<BlockNumberAndHash | undefined>;
   /**
    * The applied blocks that `undoAfter` can still undo, newest first. The indexer compares
    * their hashes with the chain to find where a reorg starts.
    */
-  recentBlocks(): Promise<BlockRef[]>;
+  recentBlocks(): Promise<BlockNumberAndHash[]>;
   /** Applies the changes, the messages and the block of one block, in one step. */
-  applyBlock(changes: BlockChanges): Promise<void>;
+  applyBlock(changes: AuctionBlockChanges): Promise<void>;
   /**
-   * Undoes all blocks after block `block` (reorg). Throws `UndoTooDeepError` when a block to
+   * Undoes all blocks after block `block` (reorg). Throws `UndoWindowExceededError` when a block to
    * undo is older than the undo window; the store is then unchanged.
    */
   undoAfter(block: number): Promise<void>;
@@ -92,7 +92,7 @@ export interface AuctionStore {
   // --- Reducer ---
 
   /** The current bids of these squares. A square with no bid is not in the result. */
-  squares(squareIds: readonly number[]): Promise<StoredSquare[]>;
+  squares(squareIds: readonly number[]): Promise<StoredSquareBid[]>;
   /** These shapes. An unknown shape is not in the result. */
   shapes(shapeIds: readonly number[]): Promise<StoredShape[]>;
   status(): Promise<AuctionStatus>;
@@ -110,18 +110,18 @@ export interface AuctionStore {
   /** The shapes and the history of a bidder. */
   bidder(address: Address): Promise<StoredBidderView>;
   /** The stored messages after event `after` (all messages when `after` is undefined), in order. */
-  messagesAfter(after: EventId | undefined, filter?: MessageFilter): Promise<StreamMessage[]>;
+  messagesAfter(after: EventId | undefined, filter?: StreamMessageFilter): Promise<StreamMessage[]>;
 }
 
-export class UndoTooDeepError extends Error {
+export class UndoWindowExceededError extends Error {
   constructor(block: number) {
     super(`Cannot undo the blocks after ${block}: they are older than the undo window.`);
-    this.name = 'UndoTooDeepError';
+    this.name = 'UndoWindowExceededError';
   }
 }
 
 /** True when `message` passes `filter`. Each store and the live stream use this rule. */
-export const messageMatches = (message: StreamMessage, filter: MessageFilter = {}): boolean => {
+export const matchesStreamMessageFilter = (message: StreamMessage, filter: StreamMessageFilter = {}): boolean => {
   const { bidder } = filter;
   if (bidder === undefined) return true;
   if (message.type === 'shapeBid') {

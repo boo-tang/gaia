@@ -9,11 +9,11 @@ import type { Address, AuctionStatus, StreamMessage } from '@gaia/core';
 import type { Hex } from 'viem';
 
 import {
-  UndoTooDeepError,
+  UndoWindowExceededError,
   type AuctionStore,
-  type BlockChanges,
+  type AuctionBlockChanges,
   type StoredShape,
-  type StoredSquare,
+  type StoredSquareBid,
 } from '../src/store/auction-store';
 
 export interface AuctionStoreOptions {
@@ -28,7 +28,7 @@ const WORLD = { south: 0, north: 17999, west: 0, east: 35999 };
 
 const sq = (lat: number, lng: number) => lat * 65536 + lng;
 const hash = (n: number): Hex => `0x${n.toString(16).padStart(64, '0')}`;
-const square = (squareId: number, shapeId: number, amount: bigint): StoredSquare => ({ squareId, shapeId, amount });
+const square = (squareId: number, shapeId: number, amount: bigint): StoredSquareBid => ({ squareId, shapeId, amount });
 
 const shape = (shapeId: number, bidder: Address, block: number, bidSquareIds: number[], held = bidSquareIds.length): StoredShape => ({
   shapeId,
@@ -66,7 +66,7 @@ const statusMessage = (block: number, logIndex: number, status: AuctionStatus): 
   status,
 });
 
-const empty = (block: number): BlockChanges => ({
+const empty = (block: number): AuctionBlockChanges => ({
   block: { number: block, hash: hash(block) },
   squares: [],
   shapes: [],
@@ -77,13 +77,13 @@ const empty = (block: number): BlockChanges => ({
 // Alice bids on two squares in block 10 (shape 1). Bob takes one of them in block 12 (shape 2),
 // and the soft close moves the end. Block 11 has no event.
 const row = [sq(100, 5), sq(100, 6)];
-const block10: BlockChanges = {
+const block10: AuctionBlockChanges = {
   ...empty(10),
   squares: row.map((id) => square(id, 1, 100n)),
   shapes: [shape(1, ALICE, 10, row)],
   messages: [bidMessage(10, 3, 1, ALICE, row)],
 };
-const block12: BlockChanges = {
+const block12: AuctionBlockChanges = {
   ...empty(12),
   squares: [square(row[1], 2, 200n)],
   shapes: [shape(1, ALICE, 10, row, 1), shape(2, BOB, 12, [row[1]])],
@@ -255,7 +255,7 @@ export const auctionStoreSuite = (name: string, makeStore: (options: AuctionStor
     it('cannot undo a block that left the undo window', async () => {
       const store = await withBlocks(2);
       expect((await store.recentBlocks()).map((b) => b.number)).toEqual([12, 11]);
-      await expect(store.undoAfter(9)).rejects.toThrow(UndoTooDeepError);
+      await expect(store.undoAfter(9)).rejects.toThrow(UndoWindowExceededError);
       // Nothing changed.
       expect(await store.lastEventId()).toEqual({ block: 12, logIndex: 1 });
       expect(await store.recentBlocks()).toHaveLength(2);

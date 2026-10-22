@@ -12,14 +12,14 @@
 
 import type { AuctionStatus, EventId, Settlement, StreamMessage, TakenSquares } from '@gaia/core';
 
-import type { AuctionStore, BlockChanges, BlockRef, StoredShape, StoredSquare } from '../store/auction-store';
-import type { AuctionEvent } from './events';
+import type { AuctionStore, AuctionBlockChanges, BlockNumberAndHash, StoredShape, StoredSquareBid } from '../store/auction-store';
+import type { AuctionEvent } from './auction-events';
 
-export type StoreReader = Pick<AuctionStore, 'squares' | 'shapes' | 'status'>;
+export type AuctionStateReader = Pick<AuctionStore, 'squares' | 'shapes' | 'status'>;
 
 /** A block and its auction events, in log order. */
-export interface BlockEvents {
-  block: BlockRef;
+export interface AuctionBlockEvents {
+  block: BlockNumberAndHash;
   /** Unix seconds. */
   timestamp: number;
   events: AuctionEvent[];
@@ -29,15 +29,15 @@ export interface BlockEvents {
  * A shape or country ID as a number. The contracts count these IDs up from 1, so they stay far
  * below 2^53; a larger value means a wrong event.
  */
-const toId = (value: bigint, name: string) => {
+const idToNumber = (value: bigint, name: string) => {
   if (value > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`${name} ${value} is too large.`);
   return Number(value);
 };
 
 /** Applies the events of one block to the state that `read` gives, and returns the changes. */
-export const reduceBlock = async (read: StoreReader, { block, timestamp, events }: BlockEvents): Promise<BlockChanges> => {
+export const reduceAuctionBlock = async (read: AuctionStateReader, { block, timestamp, events }: AuctionBlockEvents): Promise<AuctionBlockChanges> => {
   // The values that this block changed. A later event of the same block reads them here first.
-  const squares = new Map<number, StoredSquare>();
+  const squares = new Map<number, StoredSquareBid>();
   const shapes = new Map<number, StoredShape>();
   let status: AuctionStatus | undefined;
   const messages: StreamMessage[] = [];
@@ -63,7 +63,7 @@ export const reduceBlock = async (read: StoreReader, { block, timestamp, events 
 
     if (event.eventName === 'ShapeBid') {
       const { bidder, squares: squareIds, amounts, paid } = event.args;
-      const shapeId = toId(event.args.shapeId, 'Shape ID');
+      const shapeId = idToNumber(event.args.shapeId, 'Shape ID');
       if (squareIds.length !== amounts.length) throw new Error(`ShapeBid ${shapeId}: squares and amounts differ in length.`);
 
       // The squares that each older shape loses, in bid order.
@@ -101,8 +101,8 @@ export const reduceBlock = async (read: StoreReader, { block, timestamp, events 
         taken: takenSquares,
       });
     } else if (event.eventName === 'ShapeSquaresSettled' || event.eventName === 'ShapeSettled') {
-      const shape = await getShape(toId(event.args.shapeId, 'Shape ID'));
-      const countryId = toId(event.args.countryId, 'Country ID');
+      const shape = await getShape(idToNumber(event.args.shapeId, 'Shape ID'));
+      const countryId = idToNumber(event.args.countryId, 'Country ID');
       const settlement: Settlement =
         event.eventName === 'ShapeSquaresSettled'
           ? {
