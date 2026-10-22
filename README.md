@@ -76,13 +76,13 @@ The server keeps all data in memory. At each start it reads all events again fro
 | `LOG_RANGE` | `2000` | The largest block range of one `eth_getLogs` request. |
 | `MAX_SNAPSHOT_BIDS` | `50000` | A snapshot with more bids gets HTTP 400 ("zoom in"). |
 
-Endpoints (types in `packages/core/src/api.ts`; amounts in wei as decimal strings, squares packed as `(lat << 16) \| lng`):
+Endpoints (types in `packages/core/src/api.ts`; amounts in wei as decimal strings, squares packed as `(lat << 16) \| lng`; shape and country IDs are numbers):
 
-- `GET /auction`: the auction rules, the status (`endTime`, paused, cancelled) and the position.
-- `GET /bids?south=&north=&west=&east=`: the bids in a viewport (rows and columns of the grid, edges included; `west > east` crosses the antimeridian), with the position of the data.
+- `GET /auction`: the auction rules, the status (`endTime`, paused, cancelled) and the ID of the last event in the data.
+- `GET /bids?south=&north=&west=&east=`: the bids in a viewport (rows and columns of the grid, edges included; `west > east` crosses the antimeridian), with the ID of the last event in the data.
 - `GET /bidder/:address`: the shapes of a bidder (with the squares they still hold), their history, and the refund that `withdraw` sends now (read from the contract).
-- `GET /stream?after=<block>:<logIndex>&bidder=`: the live stream. One message per event, with the id `<block>:<logIndex>`. Get a snapshot, then open the stream with `after` = the position of the snapshot. The browser resumes with `Last-Event-ID` after a reconnect. A `reorg` message means: get a new snapshot.
-- `GET /health`: the position and the last block.
+- `GET /stream?after=<block>:<logIndex>&bidder=`: the live stream. One message per event; the SSE id is the event ID, `<block>:<logIndex>`. Get a snapshot, then open the stream with `after` = `lastEventId` of the snapshot (with no `after`, the stream starts from the first message). The browser resumes with `Last-Event-ID` after a reconnect. A `reorg` message means: get a new snapshot.
+- `GET /health`: the last event ID and the last applied block.
 
 Tests: `yarn workspace @gaia/server test`. The test against Anvil starts its own node on a free port, so it can run next to `yarn chain:local`. It needs `anvil` and the contract build (`yarn hardhat compile`); without `anvil` it is skipped.
 

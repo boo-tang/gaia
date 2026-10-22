@@ -1,7 +1,8 @@
 // Types of the server API (packages/server), which the web app and the server share.
 //
-// JSON has no bigint: wei amounts, shape IDs and country IDs are decimal strings. A square ID is
-// the packed value `(lat << 16) | lng` of the contracts (see grid.ts).
+// Wei amounts are decimal strings (JSON has no bigint, and an amount can be above 2^53). Shape
+// and country IDs are numbers: the contracts count them up from 1. A square ID is the packed
+// value `(lat << 16) | lng` of the contracts (see grid.ts).
 //
 // Endpoints:
 //   GET /auction                                   AuctionResponse
@@ -9,33 +10,32 @@
 //   GET /bidder/:address                           BidderView
 //   GET /stream?after=<block>:<logIndex>&bidder=   SSE, one StreamMessage per event
 //
-// The stream: each SSE message has the event name `message.type`, the id
-// `<block>:<logIndex>` of its position and the JSON of the message as data. A client gets a
-// snapshot, then opens the stream with `after` = the position of the snapshot. When the
+// The stream: each SSE message has the event name `message.type`, the event ID as its SSE id and
+// the JSON of the message as data. A client gets a snapshot, then opens the stream with
+// `after` = `lastEventId` of the snapshot (no `after`: all messages from the start). When the
 // connection breaks, the browser reconnects and sends `Last-Event-ID`, so it misses nothing.
 
 import type { Address } from './deployment';
 
 /**
- * A place in the chain history. The server applies events in this order. `logIndex` -1 means
- * "before the first log of `block`": a server that has applied a block with no auction event is
- * at `{ block, logIndex: -1 }`.
+ * The ID of one contract event: its block and its log index in that block. The server applies
+ * events in this order. As text (the SSE id): `<block>:<logIndex>`.
  */
-export interface Position {
+export interface EventId {
   block: number;
   logIndex: number;
 }
 
-/** True when `a` comes before `b`. */
-export const isBefore = (a: Position, b: Position) =>
+/** True when event `a` comes before event `b`. */
+export const isBefore = (a: EventId, b: EventId) =>
   a.block < b.block || (a.block === b.block && a.logIndex < b.logIndex);
 
-/** The SSE id of a position: `<block>:<logIndex>`. */
-export const formatPosition = (p: Position) => `${p.block}:${p.logIndex}`;
+/** The SSE id of an event: `<block>:<logIndex>`. */
+export const formatEventId = (id: EventId) => `${id.block}:${id.logIndex}`;
 
 /** Reads an SSE id. Returns undefined when the text is not `<block>:<logIndex>`. */
-export const parsePosition = (text: string): Position | undefined => {
-  const match = /^(\d{1,15}):(-1|\d{1,9})$/.exec(text);
+export const parseEventId = (text: string): EventId | undefined => {
+  const match = /^(\d{1,15}):(\d{1,9})$/.exec(text);
   if (match === null) return undefined;
   return { block: Number(match[1]), logIndex: Number(match[2]) };
 };
@@ -68,7 +68,8 @@ export interface AuctionStatus {
 
 /** GET /auction. */
 export interface AuctionResponse {
-  position: Position;
+  /** The last event in the data. Not there before the first auction event. */
+  lastEventId?: EventId;
   rules: AuctionRules;
   status: AuctionStatus;
 }
@@ -76,7 +77,7 @@ export interface AuctionResponse {
 /** The current highest bid on one square. */
 export interface SquareBid {
   squareId: number;
-  shapeId: string;
+  shapeId: number;
   bidder: Address;
   /** Wei, as a decimal string. */
   amount: string;
@@ -94,36 +95,49 @@ export interface Viewport {
   east: number;
 }
 
-/** GET /bids: all bids in a viewport at `position`. The stream continues after `position`. */
+/** GET /bids: all bids in a viewport. The stream continues after `lastEventId`. */
 export interface ViewportSnapshot {
-  position: Position;
+  /** The last event in the data. Not there before the first auction event. */
+  lastEventId?: EventId;
   viewport: Viewport;
   status: AuctionStatus;
   bids: SquareBid[];
 }
 
+/**
+ * The settlement of a shape after the auction. `settleShape` moves the squares into a new
+ * country in chunks of rows, so it can take more than one transaction.
+ */
+export interface Settlement {
+  countryId: number;
+  /** The squares that are in the country now. */
+  settledSquareCount: number;
+  /** True after the last chunk: the winner has the country (`ShapeSettled`). */
+  done: boolean;
+}
+
 /** One shape (one bid) and what is left of it. */
 export interface Shape {
-  shapeId: string;
+  shapeId: number;
   bidder: Address;
   block: number;
   /** Unix seconds, from the block. */
   timestamp: number;
   /** The squares of the bid, in bid order. */
-  squareIds: number[];
-  /** The squares that the shape still holds. The others went to later shapes. */
-  liveSquareIds: number[];
-  /** The number of squares that settlement gave to the country of the shape. */
-  settledSquares: number;
-  /** The country of the shape, after the first settlement chunk. */
-  countryId?: string;
-  /** True when the winner has the country (`ShapeSettled`). */
-  settled: boolean;
+  bidSquareIds: number[];
+  /**
+   * The squares of the bid that the shape still holds. Later bids took the others. The count is
+   * the contract view `shapeLiveSquares`.
+   */
+  heldSquareIds: number[];
+  /** Not there until the first settlement chunk. */
+  settlement?: Settlement;
 }
 
 /** GET /bidder/:address. */
 export interface BidderView {
-  position: Position;
+  /** The last event in the data. Not there before the first auction event. */
+  lastEventId?: EventId;
   bidder: Address;
   /** All shapes of the bidder, also the shapes that lost all their squares. Oldest first. */
   shapes: Shape[];
@@ -138,7 +152,7 @@ export interface BidderView {
 
 /** Squares that a bid took from an older shape. */
 export interface TakenSquares {
-  shapeId: string;
+  shapeId: number;
   /** The bidder of the older shape. The same as the new bidder for a re-bid on own squares. */
   bidder: Address;
   squareIds: number[];
@@ -147,9 +161,9 @@ export interface TakenSquares {
 /** One `ShapeBid` event: the new shape and the amounts of all its squares after the bid. */
 export interface ShapeBidMessage {
   type: 'shapeBid';
-  position: Position;
+  id: EventId;
   timestamp: number;
-  shapeId: string;
+  shapeId: number;
   bidder: Address;
   squareIds: number[];
   /** Wei, as decimal strings, in the order of `squareIds`. */
@@ -163,7 +177,7 @@ export interface ShapeBidMessage {
 /** A change of the auction status: soft close, pause, unpause or cancel. */
 export interface AuctionStatusMessage {
   type: 'auctionStatus';
-  position: Position;
+  id: EventId;
   timestamp: number;
   status: AuctionStatus;
 }
@@ -171,25 +185,22 @@ export interface AuctionStatusMessage {
 /** One settlement event: `ShapeSquaresSettled` (a chunk) or `ShapeSettled` (the last step). */
 export interface SettlementMessage {
   type: 'settlement';
-  position: Position;
+  id: EventId;
   timestamp: number;
-  shapeId: string;
+  shapeId: number;
   bidder: Address;
-  countryId: string;
-  /** All squares settled so far for this shape. */
-  settledSquares: number;
-  /** True for `ShapeSettled`: the winner has the country. */
-  settled: boolean;
+  settlement: Settlement;
 }
 
 /**
- * The chain dropped blocks. The server is now at `position`. The client discards its data and
- * gets a new snapshot. Only the live stream sends it; it is not part of the history.
+ * The chain dropped blocks, and the server removed their events. The client discards its data
+ * and gets a new snapshot. Only the live stream sends it; it is not part of the history.
  */
 export interface ReorgMessage {
   type: 'reorg';
-  position: Position;
+  /** The last event that the server still has. */
+  lastEventId?: EventId;
 }
 
-/** A message of the live stream. A client resumes the stream from the last `position`. */
+/** A message of the live stream. */
 export type StreamMessage = ShapeBidMessage | AuctionStatusMessage | SettlementMessage | ReorgMessage;

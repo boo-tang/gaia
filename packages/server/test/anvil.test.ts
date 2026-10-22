@@ -14,12 +14,15 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  formatEventId,
   gaiaAuctionAbi,
   packSquare,
   parseDeployment,
+  parseEventId,
   type Address,
   type BidderView,
   type Deployment,
+  type EventId,
   type ShapeBidMessage,
   type StreamMessage,
   type ViewportSnapshot,
@@ -136,10 +139,10 @@ describe.skipIf(!hasAnvil)('server against Anvil', { timeout: 30_000 }, () => {
   it('shows the three seed bids in the snapshot after a backfill', async () => {
     server = await start();
     const snapshot = await get<ViewportSnapshot>(`/bids?${query(LONDON)}`);
-    const byShape = new Map<string, number[]>();
+    const byShape = new Map<number, number[]>();
     for (const b of snapshot.bids) byShape.set(b.shapeId, [...(byShape.get(b.shapeId) ?? []), b.squareId]);
-    expect([...byShape.keys()].sort()).toEqual(['1', '2', '3']);
-    SEED.forEach((squares, i) => expect(byShape.get(String(i + 1))?.sort()).toEqual([...squares].sort()));
+    expect([...byShape.keys()].sort()).toEqual([1, 2, 3]);
+    SEED.forEach((squares, i) => expect(byShape.get(i + 1)?.sort()).toEqual([...squares].sort()));
     const bidders = new Set(snapshot.bids.map((b) => b.bidder));
     expect(bidders).toEqual(new Set([3, 4, 5].map((i) => mnemonicToAccount(MNEMONIC, { addressIndex: i }).address)));
   });
@@ -148,7 +151,7 @@ describe.skipIf(!hasAnvil)('server against Anvil', { timeout: 30_000 }, () => {
 
   it('reads new bids back through the stream and the snapshot', async () => {
     const snapshot = await get<ViewportSnapshot>(`/bids?${query(LONDON)}`);
-    const stream = await openStream(`/stream?after=${snapshot.position.block}:${snapshot.position.logIndex}`);
+    const stream = await openStream(`/stream?after=${formatEventId(snapshot.lastEventId as EventId)}`);
     const minBid = BigInt((await get<{ rules: { minBidPerSquareWei: string } }>('/auction')).rules.minBidPerSquareWei);
 
     // Account 6 takes the east square of shape 3 (a partial takeover), with 1 minBid of excess.
@@ -159,30 +162,30 @@ describe.skipIf(!hasAnvil)('server against Anvil', { timeout: 30_000 }, () => {
 
     const [takeover, rebid] = await stream.json<ShapeBidMessage>(2, 10_000);
     const account5 = getAddress(mnemonicToAccount(MNEMONIC, { addressIndex: 5 }).address);
-    expect(takeover).toMatchObject({ type: 'shapeBid', shapeId: '4', squareIds: [east], amounts: [(2n * minBid).toString()] });
-    expect(takeover.taken).toEqual([{ shapeId: '3', bidder: account5, squareIds: [east] }]);
-    expect(rebid).toMatchObject({ shapeId: '5', paid: '0', taken: [{ shapeId: '3', bidder: account5, squareIds: SEED[2].slice(0, 3) }] });
-    lastId = `${rebid.position.block}:${rebid.position.logIndex}`;
+    expect(takeover).toMatchObject({ type: 'shapeBid', shapeId: 4, squareIds: [east], amounts: [(2n * minBid).toString()] });
+    expect(takeover.taken).toEqual([{ shapeId: 3, bidder: account5, squareIds: [east] }]);
+    expect(rebid).toMatchObject({ shapeId: 5, paid: '0', taken: [{ shapeId: 3, bidder: account5, squareIds: SEED[2].slice(0, 3) }] });
+    lastId = formatEventId(rebid.id);
     await stream.close();
 
     const after = await get<ViewportSnapshot>(`/bids?${query(LONDON)}`);
-    expect(after.bids.find((b) => b.squareId === east)).toMatchObject({ shapeId: '4', amount: (2n * minBid).toString() });
+    expect(after.bids.find((b) => b.squareId === east)).toMatchObject({ shapeId: 4, amount: (2n * minBid).toString() });
 
     // The bidder view of account 6: the shape, and the excess as the refund (from the contract).
     const account6 = mnemonicToAccount(MNEMONIC, { addressIndex: 6 }).address;
     const view = await get<BidderView>(`/bidder/${account6}`);
-    expect(view.shapes.map((s) => [s.shapeId, s.liveSquareIds])).toEqual([['4', [east]]]);
+    expect(view.shapes.map((s) => [s.shapeId, s.heldSquareIds])).toEqual([[4, [east]]]);
     expect(view.refund).toBe(minBid.toString());
   });
 
-  it('sends the missed changes to a client that reconnects with its last position', async () => {
+  it('sends the missed changes to a client that reconnects with its last event ID', async () => {
     const minBid = BigInt((await get<{ rules: { minBidPerSquareWei: string } }>('/auction')).rules.minBidPerSquareWei);
     const receipt = await bid(7, rect(14000, 18000, 2, 3), 6n * minBid);
 
-    const stream = await openStream('/stream?after=0:-1', { 'Last-Event-ID': lastId });
+    const stream = await openStream('/stream', { 'Last-Event-ID': lastId });
     const [missed] = await stream.json<ShapeBidMessage>(1, 10_000);
-    expect(missed).toMatchObject({ shapeId: '6', position: { block: Number(receipt.blockNumber) } });
-    lastId = `${missed.position.block}:${missed.position.logIndex}`;
+    expect(missed).toMatchObject({ shapeId: 6, id: { block: Number(receipt.blockNumber) } });
+    lastId = formatEventId(missed.id);
     await stream.close();
   });
 
@@ -192,14 +195,14 @@ describe.skipIf(!hasAnvil)('server against Anvil', { timeout: 30_000 }, () => {
     const snapshotId = await client.request({ method: 'evm_snapshot' as never } as never);
     await bid(7, rect(13000, 18000, 1, 2), 2n * minBid);
     const [dropped] = await stream.json<ShapeBidMessage>(1, 10_000);
-    expect(dropped.shapeId).toBe('7');
+    expect(dropped.shapeId).toBe(7);
 
     // Drop the bid block and mine two other blocks.
     await client.request({ method: 'evm_revert' as never, params: [snapshotId] } as never);
     await client.request({ method: 'anvil_mine' as never, params: ['0x2'] } as never);
 
     const reorg = (await stream.json<StreamMessage>(1, 10_000))[0];
-    expect(reorg).toEqual({ type: 'reorg', position: { block: Number(lastId.split(':')[0]), logIndex: 0 } });
+    expect(reorg).toEqual({ type: 'reorg', lastEventId: parseEventId(lastId) });
     await stream.close();
     const area = await get<ViewportSnapshot>('/bids?south=13000&north=13000&west=18000&east=18001');
     expect(area.bids).toEqual([]);
@@ -221,15 +224,15 @@ describe.skipIf(!hasAnvil)('server against Anvil', { timeout: 30_000 }, () => {
       const lng = b.squareId % 65536;
       const [bidder, amount] = await client.readContract({ ...auction, functionName: 'highestBids', args: [lat, lng] });
       expect([getAddress(bidder), amount.toString()]).toEqual([getAddress(b.bidder), b.amount]);
-      expect((await client.readContract({ ...auction, functionName: 'squareShapeId', args: [lat, lng] })).toString()).toBe(b.shapeId);
+      expect(Number(await client.readContract({ ...auction, functionName: 'squareShapeId', args: [lat, lng] }))).toBe(b.shapeId);
     }
-    const ids = [1n, 2n, 3n, 4n, 5n, 6n, 7n];
+    const ids = [1, 2, 3, 4, 5, 6, 7];
     const shapes = await store.shapes(ids);
     expect(shapes.map((s) => s.shapeId)).toEqual(ids.slice(0, 6));
     for (const shape of shapes) {
-      const live = await client.readContract({ ...auction, functionName: 'shapeLiveSquares', args: [shape.shapeId] });
-      expect([shape.shapeId, BigInt(shape.liveSquares)]).toEqual([shape.shapeId, live]);
-      const bidder = await client.readContract({ ...auction, functionName: 'shapeBidder', args: [shape.shapeId] });
+      const live = await client.readContract({ ...auction, functionName: 'shapeLiveSquares', args: [BigInt(shape.shapeId)] });
+      expect([shape.shapeId, BigInt(shape.heldSquareCount)]).toEqual([shape.shapeId, live]);
+      const bidder = await client.readContract({ ...auction, functionName: 'shapeBidder', args: [BigInt(shape.shapeId)] });
       expect(getAddress(bidder)).toBe(getAddress(shape.bidder as Address));
     }
     // The dropped shape 7 is not on the chain either.

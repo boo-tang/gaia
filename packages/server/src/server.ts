@@ -10,13 +10,13 @@ import { createClient, readRefund, readRules } from './chain';
 import type { Config } from './config';
 import { Indexer } from './indexer/indexer';
 import { Hub } from './live';
-import { MemoryStore } from './store/memory';
-import type { Store } from './store/store';
+import type { AuctionStore } from './store/auction-store';
+import { MemoryAuctionStore } from './store/memory-auction-store';
 
 export interface RunningServer {
   /** The base URL of the HTTP API. */
   url: string;
-  store: Store;
+  store: AuctionStore;
   indexer: Indexer;
   hub: Hub;
   /** Stops the polls and the HTTP server. Open streams are closed. */
@@ -36,8 +36,7 @@ export const startServer = async (
   const auction = deployment.contracts.GaiaAuction;
   const rules = await readRules(client, deployment);
 
-  const store = new MemoryStore({
-    start: { block: deployment.deployBlock - 1, logIndex: -1 },
+  const store = new MemoryAuctionStore({
     status: { endTime: deployment.auction.endTime, paused: false, cancelled: false },
     undoDepth: config.reorgDepth,
   });
@@ -56,7 +55,7 @@ export const startServer = async (
   // Backfill before the API opens, so that the first snapshot is complete.
   const started = Date.now();
   await indexer.syncOnce();
-  log(`Backfill done in ${Date.now() - started} ms: at block ${(await store.position()).block}.`);
+  log(`Backfill done in ${Date.now() - started} ms: at block ${(await store.lastBlock())?.number}.`);
   indexer.start();
 
   const app = createApp({
