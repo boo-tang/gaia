@@ -2,7 +2,6 @@
 // in GaiaAuction.sol; uint256 values are bigint, as viem decodes them. `Withdrawn` and
 // `ProceedsWithdrawn` are not indexed: the bidder view reads the refund from the contract on
 // request. `logIndex` is the position of the log in its block.
-
 import type { Address } from '@gaia/core';
 
 export interface ShapeBidEvent {

@@ -88,4 +88,4 @@ Tests: `yarn workspace @gaia/server test`. The test against Anvil starts its own
 
 ## Web app
 
-The web app (`packages/web`) is not written yet. The server is in `packages/server` (see Server) and the shared code in `packages/core`. Run `yarn typecheck` and `yarn test:packages` for all workspace packages.
+The web app (`packages/web`) is not written yet. The server is in `packages/server` (see Server) and the shared code in `packages/core`. Run `yarn lint`, `yarn typecheck` and `yarn test:packages` for all workspace packages. `yarn format` runs Prettier on the whole repository.

@@ -8,7 +8,7 @@ import GaiaModule from './Gaia';
 // This module does not grant ISSUER_ROLE to the sale. On Base, the admin multisig grants it after
 // the auction ends (operating rule), with `GaiaCountries.grantRole(ISSUER_ROLE, sale)`. The
 // deployer cannot do it, because GaiaModule removes its admin role.
-const GaiaLandSaleModule = buildModule('GaiaLandSaleModule', (m) => {
+const GaiaLandSaleModule = buildModule('GaiaLandSaleModule', m => {
   const { countries, auction } = m.useModule(GaiaModule);
   const treasury = m.getParameter<string>('treasury');
   const startPrice = m.getParameter<bigint>('startPrice');

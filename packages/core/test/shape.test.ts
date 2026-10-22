@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+
 import type { Square } from '../src/grid';
 import {
   SHAPE_ERROR_TEXT,
+  type ShapeLimits,
   bidAmountFor,
   computeBidTotal,
   nextBidFor,
@@ -9,7 +11,6 @@ import {
   sortLocs,
   squareCostFor,
   validateShape,
-  type ShapeLimits,
 } from '../src/shape';
 
 const limits: ShapeLimits = { minShapeSquares: 1n, maxShapeSquares: 100n, maxShapeAspectRatio: 4n };
@@ -20,7 +21,9 @@ const rows = (lat0: number, ranges: [number, number][]): Square[] =>
     const squares: Square[] = [];
     for (let lng = first; ; lng = (lng + 1) % 36000) {
       squares.push({ lat: lat0 + r, lng });
-      if (lng === last) break;
+      if (lng === last) {
+        break;
+      }
     }
     return squares;
   });
@@ -59,8 +62,8 @@ describe('sortLocs', () => {
   });
 
   it('continues across the antimeridian: 35998, 35999, 0, 1', () => {
-    const sorted = sortLocs([0, 35999, 1, 35998].map((lng) => ({ lat: 7, lng })));
-    expect(sorted.map((s) => s.lng)).toEqual([35998, 35999, 0, 1]);
+    const sorted = sortLocs([0, 35999, 1, 35998].map(lng => ({ lat: 7, lng })));
+    expect(sorted.map(s => s.lng)).toEqual([35998, 35999, 0, 1]);
     expect(validateShape(sorted, limits)).toEqual({ valid: true });
   });
 
@@ -76,9 +79,31 @@ describe('sortLocs', () => {
 
 describe('validateShape', () => {
   it('accepts a rectangle, a plus shape and a shape across the antimeridian', () => {
-    expect(reason(rows(10, [[100, 103], [100, 103]]))).toBe('valid');
-    expect(reason(rows(10, [[101, 101], [100, 102], [101, 101]]))).toBe('valid');
-    expect(reason(rows(10, [[35998, 1], [35999, 0]]))).toBe('valid');
+    expect(
+      reason(
+        rows(10, [
+          [100, 103],
+          [100, 103],
+        ]),
+      ),
+    ).toBe('valid');
+    expect(
+      reason(
+        rows(10, [
+          [101, 101],
+          [100, 102],
+          [101, 101],
+        ]),
+      ),
+    ).toBe('valid');
+    expect(
+      reason(
+        rows(10, [
+          [35998, 1],
+          [35999, 0],
+        ]),
+      ),
+    ).toBe('valid');
     expect(reason([{ lat: 17999, lng: 35999 }])).toBe('valid');
   });
 
@@ -96,12 +121,24 @@ describe('validateShape', () => {
 
   it('InvalidCoordinates: lng 36000 or more', () => {
     expect(reason([{ lat: 0, lng: 36000 }])).toBe('InvalidCoordinates');
-    expect(reason([{ lat: 0, lng: 35999 }, { lat: 0, lng: 36000 }])).toBe('InvalidCoordinates');
+    expect(
+      reason([
+        { lat: 0, lng: 35999 },
+        { lat: 0, lng: 36000 },
+      ]),
+    ).toBe('InvalidCoordinates');
   });
 
   it('InvalidCoordinates: lat 18000 or more', () => {
     expect(reason([{ lat: 18000, lng: 0 }])).toBe('InvalidCoordinates');
-    expect(reason(rows(17999, [[0, 1], [0, 1]]))).toBe('InvalidCoordinates');
+    expect(
+      reason(
+        rows(17999, [
+          [0, 1],
+          [0, 1],
+        ]),
+      ),
+    ).toBe('InvalidCoordinates');
   });
 
   it('InvalidCoordinates: a value that is not a uint16', () => {
@@ -110,31 +147,91 @@ describe('validateShape', () => {
   });
 
   it('GapBetweenLongitudes: a gap or a duplicate in a row', () => {
-    expect(reason([{ lat: 5, lng: 10 }, { lat: 5, lng: 12 }])).toBe('GapBetweenLongitudes');
-    expect(reason([{ lat: 5, lng: 10 }, { lat: 5, lng: 10 }])).toBe('GapBetweenLongitudes');
+    expect(
+      reason([
+        { lat: 5, lng: 10 },
+        { lat: 5, lng: 12 },
+      ]),
+    ).toBe('GapBetweenLongitudes');
+    expect(
+      reason([
+        { lat: 5, lng: 10 },
+        { lat: 5, lng: 10 },
+      ]),
+    ).toBe('GapBetweenLongitudes');
   });
 
   it('Unsorted: a row south of the row before it', () => {
-    expect(reason([{ lat: 5, lng: 10 }, { lat: 4, lng: 10 }])).toBe('Unsorted');
+    expect(
+      reason([
+        { lat: 5, lng: 10 },
+        { lat: 4, lng: 10 },
+      ]),
+    ).toBe('Unsorted');
   });
 
   it('NonConsecutiveLatitudes: a missing row', () => {
-    expect(reason([{ lat: 5, lng: 10 }, { lat: 7, lng: 10 }])).toBe('NonConsecutiveLatitudes');
+    expect(
+      reason([
+        { lat: 5, lng: 10 },
+        { lat: 7, lng: 10 },
+      ]),
+    ).toBe('NonConsecutiveLatitudes');
   });
 
   it('NoLatAdjacency: a row that does not touch the row before it', () => {
-    expect(reason(rows(5, [[10, 11], [12, 13]]))).toBe('NoLatAdjacency');
+    expect(
+      reason(
+        rows(5, [
+          [10, 11],
+          [12, 13],
+        ]),
+      ),
+    ).toBe('NoLatAdjacency');
     // The same rule for a row in the middle of the shape.
-    expect(reason(rows(5, [[10, 11], [12, 13], [12, 13]]))).toBe('NoLatAdjacency');
+    expect(
+      reason(
+        rows(5, [
+          [10, 11],
+          [12, 13],
+          [12, 13],
+        ]),
+      ),
+    ).toBe('NoLatAdjacency');
   });
 
   it('NotConvexStart: the west edge goes east, then west', () => {
-    expect(reason(rows(5, [[10, 12], [11, 12], [10, 12]]))).toBe('NotConvexStart');
+    expect(
+      reason(
+        rows(5, [
+          [10, 12],
+          [11, 12],
+          [10, 12],
+        ]),
+      ),
+    ).toBe('NotConvexStart');
   });
 
   it('NotConvexEnd: the east edge goes west, then east', () => {
-    expect(reason(rows(5, [[10, 12], [10, 11], [10, 12]]))).toBe('NotConvexEnd');
-    expect(reason(rows(5, [[10, 12], [10, 11], [10, 12], [10, 12]]))).toBe('NotConvexEnd');
+    expect(
+      reason(
+        rows(5, [
+          [10, 12],
+          [10, 11],
+          [10, 12],
+        ]),
+      ),
+    ).toBe('NotConvexEnd');
+    expect(
+      reason(
+        rows(5, [
+          [10, 12],
+          [10, 11],
+          [10, 12],
+          [10, 12],
+        ]),
+      ),
+    ).toBe('NotConvexEnd');
   });
 
   it('AspectRatioExceeded: the longer side is more than maxShapeAspectRatio times the shorter', () => {
@@ -144,7 +241,9 @@ describe('validateShape', () => {
   });
 
   it('has a text for each error', () => {
-    for (const text of Object.values(SHAPE_ERROR_TEXT)) expect(text.length).toBeGreaterThan(0);
+    for (const text of Object.values(SHAPE_ERROR_TEXT)) {
+      expect(text.length).toBeGreaterThan(0);
+    }
   });
 });
 
@@ -187,9 +286,7 @@ describe('prices', () => {
 
   it('squareCostFor: an own square with a raise costs only the increase', () => {
     expect(squareCostFor({ amount: 10n * milli, own: true }, rules, 0n, true)).toBe(milli);
-    expect(squareCostFor({ amount: 10n * milli, own: true }, rules, 30n * milli, true)).toBe(
-      20n * milli,
-    );
+    expect(squareCostFor({ amount: 10n * milli, own: true }, rules, 30n * milli, true)).toBe(20n * milli);
   });
 
   it('computeBidTotal: the example of a re-bid on own squares', () => {

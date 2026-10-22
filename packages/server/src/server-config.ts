@@ -1,6 +1,5 @@
 // The server configuration, from environment variables. Each value has a default for a local
 // Anvil node (`yarn chain:local`, `yarn deploy:local`).
-
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
@@ -17,13 +16,18 @@ const serverEnvSchema = z.object({
   RPC_URLS: z
     .string()
     .default('http://127.0.0.1:8545')
-    .transform((value) => value.split(',').map((url) => url.trim()).filter((url) => url !== ''))
+    .transform(value =>
+      value
+        .split(',')
+        .map(url => url.trim())
+        .filter(url => url !== ''),
+    )
     .pipe(z.array(z.url()).min(1, 'must have at least one URL')),
   /** The deployment file. A relative path starts at the repository root. */
   DEPLOYMENT_FILE: z
     .string()
     .default('deployments/local.json')
-    .transform((file) => path.resolve(REPO_ROOT, file)),
+    .transform(file => path.resolve(REPO_ROOT, file)),
   PORT: z.coerce.number().int().min(0).max(65535).default(8787),
   /**
    * The number of blocks that a reorg can undo. A reorg that goes deeper clears the store, and
@@ -52,7 +56,7 @@ export type ServerConfig = {
 export const loadServerConfig = (env: NodeJS.ProcessEnv = process.env): ServerConfig => {
   const result = serverEnvSchema.safeParse(env);
   if (!result.success) {
-    const problems = result.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`);
+    const problems = result.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`);
     throw new Error(`Invalid server configuration:\n  ${problems.join('\n  ')}`);
   }
   const e = result.data;

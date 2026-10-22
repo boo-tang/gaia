@@ -5,20 +5,7 @@
 //
 // It needs `anvil` (Foundry) on the PATH and the contract build (`yarn hardhat compile`). Without
 // `anvil` the test is skipped.
-
-import { execFile, spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import fs from 'node:fs';
-import net from 'node:net';
-import path from 'node:path';
-import { promisify } from 'node:util';
-import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  formatEventId,
-  gaiaAuctionAbi,
-  packSquare,
-  parseDeployment,
-  parseEventId,
   type Address,
   type BidderView,
   type Deployment,
@@ -26,13 +13,26 @@ import {
   type ShapeBidMessage,
   type StreamMessage,
   type ViewportSnapshot,
+  formatEventId,
+  gaiaAuctionAbi,
+  packSquare,
+  parseDeployment,
+  parseEventId,
 } from '@gaia/core';
-import { createPublicClient, createWalletClient, getAddress, http, zeroAddress, type PublicClient } from 'viem';
+
+import { type ChildProcess, execFile, spawn, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import net from 'node:net';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+import { type PublicClient, createPublicClient, createWalletClient, getAddress, http, zeroAddress } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
 import { anvil } from 'viem/chains';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { loadServerConfig } from '../src/server-config';
-import { startServer, type RunningServer } from '../src/start-server';
+import { type RunningServer, startServer } from '../src/start-server';
 import { SseReader } from './sse-reader';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -54,15 +54,23 @@ const until = async <T>(read: () => Promise<T | undefined>, what: string, timeou
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const value = await read();
-    if (value !== undefined) return value;
-    if (Date.now() > deadline) throw new Error(`Timed out: ${what}.`);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    if (value !== undefined) {
+      return value;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`Timed out: ${what}.`);
+    }
+    await new Promise(resolve => setTimeout(resolve, 50));
   }
 };
 
 const rect = (lat: number, lng: number, rows: number, cols: number) => {
   const squares: number[] = [];
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) squares.push(packSquare({ lat: lat + r, lng: lng + c }));
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      squares.push(packSquare({ lat: lat + r, lng: lng + c }));
+    }
+  }
   return squares;
 };
 // The seed bids (scripts/seed-local.ts): Anvil accounts 3, 4 and 5, near London.
@@ -79,7 +87,7 @@ describe.skipIf(!hasAnvil)('server against Anvil', { timeout: 30_000 }, () => {
   let server: RunningServer | undefined;
 
   const env = () => ({ ...process.env, LOCAL_RPC_URL: rpcUrl, LOCAL_DEPLOYMENT_ID: deploymentId });
-  const start = async () =>
+  const start = () =>
     startServer(
       { ...loadServerConfig({ RPC_URLS: rpcUrl, PORT: '0', POLL_INTERVAL_MS: '100', LOG_RANGE: '5' }) },
       deployment,
@@ -91,7 +99,11 @@ describe.skipIf(!hasAnvil)('server against Anvil', { timeout: 30_000 }, () => {
     return (await response.json()) as T;
   };
   const wallet = (index: number) =>
-    createWalletClient({ account: mnemonicToAccount(MNEMONIC, { addressIndex: index }), chain: anvil, transport: http(rpcUrl) });
+    createWalletClient({
+      account: mnemonicToAccount(MNEMONIC, { addressIndex: index }),
+      chain: anvil,
+      transport: http(rpcUrl),
+    });
   const bid = async (index: number, squares: number[], value: bigint, raiseOwnSquares = false) => {
     const hash = await wallet(index).writeContract({
       address: deployment.contracts.GaiaAuction,
@@ -116,7 +128,14 @@ describe.skipIf(!hasAnvil)('server against Anvil', { timeout: 30_000 }, () => {
     deploymentId = `server-test-${port}`;
     anvilProcess = spawn('anvil', ['--port', String(port), '--silent'], { stdio: 'ignore' });
     client = createPublicClient({ chain: anvil, transport: http(rpcUrl), pollingInterval: 50 });
-    await until(() => client.getChainId().then(() => true).catch(() => undefined), 'Anvil starts');
+    await until(
+      () =>
+        client
+          .getChainId()
+          .then(() => true)
+          .catch(() => undefined),
+      'Anvil starts',
+    );
 
     const hardhat = (script: string) =>
       run('yarn', ['hardhat', 'run', script, '--network', 'anvil'], { cwd: REPO_ROOT, env: env() });
@@ -140,11 +159,13 @@ describe.skipIf(!hasAnvil)('server against Anvil', { timeout: 30_000 }, () => {
     server = await start();
     const snapshot = await get<ViewportSnapshot>(`/bids?${query(LONDON)}`);
     const byShape = new Map<number, number[]>();
-    for (const b of snapshot.bids) byShape.set(b.shapeId, [...(byShape.get(b.shapeId) ?? []), b.squareId]);
+    for (const b of snapshot.bids) {
+      byShape.set(b.shapeId, [...(byShape.get(b.shapeId) ?? []), b.squareId]);
+    }
     expect([...byShape.keys()].sort()).toEqual([1, 2, 3]);
     SEED.forEach((squares, i) => expect(byShape.get(i + 1)?.sort()).toEqual([...squares].sort()));
-    const bidders = new Set(snapshot.bids.map((b) => b.bidder));
-    expect(bidders).toEqual(new Set([3, 4, 5].map((i) => mnemonicToAccount(MNEMONIC, { addressIndex: i }).address)));
+    const bidders = new Set(snapshot.bids.map(b => b.bidder));
+    expect(bidders).toEqual(new Set([3, 4, 5].map(i => mnemonicToAccount(MNEMONIC, { addressIndex: i }).address)));
   });
 
   let lastId = '';
@@ -162,19 +183,28 @@ describe.skipIf(!hasAnvil)('server against Anvil', { timeout: 30_000 }, () => {
 
     const [takeover, rebid] = await stream.json<ShapeBidMessage>(2, 10_000);
     const account5 = getAddress(mnemonicToAccount(MNEMONIC, { addressIndex: 5 }).address);
-    expect(takeover).toMatchObject({ type: 'shapeBid', shapeId: 4, squareIds: [east], amounts: [(2n * minBid).toString()] });
+    expect(takeover).toMatchObject({
+      type: 'shapeBid',
+      shapeId: 4,
+      squareIds: [east],
+      amounts: [(2n * minBid).toString()],
+    });
     expect(takeover.taken).toEqual([{ shapeId: 3, bidder: account5, squareIds: [east] }]);
-    expect(rebid).toMatchObject({ shapeId: 5, paid: '0', taken: [{ shapeId: 3, bidder: account5, squareIds: SEED[2].slice(0, 3) }] });
+    expect(rebid).toMatchObject({
+      shapeId: 5,
+      paid: '0',
+      taken: [{ shapeId: 3, bidder: account5, squareIds: SEED[2].slice(0, 3) }],
+    });
     lastId = formatEventId(rebid.id);
     await stream.close();
 
     const after = await get<ViewportSnapshot>(`/bids?${query(LONDON)}`);
-    expect(after.bids.find((b) => b.squareId === east)).toMatchObject({ shapeId: 4, amount: (2n * minBid).toString() });
+    expect(after.bids.find(b => b.squareId === east)).toMatchObject({ shapeId: 4, amount: (2n * minBid).toString() });
 
     // The bidder view of account 6: the shape, and the excess as the refund (from the contract).
     const account6 = mnemonicToAccount(MNEMONIC, { addressIndex: 6 }).address;
     const view = await get<BidderView>(`/bidder/${account6}`);
-    expect(view.shapes.map((s) => [s.shapeId, s.heldSquareIds])).toEqual([[4, [east]]]);
+    expect(view.shapes.map(s => [s.shapeId, s.heldSquareIds])).toEqual([[4, [east]]]);
     expect(view.refund).toBe(minBid.toString());
   });
 
@@ -224,15 +254,25 @@ describe.skipIf(!hasAnvil)('server against Anvil', { timeout: 30_000 }, () => {
       const lng = b.squareId % 65536;
       const [bidder, amount] = await client.readContract({ ...auction, functionName: 'highestBids', args: [lat, lng] });
       expect([getAddress(bidder), amount.toString()]).toEqual([getAddress(b.bidder), b.amount]);
-      expect(Number(await client.readContract({ ...auction, functionName: 'squareShapeId', args: [lat, lng] }))).toBe(b.shapeId);
+      expect(Number(await client.readContract({ ...auction, functionName: 'squareShapeId', args: [lat, lng] }))).toBe(
+        b.shapeId,
+      );
     }
     const ids = [1, 2, 3, 4, 5, 6, 7];
     const shapes = await store.shapes(ids);
-    expect(shapes.map((s) => s.shapeId)).toEqual(ids.slice(0, 6));
+    expect(shapes.map(s => s.shapeId)).toEqual(ids.slice(0, 6));
     for (const shape of shapes) {
-      const live = await client.readContract({ ...auction, functionName: 'shapeLiveSquares', args: [BigInt(shape.shapeId)] });
+      const live = await client.readContract({
+        ...auction,
+        functionName: 'shapeLiveSquares',
+        args: [BigInt(shape.shapeId)],
+      });
       expect([shape.shapeId, BigInt(shape.heldSquareCount)]).toEqual([shape.shapeId, live]);
-      const bidder = await client.readContract({ ...auction, functionName: 'shapeBidder', args: [BigInt(shape.shapeId)] });
+      const bidder = await client.readContract({
+        ...auction,
+        functionName: 'shapeBidder',
+        args: [BigInt(shape.shapeId)],
+      });
       expect(getAddress(bidder)).toBe(getAddress(shape.bidder as Address));
     }
     // The dropped shape 7 is not on the chain either.

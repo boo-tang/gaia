@@ -5,7 +5,6 @@
 //
 //   yarn workspace @gaia/core abis          writes the files
 //   yarn workspace @gaia/core abis:check    fails if a file is not the same as the artifacts
-
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,19 +41,20 @@ for (const contract of CONTRACTS) {
   const abi = JSON.stringify(readAbi(contract), undefined, 2);
   files.set(`${contract}.ts`, `${HEADER}\nexport const ${abiName(contract)} = ${abi} as const;\n`);
 }
-files.set(
-  'index.ts',
-  `${HEADER}\n${CONTRACTS.map((c) => `export { ${abiName(c)} } from './${c}';`).join('\n')}\n`,
-);
+files.set('index.ts', `${HEADER}\n${CONTRACTS.map(c => `export { ${abiName(c)} } from './${c}';`).join('\n')}\n`);
 
 const check = process.argv.includes('--check');
 const stale: string[] = [];
-if (!check) fs.mkdirSync(outDir, { recursive: true });
+if (!check) {
+  fs.mkdirSync(outDir, { recursive: true });
+}
 for (const [name, content] of files) {
   const file = path.join(outDir, name);
   if (check) {
     const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined;
-    if (current !== content) stale.push(name);
+    if (current !== content) {
+      stale.push(name);
+    }
   } else {
     fs.writeFileSync(file, content);
   }

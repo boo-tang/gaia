@@ -1,9 +1,9 @@
-import { expect } from "chai";
-import { getAddress } from "viem";
+import { expect } from 'chai';
+import { getAddress } from 'viem';
 
-import { loadFixture, time, viem } from "./helpers/setup";
-import { auctionAs, deployAuction, deploySale, pack } from "./helpers/auction";
-import { accountTransferSquare, deployAccount, deployLand, squareId } from "./helpers/land";
+import { auctionAs, deployAuction, deploySale, pack } from './helpers/auction';
+import { accountTransferSquare, deployAccount, deployLand, squareId } from './helpers/land';
+import { loadFixture, time, viem } from './helpers/setup';
 
 /*
  * The story of docs/square-ownership/how-it-works.md, from the auction to a merge, with the
@@ -14,7 +14,7 @@ import { accountTransferSquare, deployAccount, deployLand, squareId } from "./he
  *     21      B   A   A   C   C
  *     20      B   B   .   C   .
  */
-describe("Journey: how land works", function () {
+describe('Journey: how land works', function () {
   const minBid = 1000n;
   const salePrice = 5000n;
 
@@ -47,22 +47,20 @@ describe("Journey: how land works", function () {
       holdDuration: 0n,
       dropDuration: 1n,
     });
-    const market = await viem.deployContract("GaiaCountryMarket", [land.countries.address]);
-    const as = <T extends "GaiaCountries" | "GaiaSquares" | "GaiaCountryMarket">(
+    const market = await viem.deployContract('GaiaCountryMarket', [land.countries.address]);
+    const as = <T extends 'GaiaCountries' | 'GaiaSquares' | 'GaiaCountryMarket'>(
       name: T,
       address: `0x${string}`,
-      wallet: (typeof wallets)[number]
+      wallet: (typeof wallets)[number],
     ) => viem.getContractAt(name, address, { client: { wallet } });
     return { land, auction, endTime, sale, market, as, aliceW, bobW, carolW, danaW };
   }
 
-  it("follows the land from the auction to a sale and a merge", async function () {
-    const { land, auction, endTime, sale, market, as, aliceW, bobW, carolW, danaW } =
-      await loadFixture(deployJourney);
+  it('follows the land from the auction to a sale and a merge', async function () {
+    const { land, auction, endTime, sale, market, as, aliceW, bobW, carolW, danaW } = await loadFixture(deployJourney);
     const { countries, squares } = land;
     const addr = (w: typeof aliceW) => getAddress(w.account.address);
-    const controller = async (lat: number, lng: number) =>
-      getAddress(await squares.read.controllerOf([lat, lng]));
+    const controller = async (lat: number, lng: number) => getAddress(await squares.read.controllerOf([lat, lng]));
 
     // Auction: each bidder bids on a shape from a wallet.
     for (const [wallet, shape] of [
@@ -70,7 +68,9 @@ describe("Journey: how land works", function () {
       [bobW, bob],
       [carolW, carol],
     ] as const) {
-      await (await auctionAs(auction.address, wallet)).write.bidOnShape([pack(shape), 0n, false], {
+      await (
+        await auctionAs(auction.address, wallet)
+      ).write.bidOnShape([pack(shape), 0n, false], {
         value: minBid * BigInt(shape.length),
       });
     }
@@ -79,9 +79,7 @@ describe("Journey: how land works", function () {
     // the country's account, not in the bidder's wallet.
     await time.increaseTo(endTime + 1n);
     for (const shapeId of [1n, 2n, 3n]) await auction.write.settleShape([shapeId, 0n]);
-    const [aliceC, bobC, carolC] = await Promise.all(
-      [1n, 2n, 3n].map((id) => auction.read.shapeCountryId([id]))
-    );
+    const [aliceC, bobC, carolC] = await Promise.all([1n, 2n, 3n].map(id => auction.read.shapeCountryId([id])));
     expect(getAddress(await countries.read.ownerOf([aliceC]))).to.equal(addr(aliceW));
     expect(getAddress(await countries.read.ownerOf([bobC]))).to.equal(addr(bobW));
     const aliceAccount = getAddress(await countries.read.accountOf([aliceC]));
@@ -101,15 +99,13 @@ describe("Journey: how land works", function () {
 
     // Sale: Alice sells Country 1 to Dana on the market. The squares do not move; only their
     // controller changes.
-    await (await as("GaiaCountries", countries.address, aliceW)).write.approve([
-      market.address,
-      aliceC,
-    ]);
-    await (await as("GaiaCountryMarket", market.address, aliceW)).write.list([aliceC, 10n ** 18n]);
-    await (await as("GaiaCountryMarket", market.address, danaW)).write.buy(
-      [aliceC, await countries.read.compositionVersion([aliceC]), await market.read.accountState([aliceC])],
-      { value: 10n ** 18n }
-    );
+    await (await as('GaiaCountries', countries.address, aliceW)).write.approve([market.address, aliceC]);
+    await (await as('GaiaCountryMarket', market.address, aliceW)).write.list([aliceC, 10n ** 18n]);
+    await (
+      await as('GaiaCountryMarket', market.address, danaW)
+    ).write.buy([aliceC, await countries.read.compositionVersion([aliceC]), await market.read.accountState([aliceC])], {
+      value: 10n ** 18n,
+    });
     expect(getAddress(await countries.read.ownerOf([aliceC]))).to.equal(addr(danaW));
     expect(getAddress(await squares.read.ownerOf([squareId(21, 12)]))).to.equal(aliceAccount);
     expect(await controller(21, 12)).to.equal(addr(danaW));
@@ -125,9 +121,9 @@ describe("Journey: how land works", function () {
     ]) {
       await accountTransferSquare(land, carolW, carolAccount, carolW.account.address, lat, lng);
     }
-    await expect(countries.read.ownerOf([carolC])).to.be.rejectedWith("ERC721NonexistentToken");
-    const squaresAsCarol = await as("GaiaSquares", squares.address, carolW);
-    const squaresAsDana = await as("GaiaSquares", squares.address, danaW);
+    await expect(countries.read.ownerOf([carolC])).to.be.rejectedWith('ERC721NonexistentToken');
+    const squaresAsCarol = await as('GaiaSquares', squares.address, carolW);
+    const squaresAsDana = await as('GaiaSquares', squares.address, danaW);
     for (const loc of carol) {
       await squaresAsCarol.write.transferFrom([
         carolW.account.address,
@@ -137,8 +133,8 @@ describe("Journey: how land works", function () {
     }
     // (21, 14) does not touch Country 1 yet.
     await expect(
-      squaresAsDana.write.transferFrom([danaW.account.address, aliceAccount, squareId(21, 14)])
-    ).to.be.rejectedWith("ShapeBroken");
+      squaresAsDana.write.transferFrom([danaW.account.address, aliceAccount, squareId(21, 14)]),
+    ).to.be.rejectedWith('ShapeBroken');
     for (const [lat, lng] of [
       [21, 13],
       [21, 14],
@@ -155,8 +151,8 @@ describe("Journey: how land works", function () {
     // Land sale: Dana buys a free square next to her country, and a new country of one free
     // square. A square of an auction shape stays reserved. The sale passes on the errors of
     // GaiaCountries, so its ABI gets them for viem to name them.
-    const saleAbi = [...sale.abi, ...countries.abi.filter((item) => item.type === "error")];
-    const buy = (functionName: "buy" | "buyInto", args: readonly unknown[]) =>
+    const saleAbi = [...sale.abi, ...countries.abi.filter(item => item.type === 'error')];
+    const buy = (functionName: 'buy' | 'buyInto', args: readonly unknown[]) =>
       danaW.writeContract({
         address: sale.address,
         abi: saleAbi,
@@ -164,11 +160,11 @@ describe("Journey: how land works", function () {
         args: args as never,
         value: salePrice,
       });
-    await buy("buyInto", [aliceC, pack([{ lat: 21, lng: 15 }])]);
+    await buy('buyInto', [aliceC, pack([{ lat: 21, lng: 15 }])]);
     expect(await countries.read.squareCount([aliceC])).to.equal(6n);
-    await buy("buy", [pack([{ lat: 20, lng: 12 }])]);
+    await buy('buy', [pack([{ lat: 20, lng: 12 }])]);
     expect(await countries.read.balanceOf([danaW.account.address])).to.equal(2n);
-    await expect(buy("buy", [pack([{ lat: 20, lng: 10 }])])).to.be.rejectedWith("SquareReserved");
+    await expect(buy('buy', [pack([{ lat: 20, lng: 10 }])])).to.be.rejectedWith('SquareReserved');
     expect(await squares.read.countryOf([20, 10])).to.equal(bobC);
   });
 });

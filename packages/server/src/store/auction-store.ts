@@ -1,7 +1,6 @@
 // The store does not know the auction rules. The event reducer (indexer/reducer.ts) reads the
 // current state with `squares` and `shapes`, and gives the new values of one block to
 // `applyBlock`. The store saves them.
-
 import type {
   Address,
   AuctionStatus,
@@ -12,7 +11,8 @@ import type {
   StreamMessage,
   Viewport,
 } from '@gaia/core';
-import { isAddressEqual, type Hex } from 'viem';
+
+import { type Hex, isAddressEqual } from 'viem';
 
 /** A block that the store has applied. */
 export interface BlockNumberAndHash {
@@ -123,9 +123,11 @@ export class UndoWindowExceededError extends Error {
 /** True when `message` passes `filter`. Each store and the live stream use this rule. */
 export const matchesStreamMessageFilter = (message: StreamMessage, filter: StreamMessageFilter = {}): boolean => {
   const { bidder } = filter;
-  if (bidder === undefined) return true;
+  if (bidder === undefined) {
+    return true;
+  }
   if (message.type === 'shapeBid') {
-    return isAddressEqual(message.bidder, bidder) || message.taken.some((t) => isAddressEqual(t.bidder, bidder));
+    return isAddressEqual(message.bidder, bidder) || message.taken.some(t => isAddressEqual(t.bidder, bidder));
   } else if (message.type === 'settlement') {
     return isAddressEqual(message.bidder, bidder);
   }

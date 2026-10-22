@@ -40,9 +40,7 @@ describe('loadServerConfig', () => {
   });
 
   it('names each wrong variable', () => {
-    expect(() => loadServerConfig({ RPC_URLS: 'not a url', REORG_DEPTH: '0' })).toThrow(
-      /RPC_URLS[\s\S]*REORG_DEPTH/,
-    );
+    expect(() => loadServerConfig({ RPC_URLS: 'not a url', REORG_DEPTH: '0' })).toThrow(/RPC_URLS[\s\S]*REORG_DEPTH/);
     expect(() => loadServerConfig({ RPC_URLS: ' , ' })).toThrow(/RPC_URLS: must have at least one URL/);
   });
 });

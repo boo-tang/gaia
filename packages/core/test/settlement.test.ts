@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { rangeWidth, rowWidthsFromRanges, settleChunk, settlePlan } from '../src/settlement';
 
 describe('settleChunk', () => {
@@ -30,13 +31,13 @@ describe('settleChunk', () => {
 
 describe('settlePlan', () => {
   it('gives all chunks from the cursor to the end', () => {
-    expect(settlePlan([1, 1, 1, 1, 1], 2).map((c) => [c.fromRow, c.toRow])).toEqual([
+    expect(settlePlan([1, 1, 1, 1, 1], 2).map(c => [c.fromRow, c.toRow])).toEqual([
       [0, 2],
       [2, 4],
       [4, 5],
     ]);
-    expect(settlePlan([1, 1, 1, 1, 1], 2, 3).map((c) => c.squares)).toEqual([2]);
-    expect(settlePlan([4, 4], 1).map((c) => c.squares)).toEqual([4, 4]);
+    expect(settlePlan([1, 1, 1, 1, 1], 2, 3).map(c => c.squares)).toEqual([2]);
+    expect(settlePlan([4, 4], 1).map(c => c.squares)).toEqual([4, 4]);
   });
 
   it('settles each square once', () => {
@@ -55,8 +56,6 @@ describe('row ranges', () => {
   });
 
   it('gives 0 for an empty row', () => {
-    expect(rowWidthsFromRanges([{ first: 504, last: 508 }, undefined, { first: 35999, last: 0 }])).toEqual([
-      5, 0, 2,
-    ]);
+    expect(rowWidthsFromRanges([{ first: 504, last: 508 }, undefined, { first: 35999, last: 0 }])).toEqual([5, 0, 2]);
   });
 });

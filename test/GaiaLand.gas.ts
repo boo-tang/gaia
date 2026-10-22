@@ -1,16 +1,15 @@
-import { expect } from "chai";
+import { expect } from 'chai';
+import { network } from 'hardhat';
+import { encodeFunctionData, getAddress } from 'viem';
 
-import { encodeFunctionData, getAddress } from "viem";
-import { network } from "hardhat";
-
-import { coverage } from "./helpers/setup";
-import { deployAuction, deploySale, pack } from "./helpers/auction";
-import { deployAccount, deployLand, executeAs, squareId } from "./helpers/land";
-import { type Loc, rect } from "./helpers/shapes";
+import { deployAuction, deploySale, pack } from './helpers/auction';
+import { deployAccount, deployLand, executeAs, squareId } from './helpers/land';
+import { coverage } from './helpers/setup';
+import { type Loc, rect } from './helpers/shapes';
 
 // Own connection on the Prague hardfork, the same as test/Gaia_Auction.gas.ts.
 const { viem, networkHelpers } = await network.create({
-  override: { hardfork: "prague", blockGasLimit: 1_000_000_000n },
+  override: { hardfork: 'prague', blockGasLimit: 1_000_000_000n },
 });
 const loadFixture = networkHelpers.loadFixture.bind(networkHelpers);
 const time = networkHelpers.time;
@@ -24,10 +23,8 @@ const time = networkHelpers.time;
 // finds a large regression (for example an operation that becomes proportional to the size of
 // the country). A failure means "look at the change", not "a bug": if the change is correct,
 // update the measurement.
-describe("Land: gas", function () {
-  const report = process.env.GAS_REPORT === "1";
-
-
+describe('Land: gas', function () {
+  const report = process.env.GAS_REPORT === '1';
 
   // Alice owns country 1, a 10 x 10 square at (100, 100), and country 2, one square at
   // (200, 200). The account of country 1 is deployed. An auction is registered and has ended,
@@ -44,7 +41,7 @@ describe("Land: gas", function () {
     const { auction, endTime: end } = await deployAuction(
       { countries },
       { treasury: treasury.account.address },
-      { v: viem }
+      { v: viem },
     );
     const sale = await deploySale(
       { countries },
@@ -56,11 +53,9 @@ describe("Land: gas", function () {
         holdDuration: 0n,
         dropDuration: 1n,
       },
-      { v: viem }
+      { v: viem },
     );
-    const market = await viem.deployContract("GaiaCountryMarket", [
-      countries.address,
-    ]);
+    const market = await viem.deployContract('GaiaCountryMarket', [countries.address]);
 
     await countries.write.createCountry([alice.account.address, rect(100, 100, 10, 10)]);
     await countries.write.createCountry([alice.account.address, rect(200, 200, 1, 1)]);
@@ -68,16 +63,16 @@ describe("Land: gas", function () {
     await time.increaseTo(end + 1n);
 
     const as = (wallet: typeof admin) => ({
-      countries: viem.getContractAt("GaiaCountries", countries.address, {
+      countries: viem.getContractAt('GaiaCountries', countries.address, {
         client: { wallet },
       }),
-      squares: viem.getContractAt("GaiaSquares", land.squares.address, {
+      squares: viem.getContractAt('GaiaSquares', land.squares.address, {
         client: { wallet },
       }),
-      market: viem.getContractAt("GaiaCountryMarket", market.address, {
+      market: viem.getContractAt('GaiaCountryMarket', market.address, {
         client: { wallet },
       }),
-      sale: viem.getContractAt("GaiaLandSale", sale.address, {
+      sale: viem.getContractAt('GaiaLandSale', sale.address, {
         client: { wallet },
       }),
     });
@@ -100,7 +95,7 @@ describe("Land: gas", function () {
 
   async function gasOf(f: Gas, hash: `0x${string}`) {
     const receipt = await f.publicClient.waitForTransactionReceipt({ hash });
-    expect(receipt.status).to.equal("success");
+    expect(receipt.status).to.equal('success');
     return receipt.gasUsed;
   }
 
@@ -110,14 +105,14 @@ describe("Land: gas", function () {
   }
 
   function log(label: string, gas: bigint) {
-    if (report) console.log(`      ${label}: ${gas.toLocaleString("en-US")}`);
+    if (report) console.log(`      ${label}: ${gas.toLocaleString('en-US')}`);
   }
 
   // The account of country `countryId` sends one square to `to`. Alice owns the country.
   async function split(f: Gas, account: `0x${string}`, to: `0x${string}`, loc: Loc) {
     const data = encodeFunctionData({
       abi: f.land.squares.abi,
-      functionName: "transferFrom",
+      functionName: 'transferFrom',
       args: [account, to, squareId(loc.lat, loc.lng)],
     });
     return gasOf(f, await executeAs(f.land, f.alice, account, f.land.squares, data));
@@ -126,53 +121,49 @@ describe("Land: gas", function () {
   // Alice sends one square from her wallet into the account of a country that she owns.
   async function merge(f: Gas, account: `0x${string}`, loc: Loc) {
     const squares = await f.asAlice.squares;
-    const hash = await squares.write.transferFrom([
-      f.aliceAddress,
-      account,
-      squareId(loc.lat, loc.lng),
-    ]);
+    const hash = await squares.write.transferFrom([f.aliceAddress, account, squareId(loc.lat, loc.lng)]);
     return gasOf(f, hash);
   }
 
-  describe("split and merge", function () {
-    it("splits a corner square of a 10 x 10 country to a wallet", async function () {
+  describe('split and merge', function () {
+    it('splits a corner square of a 10 x 10 country to a wallet', async function () {
       const f = await loadFixture(deployGas);
       const gas = await split(f, f.account, f.aliceAddress, { lat: 100, lng: 100 });
-      log("split (corner)", gas);
+      log('split (corner)', gas);
       expect(await f.land.countries.read.squareCount([1n])).to.equal(99n);
       if (coverage) this.skip();
       expectBelowTwice(gas, 138_791n);
     });
 
-    it("splits an edge square of a 10 x 10 country to a wallet", async function () {
+    it('splits an edge square of a 10 x 10 country to a wallet', async function () {
       const f = await loadFixture(deployGas);
       const gas = await split(f, f.account, f.aliceAddress, { lat: 100, lng: 105 });
-      log("split (edge)", gas);
+      log('split (edge)', gas);
       if (coverage) this.skip();
       expectBelowTwice(gas, 138_852n);
     });
 
-    it("splits the last square of a country (burns the country)", async function () {
+    it('splits the last square of a country (burns the country)', async function () {
       const f = await loadFixture(deployGas);
       const account = await deployAccount(f.land, 2n);
       const gas = await split(f, account, f.aliceAddress, { lat: 200, lng: 200 });
-      log("split (last square, burn)", gas);
+      log('split (last square, burn)', gas);
       expect(await f.land.countries.read.squareCount([2n])).to.equal(0n);
       if (coverage) this.skip();
       expectBelowTwice(gas, 116_481n);
     });
 
-    it("merges a square from a wallet into a 10 x 10 country", async function () {
+    it('merges a square from a wallet into a 10 x 10 country', async function () {
       const f = await loadFixture(deployGas);
       await split(f, f.account, f.aliceAddress, { lat: 100, lng: 105 });
       const gas = await merge(f, f.account, { lat: 100, lng: 105 });
-      log("merge (into the notch)", gas);
+      log('merge (into the notch)', gas);
       expect(await f.land.countries.read.squareCount([1n])).to.equal(100n);
       if (coverage) this.skip();
       expectBelowTwice(gas, 107_782n);
     });
 
-    it("merges a square from a wallet onto the edge of a 10 x 10 country", async function () {
+    it('merges a square from a wallet onto the edge of a 10 x 10 country', async function () {
       const f = await loadFixture(deployGas);
       // Alice buys a free square next to the country as country 3, splits it to her wallet
       // (country 3 is burned), then merges it.
@@ -181,14 +172,14 @@ describe("Land: gas", function () {
       const account3 = await deployAccount(f.land, 3n);
       await split(f, account3, f.aliceAddress, { lat: 110, lng: 100 });
       const gas = await merge(f, f.account, { lat: 110, lng: 100 });
-      log("merge (onto the edge)", gas);
+      log('merge (onto the edge)', gas);
       expect(await f.land.countries.read.squareCount([1n])).to.equal(101n);
       if (coverage) this.skip();
       expectBelowTwice(gas, 107_679n);
     });
   });
 
-  describe("land sale", function () {
+  describe('land sale', function () {
     for (const n of [1, 10]) {
       it(`buys a new country of ${n} squares`, async function () {
         const f = await loadFixture(deployGas);
@@ -219,30 +210,30 @@ describe("Land: gas", function () {
     }
   });
 
-  describe("country transfer", function () {
-    it("transfers a country (ERC-721 transferFrom)", async function () {
+  describe('country transfer', function () {
+    it('transfers a country (ERC-721 transferFrom)', async function () {
       const f = await loadFixture(deployGas);
       const countries = await f.asAlice.countries;
       const hash = await countries.write.transferFrom([f.aliceAddress, f.bobAddress, 1n]);
       const gas = await gasOf(f, hash);
-      log("country transferFrom", gas);
+      log('country transferFrom', gas);
       if (coverage) this.skip();
       expectBelowTwice(gas, 62_162n);
     });
 
-    it("sells a country through GaiaCountryMarket.buy", async function () {
+    it('sells a country through GaiaCountryMarket.buy', async function () {
       const f = await loadFixture(deployGas);
       const countries = await f.asAlice.countries;
       const market = await f.asAlice.market;
       await countries.write.approve([f.market.address, 1n]);
       const listGas = await gasOf(f, await market.write.list([1n, 10n ** 18n]));
-      log("market list", listGas);
+      log('market list', listGas);
       const version = await f.land.countries.read.compositionVersion([1n]);
       const state = await f.market.read.accountState([1n]);
       const buy = await f.asBob.market;
       const hash = await buy.write.buy([1n, version, state], { value: 10n ** 18n });
       const gas = await gasOf(f, hash);
-      log("market buy", gas);
+      log('market buy', gas);
       expect(getAddress(await f.land.countries.read.ownerOf([1n]))).to.equal(f.bobAddress);
       if (coverage) this.skip();
       expectBelowTwice(listGas, 102_096n);

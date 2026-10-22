@@ -65,13 +65,17 @@ export const gridLines = (bounds: Bounds, maxLines = 400): { lats: number[]; lng
 
   const lats: number[] = [];
   if (latTo - latFrom <= maxLines) {
-    for (let i = latFrom; i <= latTo; i++) lats.push(i / PRECISION - 90);
+    for (let i = latFrom; i <= latTo; i++) {
+      lats.push(i / PRECISION - 90);
+    }
   }
   // Longitudes are not wrapped here: a map shows world copies at -540..540, and each copy needs
   // its own lines.
   const lngs: number[] = [];
   if (lngTo - lngFrom <= maxLines) {
-    for (let i = lngFrom; i <= lngTo; i++) lngs.push(i / PRECISION - 180);
+    for (let i = lngFrom; i <= lngTo; i++) {
+      lngs.push(i / PRECISION - 180);
+    }
   }
   return { lats, lngs };
 };

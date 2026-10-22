@@ -1,13 +1,8 @@
-import { encodeFunctionData, getAddress, zeroAddress } from "viem";
+import { encodeFunctionData, getAddress, zeroAddress } from 'viem';
 
-import { loadFixture, viem, provider } from "./helpers/setup";
-import {
-  accountTransferSquare,
-  deployAccount,
-  deployLand,
-  squareId,
-} from "./helpers/land";
-import { Rng } from "./helpers/random";
+import { accountTransferSquare, deployAccount, deployLand, squareId } from './helpers/land';
+import { Rng } from './helpers/random';
+import { loadFixture, provider, viem } from './helpers/setup';
 
 /*
  * Model-based random tests of the land rules.
@@ -39,13 +34,10 @@ import { Rng } from "./helpers/random";
  * - LAND_FUZZ_SEED: run only this seed (to repeat a failed run).
  */
 
-const RUNS = Number(process.env.LAND_FUZZ_RUNS ?? "20");
-const FIRST_SEED = Number(process.env.LAND_FUZZ_FIRST_SEED ?? "1");
-const OPS = Number(process.env.LAND_FUZZ_OPS ?? "60");
-const ONLY_SEED =
-  process.env.LAND_FUZZ_SEED === undefined
-    ? undefined
-    : Number(process.env.LAND_FUZZ_SEED);
+const RUNS = Number(process.env.LAND_FUZZ_RUNS ?? '20');
+const FIRST_SEED = Number(process.env.LAND_FUZZ_FIRST_SEED ?? '1');
+const OPS = Number(process.env.LAND_FUZZ_OPS ?? '60');
+const ONLY_SEED = process.env.LAND_FUZZ_SEED === undefined ? undefined : Number(process.env.LAND_FUZZ_SEED);
 
 const WINDOW = 8;
 const MAX_LAT = 18000;
@@ -55,11 +47,11 @@ type Address = `0x${string}`;
 type Wallet = Awaited<ReturnType<typeof viem.getWalletClients>>[number];
 
 const PLACES = [
-  { name: "ordinary", lat0: 9000, lng0: 18000 },
-  { name: "across longitude 0", lat0: 9000, lng0: 35996 },
-  { name: "latitude 0", lat0: 0, lng0: 100 },
+  { name: 'ordinary', lat0: 9000, lng0: 18000 },
+  { name: 'across longitude 0', lat0: 9000, lng0: 35996 },
+  { name: 'latitude 0', lat0: 0, lng0: 100 },
   {
-    name: "latitude 17999 across longitude 0",
+    name: 'latitude 17999 across longitude 0',
     lat0: MAX_LAT - WINDOW,
     lng0: 35996,
   },
@@ -72,8 +64,7 @@ type Place = (typeof PLACES)[number];
 const key = (row: number, col: number) => row * WINDOW + col;
 const rowOf = (k: number) => Math.floor(k / WINDOW);
 const colOf = (k: number) => k % WINDOW;
-const inWindow = (row: number, col: number) =>
-  row >= 0 && row < WINDOW && col >= 0 && col < WINDOW;
+const inWindow = (row: number, col: number) => row >= 0 && row < WINDOW && col >= 0 && col < WINDOW;
 
 const ALL_CELLS = Array.from({ length: WINDOW * WINDOW }, (_, i) => i);
 
@@ -135,8 +126,7 @@ function isValidShape(place: Place, cells: Set<number>): boolean {
   const side = WINDOW + 2;
   const filled = new Set<number>();
   const gridKey = (r: number, c: number) => (r + 1) * side + (c + 1);
-  const isEmpty = (r: number, c: number) =>
-    !inWindow(r, c) || !cells.has(key(r, c));
+  const isEmpty = (r: number, c: number) => !inWindow(r, c) || !cells.has(key(r, c));
   const fill = [[-1, -1]];
   filled.add(gridKey(-1, -1));
   while (fill.length > 0) {
@@ -207,9 +197,7 @@ class LandModel {
   }
 
   liveIds(): bigint[] {
-    return [...this.countries.keys()].filter(
-      (id) => this.countries.get(id)!.owner !== undefined,
-    );
+    return [...this.countries.keys()].filter(id => this.countries.get(id)!.owner !== undefined);
   }
 
   ownerOf(id: bigint): Address | undefined {
@@ -226,23 +214,23 @@ class LandModel {
   /// error, or undefined for success. After a revert, the model is discarded (see `attempt`).
 
   createCountry(owner: Address, cells: number[]): string | undefined {
-    if (cells.length === 0) return "EmptySquares";
+    if (cells.length === 0) return 'EmptySquares';
     const id = this.nextId++;
     this.countries.set(id, { owner, lastOwner: owner, version: 0n });
     return this.mint(id, cells);
   }
 
   addSquares(id: bigint, buyer: Address, cells: number[]): string | undefined {
-    if (cells.length === 0) return "EmptySquares";
+    if (cells.length === 0) return 'EmptySquares';
     const owner = this.ownerOf(id);
-    if (owner === undefined) return "UnknownCountry";
-    if (owner !== buyer) return "NotCountryOwner";
+    if (owner === undefined) return 'UnknownCountry';
+    if (owner !== buyer) return 'NotCountryOwner';
     return this.mint(id, cells);
   }
 
   private mint(id: bigint, cells: number[]): string | undefined {
     for (const k of cells) {
-      if (this.squares.has(k)) return "SquareAlreadyExists";
+      if (this.squares.has(k)) return 'SquareAlreadyExists';
       this.squares.set(k, { country: id, holder: this.accountOf(id) });
       const err = this.enter(id);
       if (err !== undefined) return err;
@@ -253,7 +241,7 @@ class LandModel {
   private enter(id: bigint): string | undefined {
     const c = this.countries.get(id)!;
     c.version++;
-    if (!isValidShape(this.place, this.cellsOf(id))) return "ShapeBroken";
+    if (!isValidShape(this.place, this.cellsOf(id))) return 'ShapeBroken';
     return undefined;
   }
 
@@ -265,22 +253,17 @@ class LandModel {
       c.owner = undefined;
       return undefined;
     }
-    if (!isValidShape(this.place, cells)) return "ShapeBroken";
+    if (!isValidShape(this.place, cells)) return 'ShapeBroken';
     return undefined;
   }
 
   /// ERC-721 transferFrom on GaiaSquares, sent by `auth`.
-  transferSquare(
-    auth: Address,
-    from: Address,
-    to: Address,
-    k: number,
-  ): string | undefined {
+  transferSquare(auth: Address, from: Address, to: Address, k: number): string | undefined {
     const s = this.squares.get(k);
-    if (s === undefined) return "ERC721NonexistentToken";
-    if (s.holder !== from) return "ERC721IncorrectOwner";
+    if (s === undefined) return 'ERC721NonexistentToken';
+    if (s.holder !== from) return 'ERC721IncorrectOwner';
     if (auth !== from && this.approvals.get(k) !== auth) {
-      return "ERC721InsufficientApproval";
+      return 'ERC721InsufficientApproval';
     }
     this.approvals.delete(k);
     s.holder = to;
@@ -292,15 +275,12 @@ class LandModel {
 
     if (toCountry !== 0n) {
       const toOwner = this.ownerOf(toCountry);
-      if (toOwner === undefined) return "ERC721NonexistentToken";
-      const sameOwner =
-        fromCountry !== 0n &&
-        auth === from &&
-        this.ownerOf(fromCountry) === toOwner;
-      if (auth !== toOwner && !sameOwner) return "NoConsent";
+      if (toOwner === undefined) return 'ERC721NonexistentToken';
+      const sameOwner = fromCountry !== 0n && auth === from && this.ownerOf(fromCountry) === toOwner;
+      if (auth !== toOwner && !sameOwner) return 'NoConsent';
     }
     if (fromCountry !== 0n) {
-      if (auth !== from) return "TransferNotByAccount";
+      if (auth !== from) return 'TransferNotByAccount';
       const err = this.leave(fromCountry);
       if (err !== undefined) return err;
     }
@@ -310,7 +290,7 @@ class LandModel {
 
   approve(caller: Address, spender: Address, k: number): string | undefined {
     const s = this.squares.get(k)!;
-    if (s.holder !== caller) return "ERC721InvalidApprover";
+    if (s.holder !== caller) return 'ERC721InvalidApprover';
     this.approvals.set(k, spender);
     return undefined;
   }
@@ -319,33 +299,23 @@ class LandModel {
   execute(caller: Address, account: Address): string | undefined {
     const id = this.tokenOfAccount(account);
     const owner = this.ownerOf(id);
-    if (owner === undefined) return "ERC721NonexistentToken";
-    if (caller !== owner) return "NotOwner";
+    if (owner === undefined) return 'ERC721NonexistentToken';
+    if (caller !== owner) return 'NotOwner';
     return undefined;
   }
 
   /// A split or a move: the country owner makes `account` send square k to `to`.
-  executeTransfer(
-    caller: Address,
-    account: Address,
-    to: Address,
-    k: number,
-  ): string | undefined {
+  executeTransfer(caller: Address, account: Address, to: Address, k: number): string | undefined {
     const err = this.execute(caller, account);
     if (err !== undefined) return err;
     return this.transferSquare(account, account, to, k);
   }
 
-  transferCountry(
-    caller: Address,
-    to: Address,
-    id: bigint,
-  ): string | undefined {
+  transferCountry(caller: Address, to: Address, id: bigint): string | undefined {
     const c = this.countries.get(id);
-    if (c === undefined || c.owner === undefined)
-      return "ERC721NonexistentToken";
-    if (caller !== c.owner) return "ERC721InsufficientApproval";
-    if (this.countryOfAccount(to) !== 0n) return "OwnershipLoop";
+    if (c === undefined || c.owner === undefined) return 'ERC721NonexistentToken';
+    if (caller !== c.owner) return 'ERC721InsufficientApproval';
+    if (this.countryOfAccount(to) !== 0n) return 'OwnershipLoop';
     c.owner = to;
     c.lastOwner = to;
     return undefined;
@@ -357,28 +327,18 @@ class LandModel {
 async function deploy() {
   const [admin, issuer, alice, bob, carol] = await viem.getWalletClients();
   const land = await deployLand(admin.account.address);
-  await land.countries.write.grantRole([
-    await land.countries.read.ISSUER_ROLE(),
-    issuer.account.address,
-  ]);
-  const asIssuer = await viem.getContractAt(
-    "GaiaCountries",
-    land.countries.address,
-    { client: { wallet: issuer } },
-  );
+  await land.countries.write.grantRole([await land.countries.read.ISSUER_ROLE(), issuer.account.address]);
+  const asIssuer = await viem.getContractAt('GaiaCountries', land.countries.address, { client: { wallet: issuer } });
   const users = [alice, bob, carol];
   const squaresAs = new Map<Address, Awaited<ReturnType<typeof squaresFor>>>();
-  const countriesAs = new Map<
-    Address,
-    Awaited<ReturnType<typeof countriesFor>>
-  >();
+  const countriesAs = new Map<Address, Awaited<ReturnType<typeof countriesFor>>>();
   async function squaresFor(wallet: Wallet) {
-    return viem.getContractAt("GaiaSquares", land.squares.address, {
+    return viem.getContractAt('GaiaSquares', land.squares.address, {
       client: { wallet },
     });
   }
   async function countriesFor(wallet: Wallet) {
-    return viem.getContractAt("GaiaCountries", land.countries.address, {
+    return viem.getContractAt('GaiaCountries', land.countries.address, {
       client: { wallet },
     });
   }
@@ -397,11 +357,8 @@ async function deploy() {
 
 type Fixture = Awaited<ReturnType<typeof deploy>>;
 
-describe("Land rules: model-based random tests", function () {
-  const seeds =
-    ONLY_SEED === undefined
-      ? Array.from({ length: RUNS }, (_, i) => FIRST_SEED + i)
-      : [ONLY_SEED];
+describe('Land rules: model-based random tests', function () {
+  const seeds = ONLY_SEED === undefined ? Array.from({ length: RUNS }, (_, i) => FIRST_SEED + i) : [ONLY_SEED];
 
   for (const seed of seeds) {
     const place = PLACES[seed % PLACES.length];
@@ -422,9 +379,8 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
   const startBlock = await (await viem.getPublicClient()).getBlockNumber();
   const accountOf = (id: bigint) => fx.accounts[Number(id)];
   let model = new LandModel(place, accountOf);
-  const users = fx.users.map((u) => getAddress(u.account.address));
-  const walletOf = (a: Address) =>
-    fx.users.find((u) => getAddress(u.account.address) === a)!;
+  const users = fx.users.map(u => getAddress(u.account.address));
+  const walletOf = (a: Address) => fx.users.find(u => getAddress(u.account.address) === a)!;
   const deployed = new Set<Address>();
   const log: string[] = [];
   const counts = { ok: 0, reverted: 0 };
@@ -437,7 +393,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
   };
   const who = (a: Address) => {
     const i = users.indexOf(a);
-    if (i >= 0) return ["alice", "bob", "carol"][i];
+    if (i >= 0) return ['alice', 'bob', 'carol'][i];
     const id = model.tokenOfAccount(a);
     if (id !== 0n) return `account#${id}`;
     return a;
@@ -459,28 +415,24 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
   ): Promise<boolean> {
     const next = model.clone();
     const expected = predict(next);
-    log.push(`${label} -> expect ${expected ?? "success"}`);
+    log.push(`${label} -> expect ${expected ?? 'success'}`);
     let actual: string | undefined;
-    let message = "";
+    let message = '';
     try {
       await send();
     } catch (e) {
       message = e instanceof Error ? e.message : String(e);
-      actual = "revert";
+      actual = 'revert';
     }
     if (expected === undefined && actual !== undefined) {
-      throw new Divergence(
-        `model expects success, contract reverted: ${message}`,
-      );
+      throw new Divergence(`model expects success, contract reverted: ${message}`);
     }
     if (expected !== undefined && actual === undefined) {
       throw new Divergence(`model expects ${expected}, contract succeeded`);
     }
     if (expected !== undefined) {
       if (!new RegExp(`\\b${expected}\\(`).test(message)) {
-        throw new Divergence(
-          `model expects ${expected}, contract reverted with: ${message}`,
-        );
+        throw new Divergence(`model expects ${expected}, contract reverted with: ${message}`);
       }
       counts.reverted++;
       outcomes.set(expected, (outcomes.get(expected) ?? 0) + 1);
@@ -493,7 +445,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
 
   // -------- Shape generation --------
 
-  const freeCells = () => ALL_CELLS.filter((k) => !model.squares.has(k));
+  const freeCells = () => ALL_CELLS.filter(k => !model.squares.has(k));
   const sideTouch = (k: number, cells: Set<number>) =>
     SIDES.some(([dr, dc]) => {
       const r = rowOf(k) + dr;
@@ -514,10 +466,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     const added: number[] = [];
     for (let i = 0; i < count; i++) {
       const options = freeCells().filter(
-        (k) =>
-          !cells.has(k) &&
-          (cells.size === 0 || sideTouch(k, cells)) &&
-          isValidShape(place, new Set([...cells, k])),
+        k => !cells.has(k) && (cells.size === 0 || sideTouch(k, cells)) && isValidShape(place, new Set([...cells, k])),
       );
       const k = rng.pickOr(options);
       if (k === undefined) break;
@@ -529,26 +478,16 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
 
   /// A square that the rule rejects after `cells`, of a random kind. Undefined if no square of
   /// that kind is free.
-  function badSquare(
-    cells: Set<number>,
-  ): { k: number; kind: string } | undefined {
-    const free = freeCells().filter((k) => !cells.has(k));
-    const kind = rng.pick([
-      "no contact",
-      "corner only",
-      "closes a ring",
-      "taken",
-    ]);
+  function badSquare(cells: Set<number>): { k: number; kind: string } | undefined {
+    const free = freeCells().filter(k => !cells.has(k));
+    const kind = rng.pick(['no contact', 'corner only', 'closes a ring', 'taken']);
     let options: number[] = [];
-    if (kind === "no contact") {
-      options = free.filter((k) => !anyTouch(k, cells));
-    } else if (kind === "corner only") {
-      options = free.filter((k) => anyTouch(k, cells) && !sideTouch(k, cells));
-    } else if (kind === "closes a ring") {
-      options = free.filter(
-        (k) =>
-          sideTouch(k, cells) && !isValidShape(place, new Set([...cells, k])),
-      );
+    if (kind === 'no contact') {
+      options = free.filter(k => !anyTouch(k, cells));
+    } else if (kind === 'corner only') {
+      options = free.filter(k => anyTouch(k, cells) && !sideTouch(k, cells));
+    } else if (kind === 'closes a ring') {
+      options = free.filter(k => sideTouch(k, cells) && !isValidShape(place, new Set([...cells, k])));
     } else {
       options = [...model.squares.keys(), ...cells];
     }
@@ -559,13 +498,11 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
 
   /// The 8 squares around a free 3 x 3 block, in ring order. The last one closes the ring.
   function ringShape(): number[] | undefined {
-    const centres = ALL_CELLS.filter((k) => {
+    const centres = ALL_CELLS.filter(k => {
       const r = rowOf(k);
       const c = colOf(k);
       if (r < 1 || r > WINDOW - 2 || c < 1 || c > WINDOW - 2) return false;
-      return [[0, 0], ...AROUND].every(
-        ([dr, dc]) => !model.squares.has(key(r + dr, c + dc)),
-      );
+      return [[0, 0], ...AROUND].every(([dr, dc]) => !model.squares.has(key(r + dr, c + dc)));
     });
     const centre = rng.pickOr(centres);
     if (centre === undefined) return undefined;
@@ -585,92 +522,65 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     let reverted = false;
     try {
       await provider.request({
-        method: "eth_call",
+        method: 'eth_call',
         params: [
           {
             to: land.countries.address,
             data: encodeFunctionData({
               abi: land.countries.abi,
-              functionName: "ownerOf",
+              functionName: 'ownerOf',
               args: [id],
             }),
           },
         ],
       });
     } catch (e) {
-      reverted = String(e).includes("ERC721NonexistentToken");
+      reverted = String(e).includes('ERC721NonexistentToken');
     }
-    if (!reverted)
-      throw new Divergence(`ownerOf(#${id}) does not revert after the burn`);
+    if (!reverted) throw new Divergence(`ownerOf(#${id}) does not revert after the burn`);
 
     const account = accountOf(id);
     const formerOwner = model.countries.get(id)!.lastOwner;
     await ensureDeployed(account);
-    const asOwner = await viem.getContractAt(
-      "GaiaCountryAccount",
-      account,
-      {
-        client: { wallet: walletOf(formerOwner) },
-      },
-    );
+    const asOwner = await viem.getContractAt('GaiaCountryAccount', account, {
+      client: { wallet: walletOf(formerOwner) },
+    });
     await attempt(
       `burned #${id}: execute by former owner ${who(formerOwner)}`,
-      (m) => m.execute(formerOwner, account),
-      () => asOwner.write.execute([formerOwner, 0n, "0x", 0]),
+      m => m.execute(formerOwner, account),
+      () => asOwner.write.execute([formerOwner, 0n, '0x', 0]),
     );
     const k = rng.pickOr(freeCells());
     if (k !== undefined) {
       await attempt(
         `burned #${id}: addSquares ${fmt(k)}`,
-        (m) => m.addSquares(id, formerOwner, [k]),
+        m => m.addSquares(id, formerOwner, [k]),
         () => asIssuer.write.addSquares([id, formerOwner, [locOf(k)]]),
       );
     }
-    const standalone = [...model.squares.entries()].filter(
-      ([, s]) => s.country === 0n && users.includes(s.holder),
-    );
+    const standalone = [...model.squares.entries()].filter(([, s]) => s.country === 0n && users.includes(s.holder));
     const pick = rng.pickOr(standalone);
     if (pick !== undefined) {
       const [sk, s] = pick;
       await attempt(
         `burned #${id}: merge ${fmt(sk)} by ${who(s.holder)}`,
-        (m) => m.transferSquare(s.holder, s.holder, account, sk),
+        m => m.transferSquare(s.holder, s.holder, account, sk),
         () =>
-          fx.squaresAs
-            .get(s.holder)!
-            .write.transferFrom([
-              s.holder,
-              account,
-              squareId(locOf(sk).lat, locOf(sk).lng),
-            ]),
+          fx.squaresAs.get(s.holder)!.write.transferFrom([s.holder, account, squareId(locOf(sk).lat, locOf(sk).lng)]),
       );
     }
   }
 
   // -------- Operations --------
 
-  async function split(
-    id: bigint,
-    k: number,
-    caller: Address,
-    to: Address,
-    label: string,
-  ) {
+  async function split(id: bigint, k: number, caller: Address, to: Address, label: string) {
     const account = accountOf(id);
     await ensureDeployed(account);
     const live = model.ownerOf(id) !== undefined;
     const ok = await attempt(
       `${label} ${fmt(k)} from #${id} to ${who(to)} by ${who(caller)}`,
-      (m) => m.executeTransfer(caller, account, to, k),
-      () =>
-        accountTransferSquare(
-          land,
-          walletOf(caller),
-          account,
-          to,
-          locOf(k).lat,
-          locOf(k).lng,
-        ),
+      m => m.executeTransfer(caller, account, to, k),
+      () => accountTransferSquare(land, walletOf(caller), account, to, locOf(k).lat, locOf(k).lng),
     );
     if (ok && live && model.ownerOf(id) === undefined) {
       log.push(`  #${id} burned`);
@@ -703,18 +613,18 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
   const ops: { weight: number; name: string; run: () => Promise<void> }[] = [
     {
       weight: 4,
-      name: "create",
+      name: 'create',
       run: async () => {
         const owner = rng.pick(users);
         let cells: number[];
-        let note = "";
+        let note = '';
         if (rng.chance(0.25)) {
           // The 8th square closes the ring. Without it, the shape is a valid C. If the gap is a
           // corner, the free centre reaches the outside only through that corner.
           const ring = ringShape();
           if (ring === undefined) return;
           cells = rng.chance(0.5) ? ring : ring.slice(0, 7);
-          note = cells.length === 8 ? " (ring)" : " (open ring)";
+          note = cells.length === 8 ? ' (ring)' : ' (open ring)';
         } else {
           cells = grow(new Set(), 1 + rng.int(6));
           if (cells.length === 0) return;
@@ -728,26 +638,25 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         }
         const id = model.nextId;
         await attempt(
-          `create #${id} for ${who(owner)}: ${cells.map(fmt).join(" ")}${note}`,
-          (m) => m.createCountry(owner, cells),
+          `create #${id} for ${who(owner)}: ${cells.map(fmt).join(' ')}${note}`,
+          m => m.createCountry(owner, cells),
           () => asIssuer.write.createCountry([owner, cells.map(locOf)]),
         );
       },
     },
     {
       weight: 3,
-      name: "addSquares",
+      name: 'addSquares',
       run: async () => {
         const ids = [...model.countries.keys()];
         if (ids.length === 0) return;
         const live = model.liveIds();
-        const id =
-          rng.chance(0.85) && live.length > 0 ? rng.pick(live) : rng.pick(ids);
+        const id = rng.chance(0.85) && live.length > 0 ? rng.pick(live) : rng.pick(ids);
         const owner = model.countries.get(id)!.lastOwner;
         const buyer = rng.chance(0.9) ? owner : rng.pick(users);
         const base = model.cellsOf(id);
         let cells = grow(base, 1 + rng.int(3));
-        let note = "";
+        let note = '';
         if (cells.length === 0 || rng.chance(0.3)) {
           const bad = badSquare(new Set([...base, ...cells]));
           if (bad !== undefined) {
@@ -757,43 +666,39 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         }
         if (cells.length === 0) return;
         await attempt(
-          `addSquares #${id} buyer ${who(buyer)}: ${cells.map(fmt).join(" ")}${note}`,
-          (m) => m.addSquares(id, buyer, cells),
+          `addSquares #${id} buyer ${who(buyer)}: ${cells.map(fmt).join(' ')}${note}`,
+          m => m.addSquares(id, buyer, cells),
           () => asIssuer.write.addSquares([id, buyer, cells.map(locOf)]),
         );
       },
     },
     {
       weight: 5,
-      name: "split",
+      name: 'split',
       run: async () => {
-        const choice = rng.chance(0.75)
-          ? rng.pickOr(removable())
-          : rng.pickOr(inCountry());
+        const choice = rng.chance(0.75) ? rng.pickOr(removable()) : rng.pickOr(inCountry());
         if (choice === undefined) return;
         const owner = model.ownerOf(choice.id)!;
         const caller = rng.chance(0.85) ? owner : rng.pick(users);
         const to = rng.chance(0.8) ? caller : rng.pick(users);
-        await split(choice.id, choice.k, caller, to, "split");
+        await split(choice.id, choice.k, caller, to, 'split');
       },
     },
     {
       weight: 5,
-      name: "merge",
+      name: 'merge',
       run: async () => {
-        const standalone = [...model.squares.entries()].filter(
-          ([, s]) => s.country === 0n && users.includes(s.holder),
-        );
+        const standalone = [...model.squares.entries()].filter(([, s]) => s.country === 0n && users.includes(s.holder));
         const pick = rng.pickOr(standalone);
         if (pick === undefined) return;
         const [k, s] = pick;
         const holder = s.holder;
-        const fits = model.liveIds().filter((id) => {
+        const fits = model.liveIds().filter(id => {
           const cells = model.cellsOf(id);
           cells.add(k);
           return isValidShape(place, cells);
         });
-        const own = fits.filter((id) => model.ownerOf(id) === holder);
+        const own = fits.filter(id => model.ownerOf(id) === holder);
         const all = [...model.countries.keys()];
         let id: bigint | undefined;
         if (rng.chance(0.5)) id = rng.pickOr(own);
@@ -807,37 +712,30 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
           // Consent: the holder approves the country owner, and the country owner pulls.
           await attempt(
             `approve ${fmt(k)} by ${who(holder)} for ${who(toOwner)}`,
-            (m) => m.approve(holder, toOwner, k),
+            m => m.approve(holder, toOwner, k),
             () => fx.squaresAs.get(holder)!.write.approve([toOwner, sq]),
           );
           await attempt(
             `merge ${fmt(k)} of ${who(holder)} into #${id} by ${who(toOwner)}`,
-            (m) => m.transferSquare(toOwner, holder, account, k),
-            () =>
-              fx.squaresAs
-                .get(toOwner)!
-                .write.transferFrom([holder, account, sq]),
+            m => m.transferSquare(toOwner, holder, account, k),
+            () => fx.squaresAs.get(toOwner)!.write.transferFrom([holder, account, sq]),
           );
           return;
         }
         await attempt(
           `merge ${fmt(k)} into #${id} by ${who(holder)}`,
-          (m) => m.transferSquare(holder, holder, account, k),
-          () =>
-            fx.squaresAs.get(holder)!.write.transferFrom([holder, account, sq]),
+          m => m.transferSquare(holder, holder, account, k),
+          () => fx.squaresAs.get(holder)!.write.transferFrom([holder, account, sq]),
         );
       },
     },
     {
       weight: 3,
-      name: "move",
+      name: 'move',
       run: async () => {
         // A square in a country, or a square parked at the account of a live country.
         const parked = [...model.squares.entries()]
-          .filter(
-            ([, s]) =>
-              s.country === 0n && model.countryOfAccount(s.holder) !== 0n,
-          )
+          .filter(([, s]) => s.country === 0n && model.countryOfAccount(s.holder) !== 0n)
           .map(([k, s]) => ({ id: model.countryOfAccount(s.holder), k }))
           .filter(({ id }) => model.ownerOf(id) !== undefined);
         let from = rng.chance(0.2) ? rng.pickOr(parked) : undefined;
@@ -845,11 +743,9 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         if (from === undefined) return;
         const { id: fromId, k } = from;
         const owner = model.ownerOf(fromId)!;
-        const others = [...model.countries.keys()].filter(
-          (id) => id !== fromId,
-        );
-        const sameOwner = others.filter((id) => model.ownerOf(id) === owner);
-        const fits = sameOwner.filter((id) => {
+        const others = [...model.countries.keys()].filter(id => id !== fromId);
+        const sameOwner = others.filter(id => model.ownerOf(id) === owner);
+        const fits = sameOwner.filter(id => {
           const cells = model.cellsOf(id);
           cells.add(k);
           return isValidShape(place, cells);
@@ -857,88 +753,70 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         let toId = rng.chance(0.6) ? rng.pickOr(fits) : undefined;
         if (toId === undefined) toId = rng.pickOr(others);
         if (toId === undefined) return;
-        await split(fromId, k, owner, accountOf(toId), "move");
+        await split(fromId, k, owner, accountOf(toId), 'move');
       },
     },
     {
       weight: 1,
-      name: "transfer country",
+      name: 'transfer country',
       run: async () => {
         const id = rng.pickOr(model.liveIds());
         if (id === undefined) return;
         const owner = model.ownerOf(id)!;
-        const to = rng.pick(users.filter((u) => u !== owner));
+        const to = rng.pick(users.filter(u => u !== owner));
         const asOwner = fx.countriesAs.get(owner)!;
         await attempt(
           `transfer country #${id} from ${who(owner)} to ${who(to)}`,
-          (m) => m.transferCountry(owner, to, id),
+          m => m.transferCountry(owner, to, id),
           () => asOwner.write.transferFrom([owner, to, id]),
         );
         // Authority follows the new owner.
         const account = accountOf(id);
         await ensureDeployed(account);
-        const asOld = await viem.getContractAt(
-          "GaiaCountryAccount",
-          account,
-          {
-            client: { wallet: walletOf(owner) },
-          },
-        );
+        const asOld = await viem.getContractAt('GaiaCountryAccount', account, {
+          client: { wallet: walletOf(owner) },
+        });
         await attempt(
           `execute on #${id} by old owner ${who(owner)}`,
-          (m) => m.execute(owner, account),
-          () => asOld.write.execute([owner, 0n, "0x", 0]),
+          m => m.execute(owner, account),
+          () => asOld.write.execute([owner, 0n, '0x', 0]),
         );
         // A country cannot go into a country account.
         const target = accountOf(rng.pick([...model.countries.keys()]));
         await attempt(
           `transfer country #${id} by ${who(to)} into ${who(target)}`,
-          (m) => m.transferCountry(to, target, id),
+          m => m.transferCountry(to, target, id),
           () => fx.countriesAs.get(to)!.write.transferFrom([to, target, id]),
         );
       },
     },
     {
       weight: 2,
-      name: "park",
+      name: 'park',
       run: async () => {
         const target = accountOf(model.nextId + BigInt(rng.int(2)));
         if (rng.chance(0.5)) {
           const pick = rng.pickOr(
-            [...model.squares.entries()].filter(
-              ([, s]) => s.country === 0n && users.includes(s.holder),
-            ),
+            [...model.squares.entries()].filter(([, s]) => s.country === 0n && users.includes(s.holder)),
           );
           if (pick === undefined) return;
           const [k, s] = pick;
           await attempt(
             `park ${fmt(k)} of ${who(s.holder)} at ${who(target)}`,
-            (m) => m.transferSquare(s.holder, s.holder, target, k),
+            m => m.transferSquare(s.holder, s.holder, target, k),
             () =>
-              fx.squaresAs
-                .get(s.holder)!
-                .write.transferFrom([
-                  s.holder,
-                  target,
-                  squareId(locOf(k).lat, locOf(k).lng),
-                ]),
+              fx.squaresAs.get(s.holder)!.write.transferFrom([s.holder, target, squareId(locOf(k).lat, locOf(k).lng)]),
           );
           return;
         }
         const choice = rng.pickOr(removable());
         if (choice === undefined) return;
-        await split(
-          choice.id,
-          choice.k,
-          model.ownerOf(choice.id)!,
-          target,
-          "park",
-        );
+        await split(choice.id, choice.k, model.ownerOf(choice.id)!, target, 'park');
       },
     },
     {
       weight: 2,
-      name: "unpark",
+      name: 'unpark',
       run: async () => {
         const parked = [...model.squares.entries()].filter(
           ([, s]) => s.country === 0n && model.tokenOfAccount(s.holder) !== 0n,
@@ -948,60 +826,46 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         const [k, s] = pick;
         const id = model.tokenOfAccount(s.holder);
         const c = model.countries.get(id);
-        const caller =
-          c !== undefined && c.owner !== undefined && rng.chance(0.85)
-            ? c.owner
-            : rng.pick(users);
-        await split(id, k, caller, caller, "unpark");
+        const caller = c !== undefined && c.owner !== undefined && rng.chance(0.85) ? c.owner : rng.pick(users);
+        await split(id, k, caller, caller, 'unpark');
       },
     },
     {
       weight: 1,
-      name: "give",
+      name: 'give',
       run: async () => {
         const pick = rng.pickOr(
-          [...model.squares.entries()].filter(
-            ([, s]) => s.country === 0n && users.includes(s.holder),
-          ),
+          [...model.squares.entries()].filter(([, s]) => s.country === 0n && users.includes(s.holder)),
         );
         if (pick === undefined) return;
         const [k, s] = pick;
-        const to = rng.pick(users.filter((u) => u !== s.holder));
+        const to = rng.pick(users.filter(u => u !== s.holder));
         await attempt(
           `give ${fmt(k)} from ${who(s.holder)} to ${who(to)}`,
-          (m) => m.transferSquare(s.holder, s.holder, to, k),
-          () =>
-            fx.squaresAs
-              .get(s.holder)!
-              .write.transferFrom([
-                s.holder,
-                to,
-                squareId(locOf(k).lat, locOf(k).lng),
-              ]),
+          m => m.transferSquare(s.holder, s.holder, to, k),
+          () => fx.squaresAs.get(s.holder)!.write.transferFrom([s.holder, to, squareId(locOf(k).lat, locOf(k).lng)]),
         );
       },
     },
     {
       weight: 1,
-      name: "dissolve",
+      name: 'dissolve',
       run: async () => {
         // Split all squares of a small country, so that it is burned.
-        const small = model
-          .liveIds()
-          .filter((id) => model.cellsOf(id).size <= 4);
+        const small = model.liveIds().filter(id => model.cellsOf(id).size <= 4);
         const id = rng.pickOr(small);
         if (id === undefined) return;
         const owner = model.ownerOf(id)!;
         while (model.ownerOf(id) !== undefined) {
           const cells = model.cellsOf(id);
-          const options = [...cells].filter((k) => {
+          const options = [...cells].filter(k => {
             const rest = new Set(cells);
             rest.delete(k);
             return isValidShape(place, rest);
           });
           const k = rng.pickOr(options);
           if (k === undefined) return;
-          await split(id, k, owner, owner, "dissolve");
+          await split(id, k, owner, owner, 'dissolve');
         }
       },
     },
@@ -1023,28 +887,12 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
       const account = accountOf(id);
       reads.push(
         (async () => {
-          expectEq(
-            `squareCount(#${id})`,
-            await land.countries.read.squareCount([id]),
-            BigInt(model.cellsOf(id).size),
-          );
-          expectEq(
-            `compositionVersion(#${id})`,
-            await land.countries.read.compositionVersion([id]),
-            c.version,
-          );
-          expectEq(
-            `countryOfAccount(#${id})`,
-            await land.countries.read.countryOfAccount([account]),
-            id,
-          );
+          expectEq(`squareCount(#${id})`, await land.countries.read.squareCount([id]), BigInt(model.cellsOf(id).size));
+          expectEq(`compositionVersion(#${id})`, await land.countries.read.compositionVersion([id]), c.version);
+          expectEq(`countryOfAccount(#${id})`, await land.countries.read.countryOfAccount([account]), id);
           // checkBurned checks that ownerOf of a burned country reverts.
           if (c.owner !== undefined) {
-            expectEq(
-              `ownerOf(#${id})`,
-              getAddress(await land.countries.read.ownerOf([id])),
-              c.owner,
-            );
+            expectEq(`ownerOf(#${id})`, getAddress(await land.countries.read.ownerOf([id])), c.owner);
           }
         })(),
       );
@@ -1053,16 +901,8 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
       const { lat, lng } = locOf(k);
       reads.push(
         (async () => {
-          expectEq(
-            `countryOf${fmt(k)}`,
-            await land.squares.read.countryOf([lat, lng]),
-            s.country,
-          );
-          expectEq(
-            `ownerOf${fmt(k)}`,
-            getAddress(await land.squares.read.ownerOf([squareId(lat, lng)])),
-            s.holder,
-          );
+          expectEq(`countryOf${fmt(k)}`, await land.squares.read.countryOf([lat, lng]), s.country);
+          expectEq(`ownerOf${fmt(k)}`, getAddress(await land.squares.read.ownerOf([squareId(lat, lng)])), s.holder);
           expectEq(
             `controllerOf${fmt(k)}`,
             getAddress(await land.squares.read.controllerOf([lat, lng])),
@@ -1072,7 +912,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
       );
     }
     await Promise.all(reads);
-    if (problems.length > 0) throw new Divergence(problems.join("\n"));
+    if (problems.length > 0) throw new Divergence(problems.join('\n'));
   }
 
   // -------- Rebuild from events --------
@@ -1085,18 +925,16 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
   async function checkEventRebuild() {
     const range = { fromBlock: startBlock };
     const all = [
-      ...(await land.countries.getEvents.Transfer({}, range)).map((e) => ({ kind: "country" as const, e })),
-      ...(await land.squares.getEvents.Transfer({}, range)).map((e) => ({ kind: "square" as const, e })),
-      ...(await land.countries.getEvents.CountryCreated({}, range)).map((e) => ({ kind: "created" as const, e })),
-      ...(await land.countries.getEvents.CountryCompositionChanged({}, range)).map((e) => ({
-        kind: "composition" as const,
+      ...(await land.countries.getEvents.Transfer({}, range)).map(e => ({ kind: 'country' as const, e })),
+      ...(await land.squares.getEvents.Transfer({}, range)).map(e => ({ kind: 'square' as const, e })),
+      ...(await land.countries.getEvents.CountryCreated({}, range)).map(e => ({ kind: 'created' as const, e })),
+      ...(await land.countries.getEvents.CountryCompositionChanged({}, range)).map(e => ({
+        kind: 'composition' as const,
         e,
       })),
     ];
     all.sort((a, b) =>
-      a.e.blockNumber !== b.e.blockNumber
-        ? Number(a.e.blockNumber - b.e.blockNumber)
-        : a.e.logIndex - b.e.logIndex,
+      a.e.blockNumber !== b.e.blockNumber ? Number(a.e.blockNumber - b.e.blockNumber) : a.e.logIndex - b.e.logIndex,
     );
 
     const countryOfAccount = new Map<Address, bigint>();
@@ -1104,11 +942,11 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     const versions = new Map<bigint, { version: bigint; squareCount: bigint }>();
     const holders = new Map<bigint, { holder: Address; country: bigint }>();
     for (const { kind, e } of all) {
-      if (kind === "created") {
+      if (kind === 'created') {
         countryOfAccount.set(getAddress(e.args.account!), e.args.countryId!);
-      } else if (kind === "composition") {
+      } else if (kind === 'composition') {
         versions.set(e.args.countryId!, { version: e.args.version!, squareCount: e.args.squareCount! });
-      } else if (kind === "country") {
+      } else if (kind === 'country') {
         const to = getAddress(e.args.to!);
         owners.set(e.args.tokenId!, to === zeroAddress ? undefined : to);
       } else {
@@ -1139,7 +977,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     if (holders.size !== model.squares.size) {
       problems.push(`events name ${holders.size} squares, model ${model.squares.size}`);
     }
-    if (problems.length > 0) throw new Divergence(`rebuild from events:\n${problems.join("\n")}`);
+    if (problems.length > 0) throw new Divergence(`rebuild from events:\n${problems.join('\n')}`);
   }
 
   // -------- Run --------
@@ -1161,7 +999,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     }
     await checkEventRebuild();
   } catch (e) {
-    const tail = log.slice(-40).join("\n  ");
+    const tail = log.slice(-40).join('\n  ');
     const message = e instanceof Error ? e.message : String(e);
     throw new Error(
       `land fuzz failed: seed ${seed}, window ${place.name}\n` +
@@ -1174,7 +1012,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
       `seed ${seed}: ${counts.ok} calls succeeded, ${counts.reverted} reverted as expected, ` +
         `${model.countries.size} countries, ${model.squares.size} squares, ` +
         `burned ${model.countries.size - model.liveIds().length}, ` +
-        `reverts ${[...outcomes].map(([e, n]) => `${e} ${n}`).join(", ")}`,
+        `reverts ${[...outcomes].map(([e, n]) => `${e} ${n}`).join(', ')}`,
     );
   }
 }

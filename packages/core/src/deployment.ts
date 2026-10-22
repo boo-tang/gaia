@@ -3,7 +3,6 @@
 // `yarn deploy:local` writes deployments/local.json. A Base deployment uses the same format.
 // This module does not read files, so it works in Node and in the browser. Give it the parsed
 // JSON.
-
 import { z } from 'zod';
 
 export type Address = `0x${string}`;
@@ -11,7 +10,7 @@ export type Address = `0x${string}`;
 const address = z
   .string()
   .regex(/^0x[0-9a-fA-F]{40}$/, 'must be a 20-byte hex address')
-  .transform((value) => value as Address);
+  .transform(value => value as Address);
 
 const uint = z.number().int().nonnegative();
 
@@ -40,7 +39,7 @@ export const deploymentSchema = z.object({
       endTime: uint,
       maxEndTime: uint,
     })
-    .refine((t) => t.startTime < t.endTime && t.endTime <= t.maxEndTime, {
+    .refine(t => t.startTime < t.endTime && t.endTime <= t.maxEndTime, {
       message: 'must have startTime < endTime <= maxEndTime',
     }),
 });
@@ -54,9 +53,9 @@ export type ContractName = keyof Deployment['contracts'];
  */
 export const parseDeployment = (json: unknown): Deployment => {
   const result = deploymentSchema.safeParse(json);
-  if (result.success) return result.data;
-  const problems = result.error.issues.map(
-    (issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`,
-  );
+  if (result.success) {
+    return result.data;
+  }
+  const problems = result.error.issues.map(issue => `${issue.path.join('.') || '(root)'}: ${issue.message}`);
   throw new Error(`Invalid deployment file:\n  ${problems.join('\n  ')}`);
 };

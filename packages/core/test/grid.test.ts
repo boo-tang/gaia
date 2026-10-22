@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  LAT_ROWS,
-  LNG_COLUMNS,
-  gridLines,
-  packSquare,
-  squareAt,
-  squareBounds,
-  unpackSquare,
-} from '../src/grid';
+
+import { LAT_ROWS, LNG_COLUMNS, gridLines, packSquare, squareAt, squareBounds, unpackSquare } from '../src/grid';
 
 describe('squareAt and squareBounds', () => {
   it('puts the south-west corner of each column into that column', () => {
@@ -90,7 +83,7 @@ describe('packSquare and unpackSquare', () => {
 describe('gridLines', () => {
   it('gives each line in the bounds, with no drift', () => {
     const { lats, lngs } = gridLines({ south: 0, west: 0, north: 0.05, east: 0.05 });
-    expect(lats).toEqual([0, 0.01, 0.02, 0.03, 0.04, 0.05].map((d) => (d * 100 + 9000) / 100 - 90));
+    expect(lats).toEqual([0, 0.01, 0.02, 0.03, 0.04, 0.05].map(d => (d * 100 + 9000) / 100 - 90));
     expect(lngs).toHaveLength(6);
     expect(lngs[0]).toBe(0);
     expect(lngs[5]).toBe(18005 / 100 - 180);

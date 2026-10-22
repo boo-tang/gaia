@@ -1,6 +1,6 @@
-import { type Abi, type ContractEventName, type Hex, parseEventLogs } from "viem";
+import { type Abi, type ContractEventName, type Hex, parseEventLogs } from 'viem';
 
-import { viem } from "./setup";
+import { viem } from './setup';
 
 /// The arguments of each `eventName` event that the transaction `hash` emitted, decoded with
 /// `abi`. `v` is the connection (default: the shared connection).
@@ -8,9 +8,9 @@ export async function eventsIn<const abi extends Abi, eventName extends Contract
   hash: Hex,
   abi: abi,
   eventName: eventName,
-  v = viem
+  v = viem,
 ) {
   const publicClient = await v.getPublicClient();
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  return parseEventLogs({ abi, eventName, logs: receipt.logs }).map((log) => log.args);
+  return parseEventLogs({ abi, eventName, logs: receipt.logs }).map(log => log.args);
 }

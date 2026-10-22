@@ -14,7 +14,9 @@ export class SseReader {
   heartbeats = 0;
 
   constructor(response: Response) {
-    if (response.body === null) throw new Error('The response has no body.');
+    if (response.body === null) {
+      throw new Error('The response has no body.');
+    }
     this.reader = response.body.getReader();
   }
 
@@ -34,7 +36,9 @@ export class SseReader {
         return event;
       }
       const left = deadline - Date.now();
-      if (left <= 0) throw new Error('No SSE message in time.');
+      if (left <= 0) {
+        throw new Error('No SSE message in time.');
+      }
       let timer: NodeJS.Timeout | undefined;
       const chunk = await Promise.race([
         this.reader.read(),
@@ -42,7 +46,9 @@ export class SseReader {
           timer = setTimeout(() => reject(new Error('No SSE message in time.')), left);
         }),
       ]).finally(() => clearTimeout(timer));
-      if (chunk.done) throw new Error('The stream ended.');
+      if (chunk.done) {
+        throw new Error('The stream ended.');
+      }
       this.buffer += this.decoder.decode(chunk.value, { stream: true });
     }
   }
@@ -50,7 +56,9 @@ export class SseReader {
   /** The data of the next `count` messages, parsed as JSON. */
   async json<T = unknown>(count: number, timeoutMs?: number): Promise<T[]> {
     const result: T[] = [];
-    for (let i = 0; i < count; i++) result.push(JSON.parse((await this.next(timeoutMs)).data) as T);
+    for (let i = 0; i < count; i++) {
+      result.push(JSON.parse((await this.next(timeoutMs)).data) as T);
+    }
     return result;
   }
 
@@ -65,14 +73,22 @@ const parseSseBlock = (block: string): ParsedSseMessage | undefined => {
   let event: string | undefined;
   const data: string[] = [];
   for (const line of block.split('\n')) {
-    if (line.startsWith(':')) continue;
+    if (line.startsWith(':')) {
+      continue;
+    }
     const colon = line.indexOf(':');
     const field = colon === -1 ? line : line.slice(0, colon);
     const value = colon === -1 ? '' : line.slice(colon + 1).replace(/^ /, '');
-    if (field === 'id') id = value;
-    else if (field === 'event') event = value;
-    else if (field === 'data') data.push(value);
+    if (field === 'id') {
+      id = value;
+    } else if (field === 'event') {
+      event = value;
+    } else if (field === 'data') {
+      data.push(value);
+    }
   }
-  if (id === undefined && event === undefined && data.length === 0) return undefined;
+  if (id === undefined && event === undefined && data.length === 0) {
+    return undefined;
+  }
   return { id, event, data: data.join('\n') };
 };

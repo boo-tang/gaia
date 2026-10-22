@@ -1,15 +1,15 @@
 // Starts the whole server: the RPC client, the in-memory store, the indexer (backfill, then
 // polls) and the HTTP API.
-
-import { serve, type ServerType } from '@hono/node-server';
 import type { Deployment } from '@gaia/core';
+
+import { type ServerType, serve } from '@hono/node-server';
 import type { AddressInfo } from 'node:net';
 
 import { createHttpApi } from './api/http-api';
-import { createRpcClient, readBidderRefund, readAuctionRules } from './auction-rpc';
-import type { ServerConfig } from './server-config';
+import { createRpcClient, readAuctionRules, readBidderRefund } from './auction-rpc';
 import { AuctionIndexer } from './indexer/auction-indexer';
 import { LiveMessageBus } from './live-message-bus';
+import type { ServerConfig } from './server-config';
 import type { AuctionStore } from './store/auction-store';
 import { MemoryAuctionStore } from './store/memory-auction-store';
 
@@ -65,7 +65,7 @@ export const startServer = async (
     refundOf: (bidder, cancelled) => readBidderRefund(client, auction, bidder, cancelled),
     maxSnapshotBids: config.maxSnapshotBids,
   });
-  const server: ServerType = await new Promise((resolve) => {
+  const server: ServerType = await new Promise(resolve => {
     const s = serve({ fetch: app.fetch, port: config.port }, () => resolve(s));
   });
   const { port } = server.address() as AddressInfo;
@@ -79,10 +79,12 @@ export const startServer = async (
     liveMessageBus,
     close: async () => {
       await indexer.stop();
-      await new Promise<void>((resolve) => {
+      await new Promise<void>(resolve => {
         server.close(() => resolve());
         // Open streams keep their connections; close them too.
-        if ('closeAllConnections' in server) server.closeAllConnections();
+        if ('closeAllConnections' in server) {
+          server.closeAllConnections();
+        }
       });
     },
   };

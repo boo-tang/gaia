@@ -1,20 +1,14 @@
-import { expect } from "chai";
+import { expect } from 'chai';
+import { network } from 'hardhat';
 
-import { network } from "hardhat";
-
-import {
-  auctionAs,
-  deployAuction,
-  expectActiveBidsEqualProceeds,
-  pack,
-} from "./helpers/auction";
-import { deployLand } from "./helpers/land";
-import { type Loc, rect } from "./helpers/shapes";
+import { auctionAs, deployAuction, expectActiveBidsEqualProceeds, pack } from './helpers/auction';
+import { deployLand } from './helpers/land';
+import { type Loc, rect } from './helpers/shapes';
 
 // Own connection on the Prague hardfork, which has no per-transaction gas cap (EIP-7825 starts
 // with Osaka). Thus a test can measure a bid above the cap. Base applies the cap.
 const { viem, networkHelpers } = await network.create({
-  override: { hardfork: "prague", blockGasLimit: 1_000_000_000n },
+  override: { hardfork: 'prague', blockGasLimit: 1_000_000_000n },
 });
 const loadFixture = networkHelpers.loadFixture.bind(networkHelpers);
 const time = networkHelpers.time;
@@ -22,10 +16,9 @@ const time = networkHelpers.time;
 // Gas of the worst cases of a bid and of settlement, measured from transaction receipts.
 // GAS_REPORT=1 prints each measurement. The tests check no gas bounds: the requirement is the Base
 // per-transaction cap, and the values that must fit under it (BOO-44, BOO-45) are not chosen yet.
-describe("GaiaAuction: gas", function () {
+describe('GaiaAuction: gas', function () {
   const minBid = 1000n;
-  const report = process.env.GAS_REPORT === "1";
-
+  const report = process.env.GAS_REPORT === '1';
 
   async function deployGas() {
     const [owner, alice, bob] = await viem.getWalletClients();
@@ -33,11 +26,7 @@ describe("GaiaAuction: gas", function () {
     const { countries } = await deployLand(owner.account.address, viem);
 
     // This file has its own connection (`viem`), so the helpers get it as `v`.
-    const { auction, endTime: end } = await deployAuction(
-      { countries },
-      { minBidPerSquareWei: minBid },
-      { v: viem }
-    );
+    const { auction, endTime: end } = await deployAuction({ countries }, { minBidPerSquareWei: minBid }, { v: viem });
 
     const as = async (wallet: typeof owner) => auctionAs(auction.address, wallet, viem);
 
@@ -54,22 +43,15 @@ describe("GaiaAuction: gas", function () {
   }
 
   type Gas = Awaited<ReturnType<typeof deployGas>>;
-  type Bidder = Gas["asAlice"];
-
+  type Bidder = Gas['asAlice'];
 
   async function gasOf(f: Gas, hash: `0x${string}`) {
     const receipt = await f.publicClient.waitForTransactionReceipt({ hash });
-    expect(receipt.status).to.equal("success");
+    expect(receipt.status).to.equal('success');
     return receipt.gasUsed;
   }
 
-  async function bid(
-    f: Gas,
-    as: Bidder,
-    locs: Loc[],
-    value: bigint,
-    raiseOwnSquares = false
-  ) {
+  async function bid(f: Gas, as: Bidder, locs: Loc[], value: bigint, raiseOwnSquares = false) {
     const hash = await as.write.bidOnShape([pack(locs), 0n, raiseOwnSquares], {
       value,
       gas: 900_000_000n,
@@ -78,10 +60,10 @@ describe("GaiaAuction: gas", function () {
   }
 
   function log(label: string, gas: bigint) {
-    if (report) console.log(`      ${label}: ${gas.toLocaleString("en-US")}`);
+    if (report) console.log(`      ${label}: ${gas.toLocaleString('en-US')}`);
   }
 
-  describe("new bid on free land", function () {
+  describe('new bid on free land', function () {
     for (const n of [5, 10, 15, 20]) {
       it(`${n} x ${n} squares`, async function () {
         const f = await loadFixture(deployGas);
@@ -96,7 +78,7 @@ describe("GaiaAuction: gas", function () {
   // K shapes of 4 rows x 25 columns (100 squares each) are stacked from south to north. The new
   // bid takes the 8 west columns of all of them, so each remainder is a valid 4 x 17 rectangle.
   // Each remainder check reads all squares of its shape.
-  describe("bid that takes part of K shapes", function () {
+  describe('bid that takes part of K shapes', function () {
     const rows = 4;
     const cols = 25;
     const taken = 8;
@@ -118,7 +100,7 @@ describe("GaiaAuction: gas", function () {
   // north. The new bid takes the 5 west columns of all of them, so each remainder (950
   // squares) is valid and each remainder check reads a full shape. Then a second bid takes the
   // next 5 columns: the remainder check of a shape that lost squares before.
-  describe("bid that takes a little of K shapes of 1000 squares", function () {
+  describe('bid that takes a little of K shapes of 1000 squares', function () {
     const rows = 10;
     const cols = 100;
     const taken = 5;
@@ -160,7 +142,7 @@ describe("GaiaAuction: gas", function () {
   }
 
   for (const reduce of [false, true]) {
-    const what = reduce ? "K small leftovers of shapes of 1000 squares" : "K shapes of 1000 squares";
+    const what = reduce ? 'K small leftovers of shapes of 1000 squares' : 'K shapes of 1000 squares';
     describe(`bid that cuts ${what}`, function () {
       for (const k of [2, 4, 10, 20]) {
         it(`K = ${k}`, async function () {
@@ -175,7 +157,7 @@ describe("GaiaAuction: gas", function () {
             }
           }
           const gas = await bid(f, f.asBob, layout.bid, 2n * minBid * BigInt(layout.bid.length));
-          log(`cut ${reduce ? "leftovers" : "shapes"} K=${k} (bid ${layout.bid.length} squares)`, gas);
+          log(`cut ${reduce ? 'leftovers' : 'shapes'} K=${k} (bid ${layout.bid.length} squares)`, gas);
           await expectActiveBidsEqualProceeds(f.auction, [f.alice, f.bob]);
         });
       }
@@ -188,7 +170,7 @@ describe("GaiaAuction: gas", function () {
   // bidder, so each square also refunds a different bidder (cold storage for each). Else Alice
   // holds all of them.
   for (const eachBidder of [true, false]) {
-    const who = eachBidder ? "one bidder for each shape" : "one bidder";
+    const who = eachBidder ? 'one bidder for each shape' : 'one bidder';
     describe(`bid that cuts one shape for each square, ${who}`, function () {
       for (const n of [100, 500, 1000]) {
         it(`N = ${n}`, async function () {
@@ -213,7 +195,7 @@ describe("GaiaAuction: gas", function () {
             for (const d of dominoes) {
               let as = f.asAlice;
               if (eachBidder) {
-                const address = `0x${(0x10000 + bidders.length).toString(16).padStart(40, "0")}` as const;
+                const address = `0x${(0x10000 + bidders.length).toString(16).padStart(40, '0')}` as const;
                 bidders.push(address);
                 await networkHelpers.impersonateAccount(address);
                 await networkHelpers.setBalance(address, 10n ** 18n);
@@ -230,7 +212,7 @@ describe("GaiaAuction: gas", function () {
     });
   }
 
-  describe("re-bid on own squares", function () {
+  describe('re-bid on own squares', function () {
     for (const raise of [false, true]) {
       it(`10 x 10, raiseOwnSquares = ${raise}`, async function () {
         const f = await loadFixture(deployGas);
@@ -243,7 +225,7 @@ describe("GaiaAuction: gas", function () {
     }
   });
 
-  describe("settlement", function () {
+  describe('settlement', function () {
     for (const n of [10, 20]) {
       it(`${n * n} squares in chunks of 100`, async function () {
         const f = await loadFixture(deployGas);
@@ -267,13 +249,13 @@ describe("GaiaAuction: gas", function () {
       });
     }
 
-    it("400 squares in one call", async function () {
+    it('400 squares in one call', async function () {
       const f = await loadFixture(deployGas);
       const locs = rect(100, 100, 20, 20);
       await bid(f, f.asAlice, locs, minBid * 400n);
       await time.increaseTo(f.end + 1n);
       const hash = await f.asAlice.write.settleShape([1n, 0n], { gas: 200_000_000n });
-      log("settle 400 in one call", await gasOf(f, hash));
+      log('settle 400 in one call', await gasOf(f, hash));
     });
   });
 });

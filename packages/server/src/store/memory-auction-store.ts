@@ -1,8 +1,8 @@
 // The in-memory store: the only store of the MVP. A restart starts with an empty store, and the
 // indexer backfills from the deploy block.
-
+// The AuctionStore interface is async; this store has nothing to await.
+/* eslint-disable require-await */
 import {
-  isBefore,
   type Address,
   type AuctionStatus,
   type EventId,
@@ -10,18 +10,19 @@ import {
   type SquareBid,
   type StreamMessage,
   type Viewport,
+  isBefore,
 } from '@gaia/core';
 
 import {
-  matchesStreamMessageFilter,
-  UndoWindowExceededError,
-  type AuctionStore,
   type AuctionBlockChanges,
+  type AuctionStore,
   type BlockNumberAndHash,
-  type StreamMessageFilter,
   type StoredBidderView,
   type StoredShape,
   type StoredSquareBid,
+  type StreamMessageFilter,
+  UndoWindowExceededError,
+  matchesStreamMessageFilter,
 } from './auction-store';
 
 export interface MemoryAuctionStoreOptions {
@@ -78,7 +79,7 @@ export class MemoryAuctionStore implements AuctionStore {
   }
 
   async recentBlocks() {
-    return this.appliedBlocks.map((a) => a.block).reverse();
+    return this.appliedBlocks.map(a => a.block).reverse();
   }
 
   async applyBlock(changes: AuctionBlockChanges) {
@@ -107,22 +108,36 @@ export class MemoryAuctionStore implements AuctionStore {
       }
       this.setShape(shape.shapeId, shape);
     }
-    if (changes.status !== undefined) this.currentStatus = changes.status;
+    if (changes.status !== undefined) {
+      this.currentStatus = changes.status;
+    }
     this.messages.push(...changes.messages);
     const lastMessage = changes.messages[changes.messages.length - 1];
-    if (lastMessage !== undefined && lastMessage.type !== 'reorg') this.currentLastEventId = lastMessage.id;
+    if (lastMessage !== undefined && lastMessage.type !== 'reorg') {
+      this.currentLastEventId = lastMessage.id;
+    }
     this.currentLastBlock = changes.block;
     this.appliedBlocks.push(applied);
-    if (this.appliedBlocks.length > this.options.undoDepth) this.droppedBlock = this.appliedBlocks.shift()?.block;
+    if (this.appliedBlocks.length > this.options.undoDepth) {
+      this.droppedBlock = this.appliedBlocks.shift()?.block;
+    }
   }
 
   async undoAfter(block: number) {
-    if (this.currentLastBlock === undefined || this.currentLastBlock.number <= block) return;
-    if (this.droppedBlock !== undefined && this.droppedBlock.number > block) throw new UndoWindowExceededError(block);
+    if (this.currentLastBlock === undefined || this.currentLastBlock.number <= block) {
+      return;
+    }
+    if (this.droppedBlock !== undefined && this.droppedBlock.number > block) {
+      throw new UndoWindowExceededError(block);
+    }
     while (this.appliedBlocks.length > 0 && this.appliedBlocks[this.appliedBlocks.length - 1].block.number > block) {
       const { before } = this.appliedBlocks.pop() as AppliedBlock;
-      for (const [squareId, square] of before.squares) this.setSquare(squareId, square);
-      for (const [shapeId, shape] of before.shapes) this.setShape(shapeId, shape);
+      for (const [squareId, square] of before.squares) {
+        this.setSquare(squareId, square);
+      }
+      for (const [shapeId, shape] of before.shapes) {
+        this.setShape(shapeId, shape);
+      }
       this.currentStatus = before.status;
       this.currentLastEventId = before.lastEventId;
       this.messages.length = before.messageCount;
@@ -148,7 +163,9 @@ export class MemoryAuctionStore implements AuctionStore {
     const result: StoredSquareBid[] = [];
     for (const id of squareIds) {
       const square = this.squareMap.get(id);
-      if (square !== undefined) result.push(square);
+      if (square !== undefined) {
+        result.push(square);
+      }
     }
     return result;
   }
@@ -157,7 +174,9 @@ export class MemoryAuctionStore implements AuctionStore {
     const result: StoredShape[] = [];
     for (const id of shapeIds) {
       const shape = this.shapeMap.get(id);
-      if (shape !== undefined) result.push(shape);
+      if (shape !== undefined) {
+        result.push(shape);
+      }
     }
     return result;
   }
@@ -173,9 +192,13 @@ export class MemoryAuctionStore implements AuctionStore {
     for (const square of this.squareMap.values()) {
       const lat = Math.floor(square.squareId / 65536);
       const lng = square.squareId % 65536;
-      if (lat < south || lat > north) continue;
+      if (lat < south || lat > north) {
+        continue;
+      }
       const inColumns = west <= east ? lng >= west && lng <= east : lng >= west || lng <= east;
-      if (!inColumns) continue;
+      if (!inColumns) {
+        continue;
+      }
       if (bids.length === limit) {
         complete = false;
         break;
@@ -193,7 +216,7 @@ export class MemoryAuctionStore implements AuctionStore {
 
   async bidder(address: Address): Promise<StoredBidderView> {
     const ids = [...(this.bidderShapes.get(addressKey(address)) ?? [])].sort((a, b) => a - b);
-    const shapes: Shape[] = ids.map((id) => {
+    const shapes: Shape[] = ids.map(id => {
       const shape = this.shapeMap.get(id) as StoredShape;
       const held = this.heldSquareIds.get(id) ?? new Set<number>();
       return {
@@ -202,12 +225,12 @@ export class MemoryAuctionStore implements AuctionStore {
         block: shape.block,
         timestamp: shape.timestamp,
         bidSquareIds: shape.bidSquareIds,
-        heldSquareIds: shape.bidSquareIds.filter((s) => held.has(s)),
+        heldSquareIds: shape.bidSquareIds.filter(s => held.has(s)),
         settlement: shape.settlement,
       };
     });
     const history = this.messages.filter(
-      (m) => m.type !== 'auctionStatus' && matchesStreamMessageFilter(m, { bidder: address }),
+      m => m.type !== 'auctionStatus' && matchesStreamMessageFilter(m, { bidder: address }),
     );
     return { lastEventId: this.currentLastEventId, bidder: address, shapes, history };
   }
@@ -220,16 +243,21 @@ export class MemoryAuctionStore implements AuctionStore {
       while (lo < hi) {
         const mid = (lo + hi) >> 1;
         const message = this.messages[mid];
-        if (message.type !== 'reorg' && isBefore(after, message.id)) hi = mid;
-        else lo = mid + 1;
+        if (message.type !== 'reorg' && isBefore(after, message.id)) {
+          hi = mid;
+        } else {
+          lo = mid + 1;
+        }
       }
     }
-    return this.messages.slice(lo).filter((m) => matchesStreamMessageFilter(m, filter));
+    return this.messages.slice(lo).filter(m => matchesStreamMessageFilter(m, filter));
   }
 
   private setSquare(squareId: number, square: StoredSquareBid | undefined) {
     const old = this.squareMap.get(squareId);
-    if (old !== undefined) this.heldSquareIds.get(old.shapeId)?.delete(squareId);
+    if (old !== undefined) {
+      this.heldSquareIds.get(old.shapeId)?.delete(squareId);
+    }
     if (square === undefined) {
       this.squareMap.delete(squareId);
       return;
@@ -247,7 +275,9 @@ export class MemoryAuctionStore implements AuctionStore {
     const old = this.shapeMap.get(shapeId);
     if (shape === undefined) {
       this.shapeMap.delete(shapeId);
-      if (old !== undefined) this.bidderShapes.get(addressKey(old.bidder))?.delete(shapeId);
+      if (old !== undefined) {
+        this.bidderShapes.get(addressKey(old.bidder))?.delete(shapeId);
+      }
       return;
     }
     this.shapeMap.set(shapeId, shape);

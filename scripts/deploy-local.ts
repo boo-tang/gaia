@@ -1,19 +1,19 @@
-import { network } from "hardhat";
-import type { DeploymentParameters } from "@nomicfoundation/ignition-core";
-import fs from "node:fs";
-import path from "node:path";
-import { getAddress } from "viem";
+import type { DeploymentParameters } from '@nomicfoundation/ignition-core';
+import { network } from 'hardhat';
+import fs from 'node:fs';
+import path from 'node:path';
+import { getAddress } from 'viem';
 
-import GaiaSystemModule from "../ignition/modules/GaiaSystem";
+import GaiaSystemModule from '../ignition/modules/GaiaSystem';
 import {
   auctionTimes,
   bigintReplacer,
   readParameters,
   withAuctionTimes,
   writeParameters,
-} from "./lib/local-parameters";
-import { CANONICAL_REGISTRY, ensureRegistry } from "./lib/registry";
-import { grantSaleIssuer } from "./lib/sale-issuer";
+} from './lib/local-parameters';
+import { CANONICAL_REGISTRY, ensureRegistry } from './lib/registry';
+import { grantSaleIssuer } from './lib/sale-issuer';
 
 /*
  * Deploys all Gaia contracts to a local Anvil node (`yarn chain:local`):
@@ -38,11 +38,11 @@ import { grantSaleIssuer } from "./lib/sale-issuer";
  */
 
 const CHAIN_ID = 31337;
-const DEPLOYMENT_ID = process.env.LOCAL_DEPLOYMENT_ID || "local";
-const IGNITION_DIR = path.join("ignition", "deployments", DEPLOYMENT_ID);
-const OUT_FILE = path.join("deployments", `${DEPLOYMENT_ID}.json`);
+const DEPLOYMENT_ID = process.env.LOCAL_DEPLOYMENT_ID || 'local';
+const IGNITION_DIR = path.join('ignition', 'deployments', DEPLOYMENT_ID);
+const OUT_FILE = path.join('deployments', `${DEPLOYMENT_ID}.json`);
 // The parameters of the last deployment, with the genesis block hash of its node.
-const STATE_FILE = path.join("deployments", `${DEPLOYMENT_ID}.parameters.json`);
+const STATE_FILE = path.join('deployments', `${DEPLOYMENT_ID}.parameters.json`);
 
 type State = { genesisHash: string; deployBlock: string; parameters: DeploymentParameters };
 
@@ -52,13 +52,11 @@ const { viem } = connection;
 // Ask the node directly: hardhat-viem also reads the chain ID, and fails with a long error.
 let chainId: number;
 try {
-  chainId = Number(await connection.provider.request({ method: "eth_chainId" }));
+  chainId = Number(await connection.provider.request({ method: 'eth_chainId' }));
 } catch {
   const config = connection.networkConfig;
-  const url = config.type === "http" ? await config.url.get() : connection.networkName;
-  throw new Error(
-    `No node answers at ${url}. Start Anvil with \`yarn chain:local\`, or set LOCAL_RPC_URL.`
-  );
+  const url = config.type === 'http' ? await config.url.get() : connection.networkName;
+  throw new Error(`No node answers at ${url}. Start Anvil with \`yarn chain:local\`, or set LOCAL_RPC_URL.`);
 }
 if (chainId !== CHAIN_ID) {
   throw new Error(`The node has chain ID ${chainId}, not ${CHAIN_ID}. Use a local Anvil node.`);
@@ -73,7 +71,7 @@ if (state !== undefined && state.genesisHash === genesisHash && fs.existsSync(IG
   console.log(`Resuming the deployment on this node (${STATE_FILE}).`);
 } else {
   if (fs.existsSync(IGNITION_DIR) || state !== undefined) {
-    console.log("The local deployment files are from another node. Removing them.");
+    console.log('The local deployment files are from another node. Removing them.');
   }
   fs.rmSync(IGNITION_DIR, { recursive: true, force: true });
   fs.rmSync(OUT_FILE, { force: true });
@@ -89,8 +87,10 @@ if (await ensureRegistry(connection)) {
   console.log(`Put the ERC-6551 registry at ${CANONICAL_REGISTRY}.`);
 }
 
-const { accountImplementation, countries, squares, auction, sale, market } =
-  await connection.ignition.deploy(GaiaSystemModule, { parameters, deploymentId: DEPLOYMENT_ID });
+const { accountImplementation, countries, squares, auction, sale, market } = await connection.ignition.deploy(
+  GaiaSystemModule,
+  { parameters, deploymentId: DEPLOYMENT_ID },
+);
 
 // The land sale gets ISSUER_ROLE at once. This is different from Base: there, the admin multisig
 // grants it only after the auction ends (operating rule). Locally an early grant is safe, because
@@ -127,7 +127,7 @@ console.log(`
 Gaia is deployed on chain ${chainId} (from block ${out.deployBlock}).
 ${Object.entries(out.contracts)
   .map(([name, address]) => `  ${name.padEnd(20)} ${address}`)
-  .join("\n")}
+  .join('\n')}
   admin                ${out.admin}
   treasury             ${out.treasury}
   auction start        ${iso(out.auction.startTime)}

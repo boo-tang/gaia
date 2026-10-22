@@ -1,6 +1,5 @@
 // The live messages: the indexer publishes the messages of each applied block (and a reorg
 // message after an undo); each open stream gets them.
-
 import type { StreamMessage } from '@gaia/core';
 
 export type LiveMessageListener = (message: StreamMessage) => void;
@@ -21,7 +20,9 @@ export class LiveMessageBus {
 
   publish(messages: readonly StreamMessage[]) {
     for (const message of messages) {
-      for (const listener of this.listeners.values()) listener(message);
+      for (const listener of this.listeners.values()) {
+        listener(message);
+      }
     }
   }
 

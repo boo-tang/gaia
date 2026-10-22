@@ -1,27 +1,27 @@
 // The HTTP API: read endpoints and the live stream (SSE). No write endpoints. All input is
 // checked with zod. The types of the answers are in packages/core/src/api.ts.
-
 import {
-  formatEventId,
-  isBefore,
-  LAT_ROWS,
-  LNG_COLUMNS,
-  parseEventId,
   type Address,
   type AuctionResponse,
   type AuctionRules,
   type BidderView,
   type EventId,
+  LAT_ROWS,
+  LNG_COLUMNS,
   type StreamMessage,
   type ViewportSnapshot,
+  formatEventId,
+  isBefore,
+  parseEventId,
 } from '@gaia/core';
-import { Hono, type Context } from 'hono';
+
+import { type Context, Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { getAddress, isAddress } from 'viem';
 import { z } from 'zod';
 
 import type { LiveMessageBus } from '../live-message-bus';
-import { matchesStreamMessageFilter, type AuctionStore } from '../store/auction-store';
+import { type AuctionStore, matchesStreamMessageFilter } from '../store/auction-store';
 
 export interface HttpApiOptions {
   store: AuctionStore;
@@ -49,28 +49,30 @@ const viewportQuery = z
     west: gridIndexParam(LNG_COLUMNS - 1),
     east: gridIndexParam(LNG_COLUMNS - 1),
   })
-  .refine((v) => v.south <= v.north, { message: 'south must not be above north', path: ['south'] });
+  .refine(v => v.south <= v.north, { message: 'south must not be above north', path: ['south'] });
 
 const addressParam = z
   .string()
-  .refine((value) => isAddress(value, { strict: false }), 'must be a 20-byte hex address')
-  .transform((value) => getAddress(value) as Address);
+  .refine(value => isAddress(value, { strict: false }), 'must be a 20-byte hex address')
+  .transform(value => getAddress(value) as Address);
 
-const eventIdParam = z
-  .string()
-  .transform((value, ctx) => {
-    const id = parseEventId(value);
-    if (id === undefined) ctx.addIssue({ code: 'custom', message: 'must be <block>:<logIndex>' });
-    return id as EventId;
-  });
+const eventIdParam = z.string().transform((value, ctx) => {
+  const id = parseEventId(value);
+  if (id === undefined) {
+    ctx.addIssue({ code: 'custom', message: 'must be <block>:<logIndex>' });
+  }
+  return id as EventId;
+});
 
 const streamQuery = z.object({ after: eventIdParam.optional(), bidder: addressParam.optional() });
 
 // Checks `input` with `schema`. Returns the value, or a 400 answer that names each wrong value.
 const parseInputOr400 = <T>(c: Context, schema: z.ZodType<T>, input: unknown): { value: T } | { answer: Response } => {
   const result = schema.safeParse(input);
-  if (result.success) return { value: result.data };
-  const problems = result.error.issues.map((i) => `${i.path.join('.') || '(input)'}: ${i.message}`);
+  if (result.success) {
+    return { value: result.data };
+  }
+  const problems = result.error.issues.map(i => `${i.path.join('.') || '(input)'}: ${i.message}`);
   return { answer: c.json({ error: 'Invalid input', problems }, 400) };
 };
 
@@ -79,18 +81,20 @@ export const createHttpApi = (options: HttpApiOptions) => {
   const heartbeatMs = options.heartbeatMs ?? 30_000;
   const app = new Hono();
 
-  app.get('/health', async (c) => c.json({ lastEventId: await store.lastEventId(), lastBlock: await store.lastBlock() }));
+  app.get('/health', async c => c.json({ lastEventId: await store.lastEventId(), lastBlock: await store.lastBlock() }));
 
-  app.get('/auction', async (c) => {
+  app.get('/auction', async c => {
     // Read the event ID first: a block applied between the two reads is then also in the status.
     const lastEventId = await store.lastEventId();
     const body: AuctionResponse = { lastEventId, rules, status: await store.status() };
     return c.json(body);
   });
 
-  app.get('/bids', async (c) => {
+  app.get('/bids', async c => {
     const input = parseInputOr400(c, viewportQuery, c.req.query());
-    if ('answer' in input) return input.answer;
+    if ('answer' in input) {
+      return input.answer;
+    }
     const viewport = input.value;
     const { lastEventId, bids, complete } = await store.bidsInViewport(viewport, maxSnapshotBids);
     if (!complete) {
@@ -100,9 +104,11 @@ export const createHttpApi = (options: HttpApiOptions) => {
     return c.json(body);
   });
 
-  app.get('/bidder/:address', async (c) => {
+  app.get('/bidder/:address', async c => {
     const input = parseInputOr400(c, addressParam, c.req.param('address'));
-    if ('answer' in input) return input.answer;
+    if ('answer' in input) {
+      return input.answer;
+    }
     const bidder = input.value;
     const view = await store.bidder(bidder);
     const { cancelled } = await store.status();
@@ -110,9 +116,11 @@ export const createHttpApi = (options: HttpApiOptions) => {
     return c.json(body);
   });
 
-  app.get('/stream', async (c) => {
+  app.get('/stream', c => {
     const input = parseInputOr400(c, streamQuery, c.req.query());
-    if ('answer' in input) return input.answer;
+    if ('answer' in input) {
+      return input.answer;
+    }
     const query = input.value;
     // The browser sends Last-Event-ID when it reconnects. It is newer than `after` in the URL.
     const header = c.req.header('Last-Event-ID');
@@ -122,13 +130,15 @@ export const createHttpApi = (options: HttpApiOptions) => {
     }
     const filter = { bidder: query.bidder };
 
-    return streamSSE(c, async (stream) => {
+    return streamSSE(c, async stream => {
       // Listen first, then read the store: a message is then in the store, in `pending`, or
       // in both (sent once, by event ID).
       const pending: StreamMessage[] = [];
       let wake: (() => void) | undefined;
-      const unsubscribe = liveMessageBus.subscribe((message) => {
-        if (!matchesStreamMessageFilter(message, filter)) return;
+      const unsubscribe = liveMessageBus.subscribe(message => {
+        if (!matchesStreamMessageFilter(message, filter)) {
+          return;
+        }
         pending.push(message);
         wake?.();
       });
@@ -155,14 +165,18 @@ export const createHttpApi = (options: HttpApiOptions) => {
           // The client has events that the chain dropped.
           await send({ type: 'reorg', lastEventId: serverLast });
         }
-        for (const message of await store.messagesAfter(last, filter)) await send(message);
+        for (const message of await store.messagesAfter(last, filter)) {
+          await send(message);
+        }
         while (!closed) {
           while (pending.length > 0) {
             const message = pending.shift() as StreamMessage;
             const isNew = message.type === 'reorg' || last === undefined || isBefore(last, message.id);
-            if (isNew) await send(message);
+            if (isNew) {
+              await send(message);
+            }
           }
-          const timedOut = await new Promise<boolean>((resolve) => {
+          const timedOut = await new Promise<boolean>(resolve => {
             const timer = setTimeout(() => resolve(true), heartbeatMs);
             wake = () => {
               clearTimeout(timer);
@@ -170,7 +184,9 @@ export const createHttpApi = (options: HttpApiOptions) => {
             };
           });
           wake = undefined;
-          if (timedOut && !closed) await stream.write(': heartbeat\n\n');
+          if (timedOut && !closed) {
+            await stream.write(': heartbeat\n\n');
+          }
         }
       } finally {
         unsubscribe();
@@ -178,7 +194,7 @@ export const createHttpApi = (options: HttpApiOptions) => {
     });
   });
 
-  app.notFound((c) => c.json({ error: 'Not found' }, 404));
+  app.notFound(c => c.json({ error: 'Not found' }, 404));
   app.onError((error, c) => {
     console.error(error);
     return c.json({ error: 'Server error' }, 500);

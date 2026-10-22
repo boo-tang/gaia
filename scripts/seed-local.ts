@@ -1,7 +1,7 @@
-import { network } from "hardhat";
-import fs from "node:fs";
-import path from "node:path";
-import { zeroAddress } from "viem";
+import { network } from 'hardhat';
+import fs from 'node:fs';
+import path from 'node:path';
+import { zeroAddress } from 'viem';
 
 /*
  * Puts a small amount of data on the local deployment of `yarn deploy:local`, for app work:
@@ -16,9 +16,9 @@ import { zeroAddress } from "viem";
  * Anvil and deploy again for a new auction.
  */
 
-const OUT_FILE = path.join("deployments", `${process.env.LOCAL_DEPLOYMENT_ID || "local"}.json`);
+const OUT_FILE = path.join('deployments', `${process.env.LOCAL_DEPLOYMENT_ID || 'local'}.json`);
 if (!fs.existsSync(OUT_FILE)) throw new Error(`No ${OUT_FILE}. Run \`yarn deploy:local\` first.`);
-const deployment = JSON.parse(fs.readFileSync(OUT_FILE, "utf8"));
+const deployment = JSON.parse(fs.readFileSync(OUT_FILE, 'utf8'));
 
 const connection = await network.getOrCreate();
 const { viem, provider } = connection;
@@ -30,7 +30,7 @@ const auctionAddress = deployment.contracts.GaiaAuction as `0x${string}`;
 if ((await publicClient.getCode({ address: auctionAddress })) === undefined) {
   throw new Error(`No auction at ${auctionAddress}. Run \`yarn deploy:local\` on this node.`);
 }
-const auction = await viem.getContractAt("GaiaAuction", auctionAddress);
+const auction = await viem.getContractAt('GaiaAuction', auctionAddress);
 const wallets = await viem.getWalletClients();
 
 type Loc = { lat: number; lng: number };
@@ -63,7 +63,7 @@ if ((await now()) < endTime) {
       console.log(`Skip: ${wallet.account.address} has a bid there already.`);
       continue;
     }
-    const asBidder = await viem.getContractAt("GaiaAuction", auctionAddress, {
+    const asBidder = await viem.getContractAt('GaiaAuction', auctionAddress, {
       client: { wallet },
     });
     const hash = await asBidder.write.bidOnShape([pack(shape), 0n, false], {
@@ -73,15 +73,15 @@ if ((await now()) < endTime) {
     console.log(`Bid: ${wallet.account.address}, ${shape.length} squares.`);
   }
 } else {
-  console.log("The auction has ended. No bids.");
+  console.log('The auction has ended. No bids.');
 }
 
-if (process.env.SEED_END === "1") {
+if (process.env.SEED_END === '1') {
   // Read endTime again: a bid in the extension window moves it.
   endTime = await auction.read.endTime();
   if ((await now()) <= endTime) {
-    await provider.request({ method: "evm_setNextBlockTimestamp", params: [Number(endTime + 1n)] });
-    await provider.request({ method: "evm_mine", params: [] });
+    await provider.request({ method: 'evm_setNextBlockTimestamp', params: [Number(endTime + 1n)] });
+    await provider.request({ method: 'evm_mine', params: [] });
     console.log(`Moved the chain clock past endTime (${endTime}).`);
   }
   if ((await auction.read.shapeCountryId([1n])) === 0n) {

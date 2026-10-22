@@ -1,6 +1,6 @@
 // The server entry point: `yarn workspace @gaia/server start`. See README "Server".
-
 import { parseDeployment } from '@gaia/core';
+
 import fs from 'node:fs';
 
 import { loadServerConfig } from './server-config';
@@ -17,5 +17,5 @@ const stop = async () => {
   await server.close();
   process.exit(0);
 };
-process.once('SIGINT', stop);
-process.once('SIGTERM', stop);
+process.once('SIGINT', () => void stop());
+process.once('SIGTERM', () => void stop());

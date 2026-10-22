@@ -3,17 +3,17 @@
 //   auctionStoreSuite('MemoryAuctionStore', (options) => new MemoryAuctionStore(options));
 //
 // A test gives the store the changes of a block directly (no reducer), and reads them back.
-
-import { describe, expect, it } from 'vitest';
 import type { Address, AuctionStatus, StreamMessage } from '@gaia/core';
+
 import type { Hex } from 'viem';
+import { describe, expect, it } from 'vitest';
 
 import {
-  UndoWindowExceededError,
-  type AuctionStore,
   type AuctionBlockChanges,
+  type AuctionStore,
   type StoredShape,
   type StoredSquareBid,
+  UndoWindowExceededError,
 } from '../src/store/auction-store';
 
 export interface AuctionStoreOptions {
@@ -30,7 +30,13 @@ const sq = (lat: number, lng: number) => lat * 65536 + lng;
 const hash = (n: number): Hex => `0x${n.toString(16).padStart(64, '0')}`;
 const square = (squareId: number, shapeId: number, amount: bigint): StoredSquareBid => ({ squareId, shapeId, amount });
 
-const shape = (shapeId: number, bidder: Address, block: number, bidSquareIds: number[], held = bidSquareIds.length): StoredShape => ({
+const shape = (
+  shapeId: number,
+  bidder: Address,
+  block: number,
+  bidSquareIds: number[],
+  held = bidSquareIds.length,
+): StoredShape => ({
   shapeId,
   bidder,
   block,
@@ -79,7 +85,7 @@ const empty = (block: number): AuctionBlockChanges => ({
 const row = [sq(100, 5), sq(100, 6)];
 const block10: AuctionBlockChanges = {
   ...empty(10),
-  squares: row.map((id) => square(id, 1, 100n)),
+  squares: row.map(id => square(id, 1, 100n)),
   shapes: [shape(1, ALICE, 10, row)],
   messages: [bidMessage(10, 3, 1, ALICE, row)],
 };
@@ -122,7 +128,7 @@ export const auctionStoreSuite = (name: string, makeStore: (options: AuctionStor
       const store = await withBlocks();
       expect(await store.lastEventId()).toEqual({ block: 12, logIndex: 1 });
       expect(await store.lastBlock()).toEqual({ number: 12, hash: hash(12) });
-      expect(await store.recentBlocks()).toEqual([12, 11, 10].map((n) => ({ number: n, hash: hash(n) })));
+      expect(await store.recentBlocks()).toEqual([12, 11, 10].map(n => ({ number: n, hash: hash(n) })));
       expect(await store.status()).toEqual({ ...STATUS, endTime: 1500 });
       expect(await store.squares([...row, sq(1, 1)])).toEqual([square(row[0], 1, 100n), square(row[1], 2, 200n)]);
       expect(await store.shapes([2, 1, 3])).toEqual([shape(2, BOB, 12, [row[1]]), shape(1, ALICE, 10, row, 1)]);
@@ -163,9 +169,13 @@ export const auctionStoreSuite = (name: string, makeStore: (options: AuctionStor
     it('wraps a viewport at the antimeridian', async () => {
       const store = make();
       const ids = [sq(50, 35999), sq(50, 0), sq(50, 1), sq(50, 18000)];
-      await store.applyBlock({ ...empty(10), squares: ids.map((id) => square(id, 1, 1n)), shapes: [shape(1, ALICE, 10, ids)] });
+      await store.applyBlock({
+        ...empty(10),
+        squares: ids.map(id => square(id, 1, 1n)),
+        shapes: [shape(1, ALICE, 10, ids)],
+      });
       const { bids } = await store.bidsInViewport({ south: 0, north: 17999, west: 35990, east: 1 }, 10);
-      expect(bids.map((b) => b.squareId).sort((a, b) => a - b)).toEqual([sq(50, 0), sq(50, 1), sq(50, 35999)]);
+      expect(bids.map(b => b.squareId).sort((a, b) => a - b)).toEqual([sq(50, 0), sq(50, 1), sq(50, 35999)]);
     });
 
     it('returns at most `limit` bids and says when the viewport has more', async () => {
@@ -194,7 +204,9 @@ export const auctionStoreSuite = (name: string, makeStore: (options: AuctionStor
       // Her bid, and Bob's bid that took a square from her. No status messages.
       expect(alice.history).toEqual([block10.messages[0], block12.messages[0]]);
       // The address is not case-sensitive.
-      expect((await store.bidder(BOB.toUpperCase().replace('0X', '0x') as Address)).shapes.map((s) => s.shapeId)).toEqual([2]);
+      expect((await store.bidder(BOB.toUpperCase().replace('0X', '0x') as Address)).shapes.map(s => s.shapeId)).toEqual(
+        [2],
+      );
       expect((await store.bidder(BOB)).history).toEqual([block12.messages[0]]);
     });
 
@@ -226,7 +238,7 @@ export const auctionStoreSuite = (name: string, makeStore: (options: AuctionStor
       expect(await store.lastBlock()).toEqual({ number: 10, hash: hash(10) });
       expect(await store.recentBlocks()).toEqual([{ number: 10, hash: hash(10) }]);
       expect(await store.status()).toEqual(STATUS);
-      expect(await store.squares(row)).toEqual(row.map((id) => square(id, 1, 100n)));
+      expect(await store.squares(row)).toEqual(row.map(id => square(id, 1, 100n)));
       expect(await store.shapes([1, 2])).toEqual([shape(1, ALICE, 10, row)]);
       expect(await store.messagesAfter(undefined)).toEqual(block10.messages);
       expect((await store.bidder(BOB)).shapes).toEqual([]);
@@ -254,7 +266,7 @@ export const auctionStoreSuite = (name: string, makeStore: (options: AuctionStor
 
     it('cannot undo a block that left the undo window', async () => {
       const store = await withBlocks(2);
-      expect((await store.recentBlocks()).map((b) => b.number)).toEqual([12, 11]);
+      expect((await store.recentBlocks()).map(b => b.number)).toEqual([12, 11]);
       await expect(store.undoAfter(9)).rejects.toThrow(UndoWindowExceededError);
       // Nothing changed.
       expect(await store.lastEventId()).toEqual({ block: 12, logIndex: 1 });
@@ -263,7 +275,7 @@ export const auctionStoreSuite = (name: string, makeStore: (options: AuctionStor
       await store.undoAfter(10);
       expect(await store.lastBlock()).toEqual({ number: 10, hash: hash(10) });
       expect(await store.lastEventId()).toEqual({ block: 10, logIndex: 3 });
-      expect(await store.squares(row)).toEqual(row.map((id) => square(id, 1, 100n)));
+      expect(await store.squares(row)).toEqual(row.map(id => square(id, 1, 100n)));
     });
 
     it('goes back to no data with reset', async () => {

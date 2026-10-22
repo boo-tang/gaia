@@ -3,8 +3,7 @@
 // The rules follow GaiaAuction.sol (_validateShape, _shapeError, _nextBid, _bidAmount,
 // _takeSquares). The squares are contract values (see grid.ts). Sort them by latitude, then
 // west to east in each row (sortLocs). Longitude wraps, so a row can be 35998, 35999, 0, 1.
-
-import { LAT_ROWS, LNG_COLUMNS, packSquare, type Square } from './grid';
+import { LAT_ROWS, LNG_COLUMNS, type Square, packSquare } from './grid';
 
 export interface ShapeLimits {
   minShapeSquares: bigint;
@@ -45,15 +44,14 @@ export const SHAPE_ERROR_TEXT: Record<ShapeError, string> = {
 
 // GaiaAuction.sol: LNG_ORIGIN and _normLng.
 const LNG_ORIGIN = LNG_COLUMNS / 2;
-const normLng = (lng: number, refLng: number) =>
-  (lng + LNG_COLUMNS + LNG_ORIGIN - refLng) % LNG_COLUMNS;
+const normLng = (lng: number, refLng: number) => (lng + LNG_COLUMNS + LNG_ORIGIN - refLng) % LNG_COLUMNS;
 
 const isUint16 = (value: number) => Number.isInteger(value) && value >= 0 && value < 65536;
 
 // The west edge of the shape is the column after the largest gap between occupied columns. The
 // gap that wraps around the antimeridian is included.
 const westEdgeLng = (locs: readonly Square[]): number => {
-  const lngs = [...new Set(locs.map((loc) => loc.lng))].sort((a, b) => a - b);
+  const lngs = [...new Set(locs.map(loc => loc.lng))].sort((a, b) => a - b);
   let west = lngs[0];
   let largestGap = lngs[0] + LNG_COLUMNS - lngs[lngs.length - 1];
   for (let i = 1; i < lngs.length; i++) {
@@ -74,7 +72,9 @@ export const packLocs = (locs: readonly Square[]): number[] => locs.map(packSqua
 
 /** Sorts squares by latitude, then west to east in each row, across the antimeridian. */
 export const sortLocs = (locs: readonly Square[]): Square[] => {
-  if (locs.length === 0) return [];
+  if (locs.length === 0) {
+    return [];
+  }
   const west = westEdgeLng(locs);
   const eastOfWest = (lng: number) => (lng - west + LNG_COLUMNS) % LNG_COLUMNS;
   return [...locs].sort((a, b) => a.lat - b.lat || eastOfWest(a.lng) - eastOfWest(b.lng));
@@ -86,16 +86,24 @@ export const sortLocs = (locs: readonly Square[]): Square[] => {
  */
 export const validateShape = (locs: readonly Square[], limits: ShapeLimits): ShapeValidation => {
   const len = locs.length;
-  if (len === 0) return { valid: false, reason: 'EmptyShape' };
-  if (BigInt(len) < limits.minShapeSquares) return { valid: false, reason: 'ShapeTooSmall' };
-  if (BigInt(len) > limits.maxShapeSquares) return { valid: false, reason: 'ShapeTooLarge' };
+  if (len === 0) {
+    return { valid: false, reason: 'EmptyShape' };
+  }
+  if (BigInt(len) < limits.minShapeSquares) {
+    return { valid: false, reason: 'ShapeTooSmall' };
+  }
+  if (BigInt(len) > limits.maxShapeSquares) {
+    return { valid: false, reason: 'ShapeTooLarge' };
+  }
   // The contract takes uint16 values. Other numbers cannot go into a bid.
-  if (locs.some((loc) => !isUint16(loc.lat) || !isUint16(loc.lng))) {
+  if (locs.some(loc => !isUint16(loc.lat) || !isUint16(loc.lng))) {
     return { valid: false, reason: 'InvalidCoordinates' };
   }
 
   const refLng = locs[0].lng;
-  if (refLng >= LNG_COLUMNS) return { valid: false, reason: 'InvalidCoordinates' };
+  if (refLng >= LNG_COLUMNS) {
+    return { valid: false, reason: 'InvalidCoordinates' };
+  }
 
   let currentLat = locs[0].lat;
   let prevLngInLat = LNG_ORIGIN;
@@ -112,23 +120,35 @@ export const validateShape = (locs: readonly Square[], limits: ShapeLimits): Sha
 
   for (let i = 1; i < len; i++) {
     const { lat } = locs[i];
-    if (locs[i].lng >= LNG_COLUMNS) return { valid: false, reason: 'InvalidCoordinates' };
+    if (locs[i].lng >= LNG_COLUMNS) {
+      return { valid: false, reason: 'InvalidCoordinates' };
+    }
     const lng = normLng(locs[i].lng, refLng);
 
     if (lat === currentLat) {
-      if (lng !== prevLngInLat + 1) return { valid: false, reason: 'GapBetweenLongitudes' };
+      if (lng !== prevLngInLat + 1) {
+        return { valid: false, reason: 'GapBetweenLongitudes' };
+      }
       prevLngInLat = lng;
       rangeEnd = lng;
-      if (lng > globalMaxLng) globalMaxLng = lng;
+      if (lng > globalMaxLng) {
+        globalMaxLng = lng;
+      }
       if (!isFirstLat && !latHasAdjacent && lng >= prevRangeStart && lng <= prevRangeEnd) {
         latHasAdjacent = true;
       }
     } else {
-      if (lat < currentLat) return { valid: false, reason: 'Unsorted' };
-      if (lat !== currentLat + 1) return { valid: false, reason: 'NonConsecutiveLatitudes' };
+      if (lat < currentLat) {
+        return { valid: false, reason: 'Unsorted' };
+      }
+      if (lat !== currentLat + 1) {
+        return { valid: false, reason: 'NonConsecutiveLatitudes' };
+      }
 
       if (!isFirstLat) {
-        if (!latHasAdjacent) return { valid: false, reason: 'NoLatAdjacency' };
+        if (!latHasAdjacent) {
+          return { valid: false, reason: 'NoLatAdjacency' };
+        }
         if (rangeEnd < prevRangeEnd && !rightFlipped) {
           rightFlipped = true;
         } else if (rightFlipped && rangeEnd > prevRangeEnd) {
@@ -143,8 +163,12 @@ export const validateShape = (locs: readonly Square[], limits: ShapeLimits): Sha
       rangeStart = lng;
       rangeEnd = lng;
 
-      if (lng < globalMinLng) globalMinLng = lng;
-      if (lng > globalMaxLng) globalMaxLng = lng;
+      if (lng < globalMinLng) {
+        globalMinLng = lng;
+      }
+      if (lng > globalMaxLng) {
+        globalMaxLng = lng;
+      }
 
       if (lng > prevRangeStart && !leftFlipped) {
         leftFlipped = true;
@@ -158,12 +182,18 @@ export const validateShape = (locs: readonly Square[], limits: ShapeLimits): Sha
   }
 
   if (!isFirstLat) {
-    if (!latHasAdjacent) return { valid: false, reason: 'NoLatAdjacency' };
-    if (rightFlipped && rangeEnd > prevRangeEnd) return { valid: false, reason: 'NotConvexEnd' };
+    if (!latHasAdjacent) {
+      return { valid: false, reason: 'NoLatAdjacency' };
+    }
+    if (rightFlipped && rangeEnd > prevRangeEnd) {
+      return { valid: false, reason: 'NotConvexEnd' };
+    }
   }
 
   // The squares are sorted, so the last square has the highest latitude.
-  if (locs[len - 1].lat >= LAT_ROWS) return { valid: false, reason: 'InvalidCoordinates' };
+  if (locs[len - 1].lat >= LAT_ROWS) {
+    return { valid: false, reason: 'InvalidCoordinates' };
+  }
 
   const height = locs[len - 1].lat - locs[0].lat + 1;
   const width = globalMaxLng - globalMinLng + 1;
@@ -186,7 +216,9 @@ export interface BidRules {
  * the larger of `minBidPerSquareWei` and `minBidIncrementBps` of the current bid.
  */
 export const nextBidFor = (currentAmount: bigint, rules: BidRules): bigint => {
-  if (currentAmount < rules.minBidPerSquareWei) return rules.minBidPerSquareWei;
+  if (currentAmount < rules.minBidPerSquareWei) {
+    return rules.minBidPerSquareWei;
+  }
   const relative = (currentAmount * rules.minBidIncrementBps) / 10_000n;
   return currentAmount + (relative > rules.minBidPerSquareWei ? relative : rules.minBidPerSquareWei);
 };
@@ -214,8 +246,12 @@ export const squareCostFor = (
   floorPerSquare = 0n,
   raiseOwnSquares = false,
 ): bigint => {
-  if (!current.own) return bidAmountFor(current.amount, rules, floorPerSquare);
-  if (!raiseOwnSquares) return 0n;
+  if (!current.own) {
+    return bidAmountFor(current.amount, rules, floorPerSquare);
+  }
+  if (!raiseOwnSquares) {
+    return 0n;
+  }
   return bidAmountFor(current.amount, rules, floorPerSquare) - current.amount;
 };
 
@@ -226,7 +262,4 @@ export const computeBidTotal = (
   floorPerSquare = 0n,
   raiseOwnSquares = false,
 ): bigint =>
-  currentBids.reduce(
-    (sum, current) => sum + squareCostFor(current, rules, floorPerSquare, raiseOwnSquares),
-    0n,
-  );
+  currentBids.reduce((sum, current) => sum + squareCostFor(current, rules, floorPerSquare, raiseOwnSquares), 0n);

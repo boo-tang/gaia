@@ -14,7 +14,6 @@
 // the JSON of the message as data. A client gets a snapshot, then opens the stream with
 // `after` = `lastEventId` of the snapshot (no `after`: all messages from the start). When the
 // connection breaks, the browser reconnects and sends `Last-Event-ID`, so it misses nothing.
-
 import type { Address } from './deployment';
 
 /**
@@ -36,7 +35,9 @@ export const formatEventId = (id: EventId) => `${id.block}:${id.logIndex}`;
 /** Reads an SSE id. Returns undefined when the text is not `<block>:<logIndex>`. */
 export const parseEventId = (text: string): EventId | undefined => {
   const match = /^(\d{1,15}):(\d{1,9})$/.exec(text);
-  if (match === null) return undefined;
+  if (match === null) {
+    return undefined;
+  }
   return { block: Number(match[1]), logIndex: Number(match[2]) };
 };
 

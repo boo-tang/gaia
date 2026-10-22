@@ -9,9 +9,5 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "exclude": [
-    "node_modules",
-    "cache",
-    "packages"
-  ]
+  "exclude": ["node_modules", "cache", "packages"]
 }

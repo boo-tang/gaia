@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { gaiaAuctionAbi } from '../src/abis';
 import { parseDeployment } from '../src/deployment';
 
@@ -54,7 +55,7 @@ describe('abis', () => {
     type FunctionName = Extract<(typeof gaiaAuctionAbi)[number], { type: 'function' }>['name'];
     const names: FunctionName[] = ['bidOnShape', 'settleShape', 'endTime', 'withdraw'];
     for (const name of names) {
-      expect(gaiaAuctionAbi.some((item) => item.type === 'function' && item.name === name)).toBe(true);
+      expect(gaiaAuctionAbi.some(item => item.type === 'function' && item.name === name)).toBe(true);
     }
   });
 });

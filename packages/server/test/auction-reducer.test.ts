@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
 import type { Address, AuctionStatus } from '@gaia/core';
+
 import type { Hex } from 'viem';
+import { describe, expect, it } from 'vitest';
 
 import type { AuctionEvent } from '../src/indexer/auction-events';
-import { reduceAuctionBlock, type AuctionBlockEvents } from '../src/indexer/auction-reducer';
+import { type AuctionBlockEvents, reduceAuctionBlock } from '../src/indexer/auction-reducer';
 import { MemoryAuctionStore } from '../src/store/memory-auction-store';
 
 const ALICE: Address = '0x00000000000000000000000000000000000a11ce';
@@ -13,8 +14,8 @@ const STATUS: AuctionStatus = { endTime: 1000, paused: false, cancelled: false }
 const sq = (lat: number, lng: number) => lat * 65536 + lng;
 const hash = (n: number, branch = 0): Hex => `0x${(n + branch * 1_000_000).toString(16).padStart(64, '0')}`;
 // Row 10 and row 11, columns 10 to 13 (as in test/Gaia_Auction.ts).
-const row = [10, 11, 12, 13].map((lng) => sq(10, lng));
-const row11 = [10, 11, 12, 13].map((lng) => sq(11, lng));
+const row = [10, 11, 12, 13].map(lng => sq(10, lng));
+const row11 = [10, 11, 12, 13].map(lng => sq(11, lng));
 
 // The events have the types of the decoded logs: uint256 values are bigint.
 let nextLog = 0;
@@ -31,7 +32,11 @@ const makeStore = () => new MemoryAuctionStore({ status: STATUS, undoDepth: 10 }
 const run = async (blocks: AuctionEvent[][], store = makeStore(), first = 1, branch = 0) => {
   for (const [i, events] of blocks.entries()) {
     const number = first + i;
-    const block: AuctionBlockEvents = { block: { number, hash: hash(number, branch) }, timestamp: 100 + number, events };
+    const block: AuctionBlockEvents = {
+      block: { number, hash: hash(number, branch) },
+      timestamp: 100 + number,
+      events,
+    };
     await store.applyBlock(await reduceAuctionBlock(store, block));
   }
   return store;
@@ -42,8 +47,8 @@ const state = async (store: MemoryAuctionStore, shapeIds: number[]) => {
   const squares = await store.squares([...row, ...row11]);
   const shapes = await store.shapes(shapeIds);
   return {
-    squares: Object.fromEntries(squares.map((s) => [s.squareId, [s.shapeId, s.amount]])),
-    held: Object.fromEntries(shapes.map((s) => [s.shapeId, s.heldSquareCount])),
+    squares: Object.fromEntries(squares.map(s => [s.squareId, [s.shapeId, s.amount]])),
+    held: Object.fromEntries(shapes.map(s => [s.shapeId, s.heldSquareCount])),
   };
 };
 
@@ -51,7 +56,7 @@ describe('reduceAuctionBlock', () => {
   it('makes a new shape and sets its squares', async () => {
     nextLog = 4;
     const store = await run([[bid(1n, ALICE, row, each(4, 1000n))]]);
-    expect(await store.squares(row)).toEqual(row.map((squareId) => ({ squareId, shapeId: 1, amount: 1000n })));
+    expect(await store.squares(row)).toEqual(row.map(squareId => ({ squareId, shapeId: 1, amount: 1000n })));
     expect(await store.shapes([1])).toEqual([
       {
         shapeId: 1,
@@ -101,7 +106,7 @@ describe('reduceAuctionBlock', () => {
       [bid(3n, ALICE, row, each(4, 1000n), 0n)],
     ]);
     expect(await state(store, [1, 2, 3])).toEqual({
-      squares: Object.fromEntries(row.map((id) => [id, [3, 1000n]])),
+      squares: Object.fromEntries(row.map(id => [id, [3, 1000n]])),
       held: { 1: 0, 2: 0, 3: 4 },
     });
     const merge = (await store.messagesAfter({ block: 2, logIndex: 1 }))[0];
@@ -139,7 +144,7 @@ describe('reduceAuctionBlock', () => {
       held: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 2, 6: 5, 7: 1 },
     });
     const alice = await store.bidder(ALICE);
-    expect(alice.shapes.map((s) => [s.shapeId, s.heldSquareIds])).toEqual([
+    expect(alice.shapes.map(s => [s.shapeId, s.heldSquareIds])).toEqual([
       [1, []],
       [3, []],
       [4, []],
@@ -158,12 +163,15 @@ describe('reduceAuctionBlock', () => {
     const store = await run([
       [{ logIndex: 0, eventName: 'AuctionExtended', args: { endTime: 1200n } }],
       [{ logIndex: 0, eventName: 'AuctionPaused', args: {} }],
-      [{ logIndex: 0, eventName: 'AuctionUnpaused', args: {} }, { logIndex: 1, eventName: 'AuctionExtended', args: { endTime: 1300n } }],
+      [
+        { logIndex: 0, eventName: 'AuctionUnpaused', args: {} },
+        { logIndex: 1, eventName: 'AuctionExtended', args: { endTime: 1300n } },
+      ],
       [{ logIndex: 0, eventName: 'AuctionPaused', args: {} }],
     ]);
     expect(await store.status()).toEqual({ endTime: 1300, paused: true, cancelled: false });
     const messages = await store.messagesAfter(undefined);
-    expect(messages.map((m) => (m.type === 'auctionStatus' ? m.status : undefined))).toEqual([
+    expect(messages.map(m => (m.type === 'auctionStatus' ? m.status : undefined))).toEqual([
       { endTime: 1200, paused: false, cancelled: false },
       { endTime: 1200, paused: true, cancelled: false },
       { endTime: 1200, paused: false, cancelled: false },
@@ -192,12 +200,16 @@ describe('reduceAuctionBlock', () => {
       [{ logIndex: 0, eventName: 'ShapeSquaresSettled', args: { shapeId: 1n, countryId: 3n, count: 4n } }],
       [
         { logIndex: 0, eventName: 'ShapeSquaresSettled', args: { shapeId: 1n, countryId: 3n, count: 4n } },
-        { logIndex: 1, eventName: 'ShapeSettled', args: { shapeId: 1n, countryId: 3n, winner: ALICE, totalSquares: 8n } },
+        {
+          logIndex: 1,
+          eventName: 'ShapeSettled',
+          args: { shapeId: 1n, countryId: 3n, winner: ALICE, totalSquares: 8n },
+        },
       ],
     ]);
     const [shape] = (await store.bidder(ALICE)).shapes;
     expect(shape.settlement).toEqual({ countryId: 3, settledSquareCount: 8, done: true });
-    const settlements = (await store.messagesAfter({ block: 1, logIndex: 0 })).map((m) =>
+    const settlements = (await store.messagesAfter({ block: 1, logIndex: 0 })).map(m =>
       m.type === 'settlement' ? [m.settlement, m.bidder] : undefined,
     );
     expect(settlements).toEqual([
@@ -243,11 +255,21 @@ describe('reduceAuctionBlock', () => {
       reduceAuctionBlock(store, {
         block,
         timestamp: 1,
-        events: [{ logIndex: 0, eventName: 'ShapeSettled', args: { shapeId: 9n, countryId: 1n, winner: ALICE, totalSquares: 1n } }],
+        events: [
+          {
+            logIndex: 0,
+            eventName: 'ShapeSettled',
+            args: { shapeId: 9n, countryId: 1n, winner: ALICE, totalSquares: 1n },
+          },
+        ],
       }),
     ).rejects.toThrow(/Shape 9/);
     await expect(
-      reduceAuctionBlock(store, { block, timestamp: 1, events: [{ ...bid(2n ** 53n, ALICE, row, each(4, 1000n)), logIndex: 0 }] }),
+      reduceAuctionBlock(store, {
+        block,
+        timestamp: 1,
+        events: [{ ...bid(2n ** 53n, ALICE, row, each(4, 1000n)), logIndex: 0 }],
+      }),
     ).rejects.toThrow(/too large/);
   });
 });

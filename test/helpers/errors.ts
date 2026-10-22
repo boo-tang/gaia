@@ -1,4 +1,4 @@
-import { type Abi, type Hex, decodeErrorResult } from "viem";
+import { type Abi, type Hex, decodeErrorResult } from 'viem';
 
 const UNRECOGNIZED = /unrecognized custom error \(return data: (0x[0-9a-fA-F]*)\)/;
 

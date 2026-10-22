@@ -1,6 +1,6 @@
-import { use } from "chai";
-import chaiAsPromised from "chai-as-promised";
-import hre, { network } from "hardhat";
+import { use } from 'chai';
+import chaiAsPromised from 'chai-as-promised';
+import hre, { network } from 'hardhat';
 
 use(chaiAsPromised);
 

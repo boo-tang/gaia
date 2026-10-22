@@ -16,9 +16,14 @@
     "typecheck": "yarn workspaces foreach --all --exclude gaia run typecheck",
     "chain:local": "anvil",
     "deploy:local": "hardhat run scripts/deploy-local.ts --network anvil",
-    "seed:local": "hardhat run scripts/seed-local.ts --network anvil"
+    "seed:local": "hardhat run scripts/seed-local.ts --network anvil",
+    "lint": "eslint packages",
+    "lint:fix": "eslint --fix packages",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
+    "@eslint/js": "^9.26.0",
     "@nomicfoundation/hardhat-ignition": "^3",
     "@nomicfoundation/hardhat-ignition-viem": "^3",
     "@nomicfoundation/hardhat-mocha": "^4",
@@ -27,6 +32,7 @@
     "@nomicfoundation/hardhat-viem": "^3",
     "@nomicfoundation/ignition-core": "^3",
     "@openzeppelin/contracts": "5.7.0",
+    "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "@types/chai": "^5",
     "@types/chai-as-promised": "^8",
     "@types/mocha": "^10.0.10",
@@ -34,9 +40,17 @@
     "chai": "^5",
     "chai-as-promised": "^8",
     "erc6551": "0.3.1",
+    "eslint": "^9.26.0",
+    "eslint-config-prettier": "^10.1.5",
+    "eslint-import-resolver-typescript": "^3.6.1",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-no-only-tests": "^3.3.0",
+    "globals": "^17.13.0",
     "hardhat": "^3.19.0",
     "mocha": "^12",
-    "typescript": "~5.9.3"
+    "prettier": "^3.5.3",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.32.1"
   },
   "dependencies": {
     "viem": "^2.47.6"

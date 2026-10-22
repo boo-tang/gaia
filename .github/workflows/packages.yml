@@ -1,6 +1,6 @@
-# Type check and tests of the workspace packages (packages/*). Also checks that the ABI
-# files in packages/core are the same as the contract build. The server test against Anvil needs
-# Foundry and the contract build.
+# Lint, type check and tests of the workspace packages (packages/*), and the Prettier check of the
+# whole repository. Also checks that the ABI files in packages/core are the same as the contract
+# build. The server test against Anvil needs Foundry and the contract build.
 name: Packages
 
 on:
@@ -41,6 +41,12 @@ jobs:
 
       - name: Compile contracts
         run: yarn hardhat compile
+
+      - name: Format check
+        run: yarn format:check
+
+      - name: Lint
+        run: yarn lint
 
       - name: Type check
         run: yarn typecheck

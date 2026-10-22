@@ -11,13 +11,13 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: "17 3 * * *"
+    - cron: '17 3 * * *'
   workflow_dispatch:
     inputs:
       fuzz_runs:
         description: Number of seeds for each fuzz test (empty for the default)
         required: false
-        default: ""
+        default: ''
 
 # A push cancels the older run of the same branch. The scheduled run has its own group, so a push
 # does not cancel it.

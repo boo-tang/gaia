@@ -1,11 +1,11 @@
-import { type Abi, type Hex, getAddress, parseEventLogs, zeroAddress } from "viem";
+import { type Abi, type Hex, getAddress, parseEventLogs, zeroAddress } from 'viem';
 
-import { loadFixture, networkHelpers, time, viem } from "./helpers/setup";
-import { SHAPE_ERRORS, auctionAs, deployAuction, deploySale } from "./helpers/auction";
-import { deployLand } from "./helpers/land";
-import { revertMessage } from "./helpers/errors";
-import { balanceChange } from "./helpers/eth";
-import { Rng } from "./helpers/random";
+import { SHAPE_ERRORS, auctionAs, deployAuction, deploySale } from './helpers/auction';
+import { revertMessage } from './helpers/errors';
+import { balanceChange } from './helpers/eth';
+import { deployLand } from './helpers/land';
+import { Rng } from './helpers/random';
+import { loadFixture, networkHelpers, time, viem } from './helpers/setup';
 
 /*
  * Model-based random tests of the auction bid rules.
@@ -60,13 +60,10 @@ import { Rng } from "./helpers/random";
  * - AUCTION_FUZZ_VERBOSE=1: print a summary of each run.
  */
 
-const RUNS = Number(process.env.AUCTION_FUZZ_RUNS ?? "12");
-const FIRST_SEED = Number(process.env.AUCTION_FUZZ_FIRST_SEED ?? "1");
-const OPS = Number(process.env.AUCTION_FUZZ_OPS ?? "60");
-const ONLY_SEED =
-  process.env.AUCTION_FUZZ_SEED === undefined
-    ? undefined
-    : Number(process.env.AUCTION_FUZZ_SEED);
+const RUNS = Number(process.env.AUCTION_FUZZ_RUNS ?? '12');
+const FIRST_SEED = Number(process.env.AUCTION_FUZZ_FIRST_SEED ?? '1');
+const OPS = Number(process.env.AUCTION_FUZZ_OPS ?? '60');
+const ONLY_SEED = process.env.AUCTION_FUZZ_SEED === undefined ? undefined : Number(process.env.AUCTION_FUZZ_SEED);
 
 const WINDOW = 10;
 const MAX_LAT = 18000;
@@ -88,10 +85,10 @@ const SALE_DROP = 7200n;
 type Address = `0x${string}`;
 
 const PLACES = [
-  { name: "ordinary", lat0: 9000, lng0: 18000 },
-  { name: "across longitude 0", lat0: 9000, lng0: 35995 },
-  { name: "latitude 0 across longitude 0", lat0: 0, lng0: 35996 },
-  { name: "north limit (rows 17993 to 18002)", lat0: MAX_LAT - 7, lng0: 100 },
+  { name: 'ordinary', lat0: 9000, lng0: 18000 },
+  { name: 'across longitude 0', lat0: 9000, lng0: 35995 },
+  { name: 'latitude 0 across longitude 0', lat0: 0, lng0: 35996 },
+  { name: 'north limit (rows 17993 to 18002)', lat0: MAX_LAT - 7, lng0: 100 },
 ];
 type Place = (typeof PLACES)[number];
 
@@ -103,12 +100,10 @@ type Place = (typeof PLACES)[number];
 const key = (row: number, col: number) => row * WINDOW + col;
 const rowOf = (k: number) => Math.floor(k / WINDOW);
 const colOf = (k: number) => k % WINDOW;
-const inWindow = (row: number, col: number) =>
-  row >= 0 && row < WINDOW && col >= 0 && col < WINDOW;
+const inWindow = (row: number, col: number) => row >= 0 && row < WINDOW && col >= 0 && col < WINDOW;
 const ALL_CELLS = Array.from({ length: WINDOW * WINDOW }, (_, i) => i);
 
-const packOf = (place: Place, k: number) =>
-  (place.lat0 + rowOf(k)) * 65536 + ((place.lng0 + colOf(k)) % MAX_LNG);
+const packOf = (place: Place, k: number) => (place.lat0 + rowOf(k)) * 65536 + ((place.lng0 + colOf(k)) % MAX_LNG);
 const latOf = (packed: number) => Math.floor(packed / 65536);
 const lngOf = (packed: number) => packed % 65536;
 
@@ -126,8 +121,7 @@ function cellOf(place: Place, packed: number): number | undefined {
 const sortCells = (cells: Iterable<number>) => [...cells].sort((a, b) => a - b);
 
 /// Rows of the window that are on the map.
-const validRows = (place: Place) =>
-  Math.min(WINDOW, MAX_LAT - place.lat0);
+const validRows = (place: Place) => Math.min(WINDOW, MAX_LAT - place.lat0);
 
 // -------- Shape rule --------
 
@@ -201,8 +195,7 @@ function bidAmount(current: bigint, floor: bigint): bigint {
 /// The expected revert of a call: one error name, or a list of names when any of them is correct.
 type Expected = string | readonly string[] | undefined;
 
-const namesOf = (expected: string | readonly string[]) =>
-  typeof expected === "string" ? [expected] : [...expected];
+const namesOf = (expected: string | readonly string[]) => (typeof expected === 'string' ? [expected] : [...expected]);
 
 type SquareRecord = { amount: bigint; shape: number };
 type ShapeRecord = { bidder: Address; cells: number[] };
@@ -259,13 +252,11 @@ class AuctionModel {
 
   /// Cells that a shape still holds, in its stored order.
   liveCells(id: number): number[] {
-    return this.shapes
-      .get(id)!
-      .cells.filter((k) => this.squares.get(k)?.shape === id);
+    return this.shapes.get(id)!.cells.filter(k => this.squares.get(k)?.shape === id);
   }
 
   liveShapes(): number[] {
-    return [...this.shapes.keys()].filter((id) => this.liveCells(id).length > 0);
+    return [...this.shapes.keys()].filter(id => this.liveCells(id).length > 0);
   }
 
   pendingOf(a: Address) {
@@ -277,12 +268,7 @@ class AuctionModel {
   }
 
   /// The ETH that a bid spends, for the squares in the window. Changes nothing.
-  cost(
-    sender: Address,
-    squares: number[],
-    floor: bigint,
-    raise: boolean,
-  ): bigint {
+  cost(sender: Address, squares: number[], floor: bigint, raise: boolean): bigint {
     let paid = 0n;
     for (const packed of squares) {
       const k = cellOf(this.place, packed);
@@ -296,17 +282,10 @@ class AuctionModel {
 
   /// Applies bidOnShape as the contract would. Returns the expected revert error, or undefined
   /// for success. After a revert, the model is discarded (see `attempt`).
-  bid(
-    sender: Address,
-    squares: number[],
-    floor: bigint,
-    raise: boolean,
-    value: bigint,
-    shapeFault?: string,
-  ): Expected {
-    if (this.ended) return "AuctionAlreadyEnded";
-    if (this.cancelled) return "AuctionIsCancelled";
-    if (this.paused) return "AuctionIsPaused";
+  bid(sender: Address, squares: number[], floor: bigint, raise: boolean, value: bigint, shapeFault?: string): Expected {
+    if (this.ended) return 'AuctionAlreadyEnded';
+    if (this.cancelled) return 'AuctionIsCancelled';
+    if (this.paused) return 'AuctionIsPaused';
     const valid = isHVConvex(this.place, squares);
     if (shapeFault !== undefined && valid) {
       throw new Divergence(`generator for ${shapeFault} made a valid shape ${fmtSquares(squares)}`);
@@ -314,7 +293,7 @@ class AuctionModel {
     if (!valid) return shapeFault ?? SHAPE_ERRORS;
 
     const id = this.nextShape++;
-    const cells = squares.map((packed) => cellOf(this.place, packed)!);
+    const cells = squares.map(packed => cellOf(this.place, packed)!);
     this.shapes.set(id, { bidder: sender, cells });
     let paid = 0n;
     let increase = 0n;
@@ -346,12 +325,17 @@ class AuctionModel {
     for (const shape of affected) {
       const rest = this.liveCells(shape);
       if (rest.length === 0) continue;
-      if (!isHVConvex(this.place, rest.map((k) => packOf(this.place, k)))) {
-        remainderErrors.add("OverlapWouldInvalidateShape");
+      if (
+        !isHVConvex(
+          this.place,
+          rest.map(k => packOf(this.place, k)),
+        )
+      ) {
+        remainderErrors.add('OverlapWouldInvalidateShape');
       }
     }
     this.remainderError = remainderErrors.size > 0;
-    if (value < paid) return ["InsufficientValue", ...remainderErrors];
+    if (value < paid) return ['InsufficientValue', ...remainderErrors];
     if (remainderErrors.size > 0) return [...remainderErrors];
 
     if (value > paid) this.pending.set(sender, this.pendingOf(sender) + value - paid);
@@ -364,8 +348,7 @@ class AuctionModel {
 
   /// withdraw: pays the refunds, and after a cancel also the current bids. Never reverts.
   withdraw(sender: Address): string | undefined {
-    const amount =
-      this.pendingOf(sender) + (this.cancelled ? this.activeOf(sender) : 0n);
+    const amount = this.pendingOf(sender) + (this.cancelled ? this.activeOf(sender) : 0n);
     this.pending.set(sender, 0n);
     if (this.cancelled) this.active.set(sender, 0n);
     this.balance -= amount;
@@ -375,37 +358,37 @@ class AuctionModel {
   }
 
   pause(isAdmin: boolean): string | undefined {
-    if (!isAdmin) return "NotAdmin";
-    if (this.cancelled) return "AuctionIsCancelled";
-    if (this.paused) return "AuctionIsPaused";
-    if (this.ended) return "AuctionAlreadyEnded";
+    if (!isAdmin) return 'NotAdmin';
+    if (this.cancelled) return 'AuctionIsCancelled';
+    if (this.paused) return 'AuctionIsPaused';
+    if (this.ended) return 'AuctionAlreadyEnded';
     this.paused = true;
     return undefined;
   }
 
   unpause(isAdmin: boolean): string | undefined {
-    if (!isAdmin) return "NotAdmin";
-    if (this.cancelled) return "AuctionIsCancelled";
-    if (!this.paused) return "AuctionNotPaused";
-    if (this.ended) return "AuctionAlreadyEnded";
+    if (!isAdmin) return 'NotAdmin';
+    if (this.cancelled) return 'AuctionIsCancelled';
+    if (!this.paused) return 'AuctionNotPaused';
+    if (this.ended) return 'AuctionAlreadyEnded';
     this.paused = false;
     return undefined;
   }
 
   /// cancel: the admin while paused; anybody while paused after endTime.
   cancel(isAdmin: boolean): string | undefined {
-    if (this.cancelled) return "AuctionIsCancelled";
-    if (!this.paused) return "AuctionNotPaused";
-    if (!this.ended && !isAdmin) return "NotAdmin";
+    if (this.cancelled) return 'AuctionIsCancelled';
+    if (!this.paused) return 'AuctionNotPaused';
+    if (!this.ended && !isAdmin) return 'NotAdmin';
     this.cancelled = true;
     this.proceeds = 0n;
     return undefined;
   }
 
   withdrawProceeds(): string | undefined {
-    if (!this.ended) return "AuctionNotYetEnded";
-    if (this.cancelled) return "AuctionIsCancelled";
-    if (this.paused) return "AuctionIsPaused";
+    if (!this.ended) return 'AuctionNotYetEnded';
+    if (this.cancelled) return 'AuctionIsCancelled';
+    if (this.paused) return 'AuctionIsPaused';
     this.lastPayment = this.proceeds;
     this.proceedsPaid += this.proceeds;
     this.balance -= this.proceeds;
@@ -417,16 +400,15 @@ class AuctionModel {
 class Divergence extends Error {}
 
 function fmtSquares(squares: number[]) {
-  return squares.map((p) => `(${latOf(p)},${lngOf(p)})`).join(" ");
+  return squares.map(p => `(${latOf(p)},${lngOf(p)})`).join(' ');
 }
 
 // -------- Test --------
 
-const NAMES = ["alice", "bob", "carol", "dave"];
+const NAMES = ['alice', 'bob', 'carol', 'dave'];
 
 async function deploy() {
-  const [admin, alice, bob, carol, dave, treasury] =
-    await viem.getWalletClients();
+  const [admin, alice, bob, carol, dave, treasury] = await viem.getWalletClients();
   const land = await deployLand(admin.account.address);
   return {
     admin,
@@ -466,7 +448,7 @@ async function deployRun(fx: Fixture) {
   return { auction, sale, as, end };
 }
 
-describe("Auction bid rules: model-based random tests", function () {
+describe('Auction bid rules: model-based random tests', function () {
   // The runs move the clock past endTime. Restore the chain after the runs, so that the clock
   // is back where it was for the next test files.
   let snapshot: Awaited<ReturnType<typeof networkHelpers.takeSnapshot>>;
@@ -477,10 +459,7 @@ describe("Auction bid rules: model-based random tests", function () {
     await snapshot.restore();
   });
 
-  const seeds =
-    ONLY_SEED === undefined
-      ? Array.from({ length: RUNS }, (_, i) => FIRST_SEED + i)
-      : [ONLY_SEED];
+  const seeds = ONLY_SEED === undefined ? Array.from({ length: RUNS }, (_, i) => FIRST_SEED + i) : [ONLY_SEED];
 
   for (const seed of seeds) {
     const place = PLACES[seed % PLACES.length];
@@ -497,16 +476,14 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
   const rng = new Rng(seed);
   const { auction, sale, as, end } = await deployRun(fx);
   let model = new AuctionModel(place);
-  const bidders = fx.bidders.map((w) => getAddress(w.account.address));
+  const bidders = fx.bidders.map(w => getAddress(w.account.address));
   const admin = getAddress(fx.admin.account.address);
   // The auction as `caller`. The admin deployed it.
-  const asCaller = (caller: Address) =>
-    caller === admin ? auction : as.get(caller)!;
+  const asCaller = (caller: Address) => (caller === admin ? auction : as.get(caller)!);
   const log: string[] = [];
   const counts = { ok: 0, reverted: 0 };
   const outcomes = new Map<string, number>();
-  const who = (a: Address) =>
-    a === admin ? "admin" : (NAMES[bidders.indexOf(a)] ?? a);
+  const who = (a: Address) => (a === admin ? 'admin' : (NAMES[bidders.indexOf(a)] ?? a));
   // The squares of the last bid, for the checks after it.
   let lastSquares: number[] = [];
   // The errors that a call can revert with, to name an error that Hardhat does not name.
@@ -521,15 +498,15 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
   ): Promise<boolean> {
     const next = model.clone();
     const expected = predict(next);
-    const shown = expected === undefined ? "success" : namesOf(expected).join(" | ");
+    const shown = expected === undefined ? 'success' : namesOf(expected).join(' | ');
     log.push(`${label} -> expect ${shown}`);
     let actual: string | undefined;
-    let message = "";
+    let message = '';
     try {
       await send();
     } catch (e) {
       message = revertMessage(e, errorAbi);
-      actual = "revert";
+      actual = 'revert';
     }
     if (expected === undefined && actual !== undefined) {
       throw new Divergence(`model expects success, contract reverted: ${message}`);
@@ -538,9 +515,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
       throw new Divergence(`model expects ${shown}, contract succeeded`);
     }
     if (expected !== undefined) {
-      const matched = namesOf(expected).find((name) =>
-        new RegExp(`\\b${name}\\(`).test(message),
-      );
+      const matched = namesOf(expected).find(name => new RegExp(`\\b${name}\\(`).test(message));
       if (matched === undefined) {
         throw new Divergence(`model expects ${shown}, contract reverted with: ${message}`);
       }
@@ -603,90 +578,90 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     return undefined;
   }
 
-  const packCells = (cells: number[]) => cells.map((k) => packOf(place, k));
+  const packCells = (cells: number[]) => cells.map(k => packOf(place, k));
 
   /// A square list that breaks a rule, of a random kind.
   /// `fault` is set when the list breaks exactly one rule: the error of that rule.
   function badSquares(): { kind: string; squares: number[]; fault?: string } | undefined {
     const kind = rng.pick([
-      "swap",
-      "drop square",
-      "drop row",
-      "shift last row",
-      "dent west",
-      "dent east",
-      "duplicate",
-      "bad longitude",
-      "past the limit",
-      "single",
-      "too large",
-      "thin",
-      "reverse",
-      "empty",
+      'swap',
+      'drop square',
+      'drop row',
+      'shift last row',
+      'dent west',
+      'dent east',
+      'duplicate',
+      'bad longitude',
+      'past the limit',
+      'single',
+      'too large',
+      'thin',
+      'reverse',
+      'empty',
     ]);
-    if (kind === "empty") return { kind, squares: [], fault: "EmptyShape" };
-    if (kind === "single") {
+    if (kind === 'empty') return { kind, squares: [], fault: 'EmptyShape' };
+    if (kind === 'single') {
       return {
         kind,
-        squares: packCells([rng.pick(ALL_CELLS.filter((k) => rowOf(k) < validRows(place)))]),
-        fault: "ShapeTooSmall",
+        squares: packCells([rng.pick(ALL_CELLS.filter(k => rowOf(k) < validRows(place)))]),
+        fault: 'ShapeTooSmall',
       };
     }
-    if (kind === "too large") {
+    if (kind === 'too large') {
       const rect: number[] = [];
       for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) rect.push(key(r, c));
-      return { kind, squares: packCells(rect), fault: "ShapeTooLarge" };
+      return { kind, squares: packCells(rect), fault: 'ShapeTooLarge' };
     }
-    if (kind === "thin") {
+    if (kind === 'thin') {
       const len = MAX_RATIO + 1 + rng.int(WINDOW - MAX_RATIO - 1);
       const r0 = rng.int(validRows(place));
       const line = Array.from({ length: len }, (_, c) => key(r0, c));
-      return { kind, squares: packCells(line), fault: "AspectRatioExceeded" };
+      return { kind, squares: packCells(line), fault: 'AspectRatioExceeded' };
     }
-    if (kind === "dent west" || kind === "dent east") {
+    if (kind === 'dent west' || kind === 'dent east') {
       // Three rows. The middle row is shorter on one side, so one column has a gap.
       const r0 = rng.int(Math.max(1, validRows(place) - 2));
       const c0 = rng.int(WINDOW - 3);
       const cells: number[] = [];
       for (let r = 0; r < 3; r++) {
         for (let c = 0; c < 4; c++) {
-          const dent = r === 1 && (kind === "dent west" ? c === 0 : c === 3);
+          const dent = r === 1 && (kind === 'dent west' ? c === 0 : c === 3);
           if (!dent) cells.push(key(r0 + r, c0 + c));
         }
       }
       return { kind, squares: packCells(cells) };
     }
-    const base = convexShape(undefined, kind === "past the limit");
+    const base = convexShape(undefined, kind === 'past the limit');
     if (base === undefined || base.length < 2) return undefined;
     const squares = packCells(base);
-    if (kind === "swap") {
+    if (kind === 'swap') {
       const i = rng.int(squares.length);
       const j = rng.int(squares.length);
       const t = squares[i];
       squares[i] = squares[j];
       squares[j] = t;
-    } else if (kind === "drop square") {
+    } else if (kind === 'drop square') {
       squares.splice(1 + rng.int(squares.length - 1), 1);
-    } else if (kind === "drop row") {
+    } else if (kind === 'drop row') {
       const rowLats = [...new Set(squares.map(latOf))];
       const lat = rng.pick(rowLats);
-      return { kind, squares: squares.filter((p) => latOf(p) !== lat) };
-    } else if (kind === "shift last row") {
+      return { kind, squares: squares.filter(p => latOf(p) !== lat) };
+    } else if (kind === 'shift last row') {
       // The row stays in the window.
       const last = rowOf(base[base.length - 1]);
       const shift = 1 + rng.int(4);
-      const cells = base.map((k) => (rowOf(k) === last ? k + shift : k));
+      const cells = base.map(k => (rowOf(k) === last ? k + shift : k));
       if (cells.some((k, i) => rowOf(base[i]) === last && colOf(base[i]) + shift >= WINDOW)) {
         return undefined;
       }
       return { kind, squares: packCells(cells) };
-    } else if (kind === "duplicate") {
+    } else if (kind === 'duplicate') {
       const i = rng.int(squares.length);
       squares.splice(i, 0, squares[i]);
-    } else if (kind === "bad longitude") {
+    } else if (kind === 'bad longitude') {
       const i = rng.int(squares.length);
       squares[i] += MAX_LNG;
-    } else if (kind === "reverse") {
+    } else if (kind === 'reverse') {
       squares.reverse();
     }
     return { kind, squares };
@@ -717,25 +692,24 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     await attempt(
       `${label}: ${who(sender)} bids on ${squares.length} squares ${fmtSquares(squares)}, ` +
         `floor ${floor}, raise ${raise}, value ${value}`,
-      (m) => m.bid(sender, squares, floor, raise, value, options.fault),
-      () =>
-        as.get(sender)!.write.bidOnShape([squares, floor, raise], { value }),
+      m => m.bid(sender, squares, floor, raise, value, options.fault),
+      () => as.get(sender)!.write.bidOnShape([squares, floor, raise], { value }),
     );
   }
 
   const ops: { weight: number; name: string; run: () => Promise<void> }[] = [
     {
       weight: 4,
-      name: "new shape",
+      name: 'new shape',
       run: async () => {
         const cells = convexShape();
         if (cells === undefined) return;
-        await sendBid("new shape", rng.pick(bidders), packCells(cells));
+        await sendBid('new shape', rng.pick(bidders), packCells(cells));
       },
     },
     {
       weight: 4,
-      name: "outbid",
+      name: 'outbid',
       run: async () => {
         // A shape that contains a square of another bidder. It often cuts a shape.
         const id = rng.pickOr(model.liveShapes());
@@ -743,13 +717,13 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         const owner = model.shapes.get(id)!.bidder;
         const cells = convexShape(rng.pick(model.liveCells(id)));
         if (cells === undefined) return;
-        const sender = rng.pick(bidders.filter((b) => b !== owner));
+        const sender = rng.pick(bidders.filter(b => b !== owner));
         await sendBid(`outbid #${id}`, sender, packCells(cells));
       },
     },
     {
       weight: 3,
-      name: "own squares",
+      name: 'own squares',
       run: async () => {
         // A re-bid that contains own squares: all live squares of an own shape, or a shape
         // around one of them (it can join two own shapes).
@@ -767,7 +741,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     },
     {
       weight: 3,
-      name: "invalid shape",
+      name: 'invalid shape',
       run: async () => {
         const bad = badSquares();
         if (bad === undefined) return;
@@ -778,25 +752,25 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     },
     {
       weight: 1,
-      name: "short value",
+      name: 'short value',
       run: async () => {
         const cells = convexShape();
         if (cells === undefined) return;
-        await sendBid("short value", rng.pick(bidders), packCells(cells), {
+        await sendBid('short value', rng.pick(bidders), packCells(cells), {
           short: true,
         });
       },
     },
     {
       weight: 2,
-      name: "withdraw",
+      name: 'withdraw',
       run: async () => {
         await withdraw(rng.pick(bidders));
       },
     },
     {
       weight: 1,
-      name: "pause or unpause",
+      name: 'pause or unpause',
       run: async () => {
         // Mostly the admin. Sometimes a bidder, who is not the admin.
         const caller = rng.chance(0.85) ? admin : rng.pick(bidders);
@@ -804,31 +778,35 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         if (model.paused && rng.chance(0.8)) {
           await attempt(
             `unpause by ${who(caller)}`,
-            (m) => m.unpause(isAdmin),
+            m => m.unpause(isAdmin),
             () => asCaller(caller).write.unpause(),
           );
           return;
         }
         await attempt(
           `pause by ${who(caller)}`,
-          (m) => m.pause(isAdmin),
+          m => m.pause(isAdmin),
           () => asCaller(caller).write.pause(),
         );
         if (!model.paused) return;
         // A short pause: a bid reverts and a withdraw works. Then the admin mostly unpauses.
         const cells = convexShape();
         if (cells !== undefined) {
-          await sendBid("bid while paused", rng.pick(bidders), packCells(cells));
+          await sendBid('bid while paused', rng.pick(bidders), packCells(cells));
         }
         await withdraw(rng.pick(bidders));
         if (rng.chance(0.85)) {
-          await attempt("unpause by admin", (m) => m.unpause(true), () => auction.write.unpause());
+          await attempt(
+            'unpause by admin',
+            m => m.unpause(true),
+            () => auction.write.unpause(),
+          );
         }
       },
     },
     {
       weight: 1,
-      name: "early cancel or withdrawProceeds",
+      name: 'early cancel or withdrawProceeds',
       run: async () => {
         // Before endTime these revert: a bidder cannot cancel, an unpaused auction cannot be
         // cancelled, and the treasury cannot take the proceeds yet.
@@ -836,13 +814,13 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         if (rng.chance(0.5)) {
           await attempt(
             `cancel by ${who(caller)}`,
-            (m) => m.cancel(false),
+            m => m.cancel(false),
             () => asCaller(caller).write.cancel(),
           );
         } else {
           await attempt(
             `withdrawProceeds by ${who(caller)}`,
-            (m) => m.withdrawProceeds(),
+            m => m.withdrawProceeds(),
             () => asCaller(caller).write.withdrawProceeds(),
           );
         }
@@ -860,17 +838,13 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     let got = 0n;
     const ok = await attempt(
       `withdraw by ${who(bidder)}`,
-      (m) => m.withdraw(bidder),
+      m => m.withdraw(bidder),
       async () => {
-        ({ change: got } = await balanceChange(bidder, () =>
-          as.get(bidder)!.write.withdraw(),
-        ));
+        ({ change: got } = await balanceChange(bidder, () => as.get(bidder)!.write.withdraw()));
       },
     );
     if (ok && got !== model.lastPayment) {
-      throw new Divergence(
-        `withdraw paid ${who(bidder)} ${got}, model ${model.lastPayment}`,
-      );
+      throw new Divergence(`withdraw paid ${who(bidder)} ${got}, model ${model.lastPayment}`);
     }
   }
 
@@ -879,7 +853,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     let got = 0n;
     const ok = await attempt(
       `withdrawProceeds by ${who(caller)}`,
-      (m) => m.withdrawProceeds(),
+      m => m.withdrawProceeds(),
       async () => {
         const before = await balanceOf(fx.treasury);
         await asCaller(caller).write.withdrawProceeds();
@@ -895,7 +869,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
   async function passEndTime() {
     await time.increaseTo(end + 1n);
     model.ended = true;
-    log.push("time passes endTime");
+    log.push('time passes endTime');
   }
 
   /// The end of a run: a normal end, or a cancel.
@@ -905,7 +879,11 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     const cancel = rng.chance(0.5);
     if (cancel) {
       if (!model.paused) {
-        await attempt("pause by admin", (m) => m.pause(true), () => auction.write.pause());
+        await attempt(
+          'pause by admin',
+          m => m.pause(true),
+          () => auction.write.pause(),
+        );
       }
       // The admin can cancel before endTime. After endTime anybody can cancel.
       let caller = admin;
@@ -915,18 +893,26 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
       }
       await attempt(
         `cancel by ${who(caller)}`,
-        (m) => m.cancel(caller === admin),
+        m => m.cancel(caller === admin),
         () => asCaller(caller).write.cancel(),
       );
       await check();
     } else {
       if (model.paused) {
-        await attempt("unpause by admin", (m) => m.unpause(true), () => auction.write.unpause());
+        await attempt(
+          'unpause by admin',
+          m => m.unpause(true),
+          () => auction.write.unpause(),
+        );
       }
       await passEndTime();
       const cells = convexShape();
-      if (cells !== undefined) await sendBid("late bid", rng.pick(bidders), packCells(cells));
-      await attempt("pause by admin", (m) => m.pause(true), () => auction.write.pause());
+      if (cells !== undefined) await sendBid('late bid', rng.pick(bidders), packCells(cells));
+      await attempt(
+        'pause by admin',
+        m => m.pause(true),
+        () => auction.write.pause(),
+      );
     }
     if (!model.ended) await passEndTime();
 
@@ -989,8 +975,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
       log.push(`settleShape(#${id}, ${chunk}) by ${who(caller)}`);
       const before = await auction.read.shapeCountryId([BigInt(id)]);
       const countBefore = before === 0n ? 0n : await countries.read.squareCount([before]);
-      const ownerBefore =
-        before === 0n ? undefined : getAddress(await countries.read.ownerOf([before]));
+      const ownerBefore = before === 0n ? undefined : getAddress(await countries.read.ownerOf([before]));
       let receipt;
       try {
         const hash = await as.get(caller)!.write.settleShape([BigInt(id), chunk]);
@@ -1021,7 +1006,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
       const count = await countries.read.squareCount([countryId]);
       const minted = parseEventLogs({
         abi: auction.abi,
-        eventName: "ShapeSquaresSettled",
+        eventName: 'ShapeSquaresSettled',
         logs: receipt.logs,
       });
       const added = count - countBefore;
@@ -1034,7 +1019,9 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
           minted[0].args.countryId !== countryId ||
           minted[0].args.count !== added)
       ) {
-        throw new Divergence(`shape #${id}: ShapeSquaresSettled ${JSON.stringify(minted[0].args, (_, v) => (typeof v === "bigint" ? v.toString() : v))}, model ${added} squares in ${countryId}`);
+        throw new Divergence(
+          `shape #${id}: ShapeSquaresSettled ${JSON.stringify(minted[0].args, (_, v) => (typeof v === 'bigint' ? v.toString() : v))}, model ${added} squares in ${countryId}`,
+        );
       }
       // The auction owns the country until the call that reaches the end of the stored squares.
       // That call sends it to the bidder and emits ShapeSettled. It can come after the country
@@ -1047,7 +1034,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         throw new Divergence(`shape #${id}: country ${countryId} sent with ${count} of ${live.length} squares`);
       }
       const transferred = owner === shape.bidder && ownerBefore !== shape.bidder;
-      const settled = parseEventLogs({ abi: auction.abi, eventName: "ShapeSettled", logs: receipt.logs });
+      const settled = parseEventLogs({ abi: auction.abi, eventName: 'ShapeSettled', logs: receipt.logs });
       if (settled.length !== (transferred ? 1 : 0)) {
         throw new Divergence(`shape #${id}: ${settled.length} ShapeSettled, country sent: ${transferred}`);
       }
@@ -1073,7 +1060,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         throw new Divergence(`exists${fmtSquares([packed])} is ${exists}, model ${model.squares.has(k)}`);
       }
     }
-    log.push("all shapes settled");
+    log.push('all shapes settled');
   }
 
   /// After the last settleShape of shape `id`: its country, if any, holds exactly `live`.
@@ -1087,7 +1074,8 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     const bidder = model.shapes.get(id)!.bidder;
     if (countryId === 0n) throw new Divergence(`shape #${id} settled without a country`);
     const owner = getAddress(await countries.read.ownerOf([countryId]));
-    if (owner !== bidder) throw new Divergence(`country ${countryId} of shape #${id} is at ${owner}, not ${who(bidder)}`);
+    if (owner !== bidder)
+      throw new Divergence(`country ${countryId} of shape #${id} is at ${owner}, not ${who(bidder)}`);
     const count = await countries.read.squareCount([countryId]);
     if (count !== BigInt(live.length)) {
       throw new Divergence(`country ${countryId} of shape #${id} has ${count} squares, model ${live.length}`);
@@ -1105,8 +1093,8 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
   // the ABI, so that viem names them.
   const saleAbi = [
     ...sale.abi,
-    ...fx.land.countries.abi.filter((item) => item.type === "error"),
-    ...fx.land.squares.abi.filter((item) => item.type === "error"),
+    ...fx.land.countries.abi.filter(item => item.type === 'error'),
+    ...fx.land.squares.abi.filter(item => item.type === 'error'),
   ] as Abi;
 
   /// Sale price at `timestamp` (after endTime).
@@ -1114,10 +1102,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     const elapsed = timestamp - end;
     if (elapsed <= SALE_HOLD) return SALE_START_PRICE;
     if (elapsed - SALE_HOLD >= SALE_DROP) return SALE_END_PRICE;
-    return (
-      SALE_START_PRICE -
-      ((SALE_START_PRICE - SALE_END_PRICE) * (elapsed - SALE_HOLD)) / SALE_DROP
-    );
+    return SALE_START_PRICE - ((SALE_START_PRICE - SALE_END_PRICE) * (elapsed - SALE_HOLD)) / SALE_DROP;
   }
 
   /// Random purchases next to the window. Each new country gets its own slot of 6 columns; a
@@ -1129,21 +1114,21 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     for (let i = 0; i < 6; i++) {
       const buyer = rng.pick(bidders);
       const wallet = fx.bidders[bidders.indexOf(buyer)];
-      let fn: "buy" | "buyInto" = "buy";
+      let fn: 'buy' | 'buyInto' = 'buy';
       let countryId = 0n;
       let squares: number[] = [];
       let expected: string | undefined;
-      const kind = rng.pick(["new", "new", "into", "reserved", "short"]);
-      const into = rng.pickOr(bought.filter((c) => c.buyer === buyer && c.cols < 5));
-      if (kind === "into" && into !== undefined) {
-        fn = "buyInto";
+      const kind = rng.pick(['new', 'new', 'into', 'reserved', 'short']);
+      const into = rng.pickOr(bought.filter(c => c.buyer === buyer && c.cols < 5));
+      if (kind === 'into' && into !== undefined) {
+        fn = 'buyInto';
         countryId = into.id;
         for (let r = 0; r < into.rows; r++) {
           squares.push((into.lat + r) * 65536 + ((into.lng + into.cols) % MAX_LNG));
         }
-      } else if (kind === "reserved" && model.squares.size > 0) {
+      } else if (kind === 'reserved' && model.squares.size > 0) {
         squares = [packOf(place, rng.pick([...model.squares.keys()]))];
-        expected = "SquareReserved";
+        expected = 'SquareReserved';
       } else {
         const rows = 1 + rng.int(3);
         const cols = 1 + rng.int(4);
@@ -1160,14 +1145,14 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
       const price = salePrice(timestamp);
       const cost = price * BigInt(squares.length);
       let value = cost + (rng.chance(0.5) ? BigInt(rng.int(10_000)) : 0n);
-      if (kind === "short") value = cost - 1n;
-      if (cancelled) expected = "AuctionIsCancelled";
-      else if (kind === "short") expected = "InsufficientValue";
+      if (kind === 'short') value = cost - 1n;
+      if (cancelled) expected = 'AuctionIsCancelled';
+      else if (kind === 'short') expected = 'InsufficientValue';
       const label = `sale ${fn} of ${squares.length} squares ${fmtSquares(squares)} by ${who(buyer)} at price ${price}, value ${value}`;
-      log.push(`${label} -> expect ${expected ?? "success"}`);
+      log.push(`${label} -> expect ${expected ?? 'success'}`);
 
       const treasuryBefore = await balanceOf(fx.treasury);
-      let message = "";
+      let message = '';
       let result: Awaited<ReturnType<typeof balanceChange>> | undefined;
       try {
         result = await balanceChange(buyer, () =>
@@ -1175,7 +1160,7 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
             address: sale.address,
             abi: saleAbi,
             functionName: fn,
-            args: fn === "buy" ? [squares] : [countryId, squares],
+            args: fn === 'buy' ? [squares] : [countryId, squares],
             value,
           }),
         );
@@ -1207,20 +1192,17 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
       }
       const [event] = parseEventLogs({
         abi: sale.abi,
-        eventName: "SquaresBought",
+        eventName: 'SquaresBought',
         logs: result.receipt.logs,
       });
-      if (
-        event.args.pricePerSquare !== price ||
-        event.args.squareCount !== BigInt(squares.length)
-      ) {
+      if (event.args.pricePerSquare !== price || event.args.squareCount !== BigInt(squares.length)) {
         throw new Divergence(
           `SquaresBought ${event.args.squareCount} at ${event.args.pricePerSquare}, ` +
             `model ${squares.length} at ${price}`,
         );
       }
       counts.ok++;
-      if (fn === "buyInto") {
+      if (fn === 'buyInto') {
         into!.cols++;
       } else {
         const first = squares[0];
@@ -1249,12 +1231,8 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         problems.push(`${what}: contract ${actual}, model ${expected}`);
       }
     };
-    const cellList =
-      cells === undefined
-        ? ALL_CELLS.filter((k) => rowOf(k) < validRows(place))
-        : [...new Set(cells)];
-    const shapeList =
-      shapes === undefined ? [...model.shapes.keys()] : [...new Set(shapes)];
+    const cellList = cells === undefined ? ALL_CELLS.filter(k => rowOf(k) < validRows(place)) : [...new Set(cells)];
+    const shapeList = shapes === undefined ? [...model.shapes.keys()] : [...new Set(shapes)];
 
     for (const k of cellList) {
       const packed = packOf(place, k);
@@ -1264,17 +1242,9 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         (async () => {
           const s = model.squares.get(k);
           const [bidder, amount] = await auction.read.highestBids([lat, lng]);
-          expectEq(
-            `highestBids(${lat},${lng}).bidder`,
-            getAddress(bidder),
-            model.bidderOf(k) ?? zeroAddress,
-          );
+          expectEq(`highestBids(${lat},${lng}).bidder`, getAddress(bidder), model.bidderOf(k) ?? zeroAddress);
           expectEq(`highestBids(${lat},${lng}).amount`, amount, s?.amount ?? 0n);
-          expectEq(
-            `squareShapeId(${lat},${lng})`,
-            await auction.read.squareShapeId([lat, lng]),
-            BigInt(s?.shape ?? 0),
-          );
+          expectEq(`squareShapeId(${lat},${lng})`, await auction.read.squareShapeId([lat, lng]), BigInt(s?.shape ?? 0));
         })(),
       );
     }
@@ -1298,16 +1268,8 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     for (const b of bidders) {
       reads.push(
         (async () => {
-          expectEq(
-            `pendingReturns(${who(b)})`,
-            await auction.read.pendingReturns([b]),
-            model.pendingOf(b),
-          );
-          expectEq(
-            `activeBids(${who(b)})`,
-            await auction.read.activeBids([b]),
-            model.activeOf(b),
-          );
+          expectEq(`pendingReturns(${who(b)})`, await auction.read.pendingReturns([b]), model.pendingOf(b));
+          expectEq(`activeBids(${who(b)})`, await auction.read.activeBids([b]), model.activeOf(b));
         })(),
       );
     }
@@ -1336,21 +1298,19 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
       })(),
     );
     await Promise.all(reads);
-    expectEq("proceeds", proceeds, model.proceeds);
-    expectEq("auction balance", balance, model.balance);
-    expectEq("cancelled", cancelled, model.cancelled);
-    expectEq("paused", await auction.read.paused(), model.paused);
+    expectEq('proceeds', proceeds, model.proceeds);
+    expectEq('auction balance', balance, model.balance);
+    expectEq('cancelled', cancelled, model.cancelled);
+    expectEq('paused', await auction.read.paused(), model.paused);
     if (balance < sumPending + proceeds) {
       problems.push(`balance ${balance} < sum of pendingReturns ${sumPending} + proceeds ${proceeds}`);
     }
     // withdrawProceeds sets `proceeds` to 0 and does not change `activeBids`.
     if (!cancelled && sumActive !== proceeds + model.proceedsPaid) {
-      problems.push(
-        `sum of activeBids ${sumActive} != proceeds ${proceeds} + paid ${model.proceedsPaid}`,
-      );
+      problems.push(`sum of activeBids ${sumActive} != proceeds ${proceeds} + paid ${model.proceedsPaid}`);
     }
     if (cancelled && proceeds !== 0n) problems.push(`proceeds ${proceeds} after a cancel`);
-    if (problems.length > 0) throw new Divergence(problems.join("\n"));
+    if (problems.length > 0) throw new Divergence(problems.join('\n'));
   }
 
   /// The squares and shapes that the last bid can change: the squares of the bid in the window,
@@ -1392,10 +1352,10 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
       await check(t.cells, t.shapes);
     }
     await check();
-    log.push("end of the run");
+    log.push('end of the run');
     await endRun();
   } catch (e) {
-    const tail = log.slice(-40).join("\n  ");
+    const tail = log.slice(-40).join('\n  ');
     const message = e instanceof Error ? e.message : String(e);
     throw new Error(
       `auction fuzz failed: seed ${seed}, window ${place.name}\n` +
@@ -1407,8 +1367,8 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     console.log(
       `seed ${seed}: ${counts.ok} calls succeeded, ${counts.reverted} reverted as expected, ` +
         `${model.shapes.size} shapes (${model.liveShapes().length} live), ` +
-        `${model.squares.size} squares, ${model.cancelled ? "cancelled" : `proceeds ${model.proceedsPaid}`}, ` +
-        `reverts ${[...outcomes].map(([e, n]) => `${e} ${n}`).join(", ")}`,
+        `${model.squares.size} squares, ${model.cancelled ? 'cancelled' : `proceeds ${model.proceedsPaid}`}, ` +
+        `reverts ${[...outcomes].map(([e, n]) => `${e} ${n}`).join(', ')}`,
     );
   }
 }

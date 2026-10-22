@@ -3,17 +3,7 @@
   "ignorePaths": [],
   "dictionaryDefinitions": [],
   "dictionaries": [],
-  "words": [
-    "connectkit",
-    "COOR",
-    "moveend",
-    "reduxjs",
-    "sepolia",
-    "tanstack",
-    "wagmi",
-    "WALLETCONNECT",
-    "zoomend"
-  ],
+  "words": ["connectkit", "COOR", "moveend", "reduxjs", "sepolia", "tanstack", "wagmi", "WALLETCONNECT", "zoomend"],
   "ignoreWords": [],
   "import": []
 }
