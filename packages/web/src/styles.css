@@ -121,7 +121,7 @@ body {
   color: var(--color-muted);
 }
 
-/* Phone: the same width as PHONE_MEDIA_QUERY in useIsPhone.ts. The side panel goes below the map. */
+/* Phone: the same width as PHONE_MEDIA_QUERY in hooks/useIsPhone.ts. The side panel goes below the map. */
 @media (max-width: 767.98px) {
   /* The title and the wallet button on the first line, the status on the second. */
   .auction-status {

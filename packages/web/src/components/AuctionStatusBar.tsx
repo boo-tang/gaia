@@ -1,7 +1,7 @@
 // The auction status from the server: end time, paused, cancelled.
 import { useAuction } from '../api/queries';
+import { useNowSeconds } from '../hooks/useNowSeconds';
 import { describeAuction } from './auction-status';
-import { useNowSeconds } from './useNowSeconds';
 
 export const AuctionStatusBar = () => {
   const auction = useAuction();

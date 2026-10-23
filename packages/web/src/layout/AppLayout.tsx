@@ -2,7 +2,7 @@
 // and has no bid panel.
 import type { ReactNode } from 'react';
 
-import { useIsPhone } from './useIsPhone';
+import { useIsPhone } from '../hooks/useIsPhone';
 
 interface AppLayoutProps {
   header: ReactNode;
