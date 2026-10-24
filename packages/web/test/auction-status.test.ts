@@ -47,7 +47,7 @@ describe('describeAuction', () => {
     expect(describeAuction(response({ paused: true }), 4000).phase).toBe('paused');
     expect(describeAuction(response({ paused: true, cancelled: true }), 4000)).toEqual({
       phase: 'cancelled',
-      text: 'Auction cancelled. All bids are refunds.',
+      text: 'Auction cancelled. You can withdraw all your bids.',
     });
   });
 });
