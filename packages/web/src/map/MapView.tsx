@@ -2,7 +2,7 @@
 // the bids store. Loaded lazily (LazyMap.tsx), because MapLibre and deck.gl are large.
 import { type Bounds, type Square, describeSquare, packSquare, squareAt } from '@gaia/core';
 
-import type { Map as MapLibreMap } from 'maplibre-gl';
+import type { Map as MapLibreMap, TransformConstrainFunction } from 'maplibre-gl';
 // eslint-disable-next-line no-restricted-imports -- the CSS file of the package, not our build
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -36,6 +36,13 @@ export interface MapViewProps {
 const REQUEST_DELAY_MS = 250;
 // Near a pole, MapLibre draws Web Mercator from zoom 12 and the view breaks.
 const POLE_MAX_ZOOM = 11.5;
+
+// MapLibre keeps the centre below 85.05°, also on the globe. This lets it go to the poles. A map
+// option (not `setTransformConstrain` after the load), so that a first view near a pole stays.
+const constrainNearPoles: TransformConstrainFunction = (lngLat, zoom) => ({
+  center: lngLat.wrap(),
+  zoom: Math.abs(lngLat.lat) > 85 ? Math.min(zoom, POLE_MAX_ZOOM) : zoom,
+});
 
 // `localStorage` can throw (blocked site data).
 const browserStorage = () => {
@@ -111,16 +118,6 @@ const MapView = ({ selected, onSquareClick }: MapViewProps) => {
     requestTimer.current = setTimeout(() => bidsStore.requestArea(viewport), REQUEST_DELAY_MS);
   }, []);
 
-  const onLoad = useCallback(() => {
-    const map = mapRef.current?.getMap();
-    // MapLibre keeps the centre below 85.05°, also on the globe. Let it go to the poles.
-    map?.setTransformConstrain((lngLat, z) => ({
-      center: lngLat.wrap(),
-      zoom: Math.abs(lngLat.lat) > 85 ? Math.min(z, POLE_MAX_ZOOM) : z,
-    }));
-    updateView();
-  }, [updateView]);
-
   const onMouseMove = useCallback((event: MapLayerMouseEvent) => {
     const square = squareAt(event.lngLat.lat, event.lngLat.lng);
     setHover(old => (old !== undefined && old.lat === square.lat && old.lng === square.lng ? old : square));
@@ -164,7 +161,8 @@ const MapView = ({ selected, onSquareClick }: MapViewProps) => {
           mapStyle={gaiaStyle.style}
           projection="globe"
           maxPitch={70}
-          onLoad={onLoad}
+          onLoad={updateView}
+          transformConstrain={constrainNearPoles}
           onMoveEnd={updateView}
           onMouseMove={onMouseMove}
           onMouseOut={() => setHover(undefined)}
