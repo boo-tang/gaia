@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App';
 import { WalletProvider } from '../src/wallet/WalletProvider';
 
+// jsdom has no WebGL. The map is checked in a browser (see the README).
+vi.mock('../src/map/MapView', () => ({ default: () => <div>Map view</div> }));
+
 const auction: AuctionResponse = {
   rules: {
     chainId: 31337,
@@ -67,7 +70,9 @@ describe('App', () => {
     expect(await screen.findByText(/Auction paused/)).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Gaia' })).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Map' })).toBeTruthy();
+    expect(await screen.findByText('Map view')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Bid' })).toBeTruthy();
+    expect(screen.getByText('Click a square on the map.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Withdraw' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Connect Wallet' })).toBeTruthy();
     expect(vi.mocked(fetch)).toHaveBeenCalledWith('/api/auction', expect.anything());

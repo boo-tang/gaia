@@ -140,3 +140,65 @@ body {
     overflow-y: visible;
   }
 }
+
+/* The map (src/map/). MapLibre fills .map-view; the notices and the readout lie over it. */
+.map-view {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.map-status {
+  margin: auto;
+  color: var(--color-muted);
+}
+
+.map-view > .map-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.map-notices {
+  position: absolute;
+  top: var(--gap);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: calc(100% - 2 * var(--gap) - 50px);
+  pointer-events: none;
+}
+
+.map-notice {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--color-warning-border);
+  border-radius: 6px;
+  background: var(--color-warning-bg);
+  text-align: center;
+}
+
+.map-readout {
+  position: absolute;
+  left: var(--gap);
+  bottom: 28px;
+  max-width: calc(100% - 2 * var(--gap));
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.9);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  overflow-wrap: anywhere;
+}
+
+.selected-square {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
