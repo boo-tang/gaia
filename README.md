@@ -44,7 +44,7 @@ The script puts the ERC-6551 registry at its canonical address (`0x000000006551c
 - If port 8545 is in use, start `anvil --port 8546` and set `LOCAL_RPC_URL=http://127.0.0.1:8546` for each command.
 - A second run on the same node changes nothing. After a restart of Anvil, the script deploys again.
 
-Optional data for app work: `yarn seed:local` places three bids. `SEED_END=1 yarn seed:local` also moves the chain clock past the end of the auction and settles one shape. After that, the auction is closed; restart Anvil and deploy again for a new auction.
+Optional data for app work: `yarn seed:local` places three bids. `SEED_SQUARES=15000 yarn seed:local` places bids on about 15,000 squares for the map (rectangles of up to `maxShapeSquares` squares south-west of London, across the antimeridian near Fiji and at 86°N); a second run with the same value outbids the north half of each rectangle. Seed before the auction ends. `SEED_END=1 yarn seed:local` also moves the chain clock past the end of the auction and settles one shape. After that, the auction is closed; restart Anvil and deploy again for a new auction.
 
 ### Modules
 
@@ -111,11 +111,27 @@ Configuration: copy `packages/web/.env.example` to `packages/web/.env.local`. Al
 | `VITE_API_URL` | `/api` | The API base URL in the browser. A production build sets the URL of the server. |
 | `VITE_RPC_URL` | `http://127.0.0.1:8545` on Anvil | The RPC URL of the chain. Required for Base Sepolia. |
 | `VITE_WALLETCONNECT_PROJECT_ID` | (empty) | The WalletConnect project ID. With no ID, the wallet list has only the browser wallet and Base Account. |
+| `VITE_MAP_STYLE_URL` | `https://tiles.openfreemap.org/styles/positron` | A map style of the OpenMapTiles schema. The map takes its tiles and place names and uses its own colours. |
 
 Base Sepolia: set `DEPLOYMENT_FILE` to the Base Sepolia deployment file, `VITE_RPC_URL` and `VITE_API_URL`, then `yarn workspace @gaia/web build`. The files are in `packages/web/dist`.
 
+### Map
+
+The map (`packages/web/src/map/`) is MapLibre GL on a globe, with `deck.gl` layers in the same canvas: the bids (one square for each bid, a colour for each bidder, an own colour for the connected wallet), the grid (from zoom 9), the selection and the square under the pointer. Place names stay above the bids. The map loads in its own chunk. The first view is the last view of the browser, else the region of the browser time zone, else the whole globe; "My location" asks for the browser location. The data comes from the server only: a snapshot (`GET /bids`) after each move and one live stream (`GET /stream`) for the app (`packages/web/src/bids/`).
+
+See the map with live bids on Anvil:
+
+1. `yarn chain:local`, then `yarn deploy:local` and `SEED_SQUARES=15000 yarn seed:local`.
+2. `yarn workspace @gaia/server start` and `yarn workspace @gaia/web dev`, then open http://localhost:5173 (in a visible browser window: a hidden tab gets no animation frames and the map loads slowly).
+3. The seed bids are south-west of London (about 50.0°N, 5°W), near Fiji across the antimeridian (17.8°S, 180°), and at 86°N, 180°W. Zoom in: the grid fades in from zoom 9. The square under the pointer and its bid show at the bottom left; a click selects the square.
+4. Live bids: run `SEED_SQUARES=15000 yarn seed:local` again. The north halves change colour and price with no reload.
+5. "Zoom in": start the server with `MAX_SNAPSHOT_BIDS=100`. A view with more bids shows "Zoom in to load the bids." and keeps the bids that the map has.
+6. Stream failure: stop the server. After 5 s the map shows "Live updates failed. Please refresh the page." The app tries again; when the server is back, the message goes away.
+
+The map needs WebGL, so the unit tests do not render it (jsdom). `yarn workspace @gaia/web time-zones` makes `src/map/time-zones.ts` again from the IANA `zone.tab`.
+
 Layout: on a screen narrower than 768 px, the app shows the view-only layout (map, bidder view, "Withdraw") with no bid panel.
 
-Scripts: `dev`, `build`, `preview`, `typecheck` and `test` (`yarn workspace @gaia/web <script>`). The tests use `packages/web/test/fixtures/deployment.json`, not the local deployment.
+Scripts: `dev`, `build`, `preview`, `typecheck`, `test` and `time-zones` (`yarn workspace @gaia/web <script>`). The tests use `packages/web/test/fixtures/deployment.json`, not the local deployment.
 
 Run `yarn lint`, `yarn typecheck` and `yarn test:packages` for all workspace packages. `yarn format` runs Prettier on the whole repository.
