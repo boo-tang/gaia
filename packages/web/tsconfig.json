@@ -12,5 +12,5 @@
     "noEmit": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["src", "test", "vite.config.ts", "deployment-plugin.ts"]
+  "include": ["src", "test", "scripts", "vite.config.ts", "deployment-plugin.ts"]
 }

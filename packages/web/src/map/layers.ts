@@ -1,0 +1,166 @@
+// The deck.gl layers of the map: bids, grid, selection and hover square. deck.gl draws them in
+// MapLibre's canvas (interleaved), under the place names (`beforeId`).
+import { type Bounds, type Square, gridLines, squareBounds, unpackSquare } from '@gaia/core';
+
+import { PathLayer, PolygonLayer, SolidPolygonLayer } from '@deck.gl/layers';
+
+import type { HeldBid } from '../bids/bids-reducer';
+import { bidderColor } from './bidder-colors';
+import { MERCATOR_MAX_LAT, clampToMercator } from './viewport';
+
+type Ring = [number, number][];
+
+/** One square with a bid: the packed square ID and the bid. */
+export type BidRow = readonly [number, HeldBid];
+
+/** The layer IDs. The 3D view and the shape selection use the same layers. */
+export const LAYER_IDS = { bids: 'bids', grid: 'grid', selection: 'selection', hover: 'hover' } as const;
+
+const ring = (square: Square): Ring => {
+  const b = squareBounds(square);
+  return [
+    [b.west, b.south],
+    [b.east, b.south],
+    [b.east, b.north],
+    [b.west, b.north],
+  ];
+};
+
+// A square beyond ±85.0511° has no place on a flat map: deck.gl would draw it far outside the
+// map. On the globe all rows show.
+const onFlatMap = (square: Square) => {
+  const b = squareBounds(square);
+  return b.south >= -MERCATOR_MAX_LAT && b.north <= MERCATOR_MAX_LAT;
+};
+
+/** The squares with a bid that the map can show. Make it again only when the bids change. */
+export const bidRows = (bids: ReadonlyMap<number, HeldBid>, globe: boolean): BidRow[] => {
+  const rows: BidRow[] = [];
+  for (const row of bids) {
+    if (globe || onFlatMap(unpackSquare(row[0]))) {
+      rows.push(row);
+    }
+  }
+  return rows;
+};
+
+/** The grid lines of `view` (the padded visible area). At most 800 lines in each direction. */
+export const gridPaths = (view: Bounds | undefined, globe: boolean): Ring[] => {
+  if (view === undefined) {
+    return [];
+  }
+  const area = globe ? view : clampToMercator(view);
+  if (area.south >= area.north) {
+    return [];
+  }
+  const { lats, lngs } = gridLines(area, 800);
+  const paths: Ring[] = [];
+  for (const lat of lats) {
+    paths.push([
+      [area.west, lat],
+      [area.east, lat],
+    ]);
+  }
+  for (const lng of lngs) {
+    paths.push([
+      [lng, area.south],
+      [lng, area.north],
+    ]);
+  }
+  return paths;
+};
+
+/** The grid fades in from zoom 9 (alpha 0) to zoom 14 (alpha 0.35 of 255). */
+export const gridAlpha = (zoom: number) => Math.round(255 * Math.max(0, Math.min(0.35, ((zoom - 9) / 5) * 0.35)));
+
+// `@deck.gl/maplibre` reads `beforeId` from each layer. Its props type is not exported.
+type OverlayProps = { beforeId?: string };
+
+// Draw on the map surface without the depth test. With the depth test, flat layers fight the
+// globe surface for depth (stripes), and the grid lines disappear.
+const FLAT = { depthCompare: 'always', depthWriteEnabled: false } as const;
+
+export interface LayerInput {
+  rows: BidRow[];
+  /** Changes when `rows` or the bid colours change. */
+  version: number;
+  /** The connected wallet, for its own colour. */
+  ownAddress?: string;
+  grid: Ring[];
+  zoom: number;
+  selected: readonly Square[];
+  hover?: Square;
+  /** The first symbol layer of the style: our layers go under it. */
+  beforeId?: string;
+  globe: boolean;
+  /** 3D view: each square is a column, its height is the bid (ETH) times this scale. */
+  metersPerEth?: number;
+}
+
+export const buildLayers = ({
+  rows,
+  version,
+  ownAddress,
+  grid,
+  zoom,
+  selected,
+  hover,
+  beforeId,
+  globe,
+  metersPerEth,
+}: LayerInput) => {
+  const extruded = metersPerEth !== undefined;
+  const alpha = gridAlpha(zoom);
+  const shown = (square: Square) => globe || onFlatMap(square);
+  return [
+    new SolidPolygonLayer<BidRow, OverlayProps>({
+      id: LAYER_IDS.bids,
+      data: rows,
+      getPolygon: ([squareId]) => ring(unpackSquare(squareId)),
+      getFillColor: ([, bid]) => [...bidderColor(bid.bidder, ownAddress), extruded ? 230 : 140],
+      extruded,
+      getElevation: ([, bid]) => (extruded ? (Number(bid.amount) / 1e18) * metersPerEth : 0),
+      pickable: extruded,
+      updateTriggers: { getFillColor: [version, ownAddress, extruded], getElevation: [version, metersPerEth] },
+      // Columns need the depth test, so that near columns hide far ones.
+      parameters: extruded ? {} : FLAT,
+      beforeId,
+    }),
+    new PathLayer<Ring, OverlayProps>({
+      id: LAYER_IDS.grid,
+      data: grid,
+      visible: alpha > 0,
+      getPath: path => path,
+      getColor: [17, 24, 39, alpha],
+      getWidth: 1,
+      widthUnits: 'pixels',
+      updateTriggers: { getColor: alpha },
+      parameters: FLAT,
+      beforeId,
+    }),
+    new PolygonLayer<Square, OverlayProps>({
+      id: LAYER_IDS.selection,
+      data: selected.filter(shown),
+      getPolygon: ring,
+      getFillColor: [220, 38, 38, 40],
+      getLineColor: [220, 38, 38, 255],
+      getLineWidth: 2,
+      lineWidthUnits: 'pixels',
+      stroked: true,
+      parameters: FLAT,
+      beforeId,
+    }),
+    new PolygonLayer<Square, OverlayProps>({
+      id: LAYER_IDS.hover,
+      data: hover !== undefined && shown(hover) ? [hover] : [],
+      getPolygon: ring,
+      filled: false,
+      stroked: true,
+      getLineColor: [17, 24, 39, 255],
+      getLineWidth: 2,
+      lineWidthUnits: 'pixels',
+      parameters: FLAT,
+      beforeId,
+    }),
+  ];
+};

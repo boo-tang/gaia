@@ -9,7 +9,8 @@
     "build": "tsc --noEmit && vite build --configLoader runner",
     "preview": "vite preview --configLoader runner",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --configLoader runner"
+    "test": "vitest run --configLoader runner",
+    "time-zones": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/gen-time-zones.ts"
   },
   "dependencies": {
     "@deck.gl/core": "~9.4.0",
