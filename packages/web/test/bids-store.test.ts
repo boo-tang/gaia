@@ -1,4 +1,4 @@
-import type { Address, StreamMessage, Viewport, ViewportSnapshot } from '@gaia/core';
+import type { Address, AuctionResponse, StreamMessage, Viewport, ViewportSnapshot } from '@gaia/core';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -57,15 +57,18 @@ const settle = () => vi.advanceTimersByTimeAsync(0);
 
 describe('createBidsStore', () => {
   let getBids: ReturnType<typeof vi.fn<(viewport: Viewport) => Promise<ViewportSnapshot>>>;
+  let getAuction: ReturnType<typeof vi.fn<() => Promise<AuctionResponse>>>;
   let sources: FakeEventSource[];
   let store: BidsStore;
 
   beforeEach(() => {
     vi.useFakeTimers();
     getBids = vi.fn<(viewport: Viewport) => Promise<ViewportSnapshot>>();
+    getAuction = vi.fn<() => Promise<AuctionResponse>>();
     sources = [];
     store = createBidsStore({
       client: {
+        getAuction,
         getBids,
         streamUrl: after => `/api/stream${after ? `?after=${after.block}:${after.logIndex}` : ''}`,
       },
@@ -129,6 +132,18 @@ describe('createBidsStore', () => {
     expect(getBids).toHaveBeenCalledTimes(2);
     store.requestArea(INSIDE);
     expect(store.getView().tooMany).toBe(false);
+  });
+
+  it('opens the stream after the last event of the auction when the first viewport has too many bids', async () => {
+    getBids.mockRejectedValueOnce(new ApiError('/bids', 400, {})).mockResolvedValueOnce(snapshot(9, INSIDE));
+    getAuction.mockResolvedValueOnce({ lastEventId: { block: 11, logIndex: 2 } } as AuctionResponse);
+    store.requestArea(AREA);
+    await settle();
+    expect(sources.map(s => s.url)).toEqual(['/api/stream?after=11:2']);
+    store.requestArea(INSIDE);
+    await settle();
+    expect(store.getView().data.bids.size).toBe(1);
+    expect(sources).toHaveLength(1);
   });
 
   it('tries again after a server error, then reports it', async () => {

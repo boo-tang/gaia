@@ -34,7 +34,7 @@ export interface EventSourceLike {
 }
 
 export interface BidsStoreOptions {
-  client: Pick<ApiClient, 'getBids' | 'streamUrl'>;
+  client: Pick<ApiClient, 'getAuction' | 'getBids' | 'streamUrl'>;
   openEventSource: (url: string) => EventSourceLike;
   /** Above this number of squares, the store removes the bids outside the current viewport. */
   maxBids?: number;
@@ -105,6 +105,28 @@ export const createBidsStore = ({
 
   const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+  let auctionRequest = false;
+  const streamStarted = () => source !== undefined || reopenTimer !== undefined || auctionRequest;
+
+  // Without a snapshot (the first viewport has too many bids), the stream starts after the last
+  // event of `GET /auction`. A later snapshot merges with it by event ID.
+  const startStreamFromAuction = async () => {
+    if (streamStarted()) {
+      return;
+    }
+    auctionRequest = true;
+    try {
+      const auction = await client.getAuction();
+      auctionRequest = false;
+      if (!closed && !streamStarted()) {
+        openStream(auction.lastEventId);
+      }
+    } catch {
+      // The next snapshot opens the stream.
+      auctionRequest = false;
+    }
+  };
+
   const load = async (viewport: Viewport) => {
     inFlight = true;
     setView({ loading: true });
@@ -121,7 +143,7 @@ export const createBidsStore = ({
         }
         tooManyArea = undefined;
         setView({ tooMany: false, serverError: false });
-        if (source === undefined && reopenTimer === undefined) {
+        if (!streamStarted()) {
           openStream(snapshot.lastEventId);
         }
         break;
@@ -133,6 +155,7 @@ export const createBidsStore = ({
           // Too many bids: keep the bids that the map has.
           tooManyArea = viewport;
           setView({ tooMany: true });
+          void startStreamFromAuction();
           break;
         }
         const retryable = !(error instanceof ApiError && error.status < 500);
