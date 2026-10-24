@@ -101,7 +101,7 @@ export const createBidsStore = ({
   const sameArea = (a: Viewport, b: Viewport) =>
     a.south === b.south && a.north === b.north && a.west === b.west && a.east === b.east;
 
-  const isLoaded = (viewport: Viewport) => view.data.loaded.some(area => viewportContains(area, viewport));
+  const isLoaded = (viewport: Viewport) => view.data.snapshotAreas.some(area => viewportContains(area, viewport));
 
   const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -130,14 +130,15 @@ export const createBidsStore = ({
   const load = async (viewport: Viewport) => {
     inFlight = true;
     setView({ loading: true });
-    const generation = view.data.generation;
+    // After a reorg during this request, the reducer ignores the answer (`BidsState.reorgCount`).
+    const reorgCount = view.data.reorgCount;
     for (let attempt = 0; ; attempt++) {
       try {
         const snapshot = await client.getBids(viewport);
         if (closed) {
           return;
         }
-        dispatch({ type: 'snapshot', snapshot, generation });
+        dispatch({ type: 'snapshot', snapshot, reorgCount });
         if (view.data.bids.size > maxBids) {
           dispatch({ type: 'evict', keep: viewport });
         }
@@ -217,7 +218,7 @@ export const createBidsStore = ({
       return;
     }
     dispatch({ type: 'message', message });
-    streamFrom = view.data.streamAfter ?? streamFrom;
+    streamFrom = view.data.lastStreamEventId ?? streamFrom;
     if (message.type === 'reorg') {
       // The data is gone: load the current viewport again.
       streamFrom = message.lastEventId;

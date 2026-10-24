@@ -83,7 +83,7 @@ const FLAT = { depthCompare: 'always', depthWriteEnabled: false } as const;
 export interface LayerInput {
   rows: BidRow[];
   /** Changes when `rows` or the bid colours change. */
-  version: number;
+  bidsVersion: number;
   /** The connected wallet, for its own colour. */
   ownAddress?: string;
   grid: Ring[];
@@ -99,7 +99,7 @@ export interface LayerInput {
 
 export const buildLayers = ({
   rows,
-  version,
+  bidsVersion,
   ownAddress,
   grid,
   zoom,
@@ -121,7 +121,7 @@ export const buildLayers = ({
       extruded,
       getElevation: ([, bid]) => (extruded ? (Number(bid.amount) / 1e18) * metersPerEth : 0),
       pickable: extruded,
-      updateTriggers: { getFillColor: [version, ownAddress, extruded], getElevation: [version, metersPerEth] },
+      updateTriggers: { getFillColor: [bidsVersion, ownAddress, extruded], getElevation: [bidsVersion, metersPerEth] },
       // Columns need the depth test, so that near columns hide far ones.
       parameters: extruded ? {} : FLAT,
       beforeId,

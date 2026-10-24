@@ -128,15 +128,15 @@ const MapView = ({ selected, onSquareClick }: MapViewProps) => {
     [onSquareClick],
   );
 
-  // `data.bids` changes in place: `data.version` tells when.
+  // `data.bids` changes in place: `data.bidsVersion` tells when.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const rows = useMemo(() => bidRows(data.bids, globe), [data.bids, data.version, globe]);
+  const rows = useMemo(() => bidRows(data.bids, globe), [data.bids, data.bidsVersion, globe]);
   const grid = useMemo(() => gridPaths(view, globe), [view, globe]);
   const layers = useMemo(
     () =>
       buildLayers({
         rows,
-        version: data.version,
+        bidsVersion: data.bidsVersion,
         ownAddress: address,
         grid,
         zoom,
@@ -145,7 +145,7 @@ const MapView = ({ selected, onSquareClick }: MapViewProps) => {
         beforeId: gaiaStyle?.beforeId,
         globe,
       }),
-    [rows, data.version, address, grid, zoom, selected, hover, gaiaStyle?.beforeId, globe],
+    [rows, data.bidsVersion, address, grid, zoom, selected, hover, gaiaStyle?.beforeId, globe],
   );
 
   // The square under the pointer; on a touch screen (no pointer) the selected square.

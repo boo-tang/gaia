@@ -8,7 +8,7 @@
 // removes a square. Only a reorg removes data.
 //
 // The bids map can hold many thousand squares. The reducer changes it in place and returns a new
-// state object with a new `version`, so React and deck.gl see the change without a copy.
+// state object with a new `bidsVersion`, so React and deck.gl see the change without a copy.
 import {
   type Address,
   type AuctionStatus,
@@ -33,25 +33,42 @@ export interface HeldBid {
 export interface BidsState {
   /** Key: the packed square ID. */
   bids: Map<number, HeldBid>;
-  /** The areas of the snapshots. The stream keeps them current. */
-  loaded: Viewport[];
+  /**
+   * The areas that a snapshot loaded. `bids` holds all bids in these areas (the stream keeps them
+   * current), so the store asks for no snapshot inside them.
+   */
+  snapshotAreas: Viewport[];
   status?: AuctionStatus;
-  statusAsOf?: EventId;
-  /** The last event of the stream. */
-  streamAfter?: EventId;
-  /** Increments at each change of `bids`. */
-  version: number;
-  /** Increments at each reorg. A snapshot of an older generation has old data. */
-  generation: number;
+  /** The event that `status` comes from. An older status does not replace it. */
+  statusEventId?: EventId;
+  /** The last event that came from the stream. A new stream continues after it. */
+  lastStreamEventId?: EventId;
+  /**
+   * Increments at each change of `bids`. The map is changed in place, so this number is how
+   * React and deck.gl see a change (`updateTriggers`).
+   */
+  bidsVersion: number;
+  /**
+   * Increments at each reorg. A snapshot request keeps the count from when it started. If a
+   * reorg comes before its answer, the answer can hold bids of dropped blocks, and the event-ID
+   * rule cannot find them (the reorg emptied `bids`), so the reducer ignores that answer.
+   */
+  reorgCount: number;
 }
 
 export type BidsAction =
-  | { type: 'snapshot'; snapshot: ViewportSnapshot; generation: number }
+  /** `reorgCount`: the value of `BidsState.reorgCount` when the request started. */
+  | { type: 'snapshot'; snapshot: ViewportSnapshot; reorgCount: number }
   | { type: 'message'; message: StreamMessage }
   /** Removes the bids and the areas outside `keep`, to limit the memory. */
   | { type: 'evict'; keep: Viewport };
 
-export const initialBidsState = (): BidsState => ({ bids: new Map(), loaded: [], version: 0, generation: 0 });
+export const initialBidsState = (): BidsState => ({
+  bids: new Map(),
+  snapshotAreas: [],
+  bidsVersion: 0,
+  reorgCount: 0,
+});
 
 // True when data as of `next` replaces data as of `current`.
 const isNewer = (next: EventId | undefined, current: EventId | undefined) =>
@@ -69,16 +86,16 @@ const applySnapshot = (state: BidsState, snapshot: ViewportSnapshot): BidsState 
       }
     }
   }
-  const loaded = state.loaded.some(area => viewportContains(area, snapshot.viewport))
-    ? state.loaded
-    : [...state.loaded.filter(area => !viewportContains(snapshot.viewport, area)), snapshot.viewport];
-  const newStatus = isNewer(asOf, state.statusAsOf) || state.status === undefined;
+  const snapshotAreas = state.snapshotAreas.some(area => viewportContains(area, snapshot.viewport))
+    ? state.snapshotAreas
+    : [...state.snapshotAreas.filter(area => !viewportContains(snapshot.viewport, area)), snapshot.viewport];
+  const newStatus = isNewer(asOf, state.statusEventId) || state.status === undefined;
   return {
     ...state,
-    loaded,
+    snapshotAreas,
     status: newStatus ? snapshot.status : state.status,
-    statusAsOf: newStatus ? asOf : state.statusAsOf,
-    version: changed ? state.version + 1 : state.version,
+    statusEventId: newStatus ? asOf : state.statusEventId,
+    bidsVersion: changed ? state.bidsVersion + 1 : state.bidsVersion,
   };
 };
 
@@ -86,12 +103,12 @@ const applyMessage = (state: BidsState, message: StreamMessage): BidsState => {
   if (message.type === 'reorg') {
     return {
       ...initialBidsState(),
-      streamAfter: message.lastEventId,
-      version: state.version + 1,
-      generation: state.generation + 1,
+      lastStreamEventId: message.lastEventId,
+      bidsVersion: state.bidsVersion + 1,
+      reorgCount: state.reorgCount + 1,
     };
   }
-  const streamAfter = isNewer(message.id, state.streamAfter) ? message.id : state.streamAfter;
+  const lastStreamEventId = isNewer(message.id, state.lastStreamEventId) ? message.id : state.lastStreamEventId;
   if (message.type === 'shapeBid') {
     let changed = false;
     message.squareIds.forEach((squareId, index) => {
@@ -102,16 +119,16 @@ const applyMessage = (state: BidsState, message: StreamMessage): BidsState => {
         changed = true;
       }
     });
-    return { ...state, streamAfter, version: changed ? state.version + 1 : state.version };
+    return { ...state, lastStreamEventId, bidsVersion: changed ? state.bidsVersion + 1 : state.bidsVersion };
   }
   if (message.type === 'auctionStatus') {
-    if (isNewer(message.id, state.statusAsOf)) {
-      return { ...state, streamAfter, status: message.status, statusAsOf: message.id };
+    if (isNewer(message.id, state.statusEventId)) {
+      return { ...state, lastStreamEventId, status: message.status, statusEventId: message.id };
     }
-    return { ...state, streamAfter };
+    return { ...state, lastStreamEventId };
   }
   // A settlement does not change the bids: the squares keep their winning bid.
-  return { ...state, streamAfter };
+  return { ...state, lastStreamEventId };
 };
 
 const evict = (state: BidsState, keep: Viewport): BidsState => {
@@ -124,14 +141,14 @@ const evict = (state: BidsState, keep: Viewport): BidsState => {
   }
   return {
     ...state,
-    loaded: state.loaded.filter(area => viewportContains(keep, area)),
-    version: changed ? state.version + 1 : state.version,
+    snapshotAreas: state.snapshotAreas.filter(area => viewportContains(keep, area)),
+    bidsVersion: changed ? state.bidsVersion + 1 : state.bidsVersion,
   };
 };
 
 export const reduceBids = (state: BidsState, action: BidsAction): BidsState => {
   if (action.type === 'snapshot') {
-    if (action.generation !== state.generation) {
+    if (action.reorgCount !== state.reorgCount) {
       return state;
     }
     return applySnapshot(state, action.snapshot);

@@ -57,16 +57,16 @@ const bidOf = (state: BidsState, squareId: number) => {
 
 describe('reduceBids', () => {
   it('loads a snapshot', () => {
-    const state = run({ type: 'snapshot', snapshot: snapshot(10, [[A, 1, ALICE, '100']]), generation: 0 });
+    const state = run({ type: 'snapshot', snapshot: snapshot(10, [[A, 1, ALICE, '100']]), reorgCount: 0 });
     expect(bidOf(state, A)).toEqual({ shapeId: 1, bidder: ALICE, amount: 100n });
-    expect(state.loaded).toEqual([AREA]);
+    expect(state.snapshotAreas).toEqual([AREA]);
     expect(state.status).toEqual(OPEN);
-    expect(state.version).toBe(1);
+    expect(state.bidsVersion).toBe(1);
   });
 
   it('applies a shapeBid message', () => {
     const state = run(
-      { type: 'snapshot', snapshot: snapshot(10, []), generation: 0 },
+      { type: 'snapshot', snapshot: snapshot(10, []), reorgCount: 0 },
       {
         type: 'message',
         message: shapeBid(11, 1, ALICE, [
@@ -76,7 +76,7 @@ describe('reduceBids', () => {
       },
     );
     expect(bidOf(state, B)).toEqual({ shapeId: 1, bidder: ALICE, amount: 100n });
-    expect(state.streamAfter).toEqual({ block: 11, logIndex: 0 });
+    expect(state.lastStreamEventId).toEqual({ block: 11, logIndex: 0 });
   });
 
   it('gives squares taken from another shape to the new shape', () => {
@@ -136,7 +136,7 @@ describe('reduceBids', () => {
           [A, 1, ALICE, '100'],
           [B, 1, ALICE, '100'],
         ]),
-        generation: 0,
+        reorgCount: 0,
       },
     );
     expect(bidOf(state, A)).toEqual({ shapeId: 2, bidder: BOB, amount: 200n });
@@ -145,23 +145,23 @@ describe('reduceBids', () => {
 
   it('keeps a snapshot when an older message arrives after it', () => {
     const state = run(
-      { type: 'snapshot', snapshot: snapshot(12, [[A, 2, BOB, '200']]), generation: 0 },
+      { type: 'snapshot', snapshot: snapshot(12, [[A, 2, BOB, '200']]), reorgCount: 0 },
       { type: 'message', message: shapeBid(11, 1, ALICE, [[A, '100']]) },
     );
     expect(bidOf(state, A)).toEqual({ shapeId: 2, bidder: BOB, amount: 200n });
   });
 
-  it('does not change the version when nothing changes', () => {
-    const first = run({ type: 'snapshot', snapshot: snapshot(12, [[A, 2, BOB, '200']]), generation: 0 });
-    const second = reduceBids(first, { type: 'snapshot', snapshot: snapshot(12, [[A, 2, BOB, '200']]), generation: 0 });
-    expect(second.version).toBe(first.version);
+  it('does not change the bidsVersion when nothing changes', () => {
+    const first = run({ type: 'snapshot', snapshot: snapshot(12, [[A, 2, BOB, '200']]), reorgCount: 0 });
+    const second = reduceBids(first, { type: 'snapshot', snapshot: snapshot(12, [[A, 2, BOB, '200']]), reorgCount: 0 });
+    expect(second.bidsVersion).toBe(first.bidsVersion);
   });
 
   it('applies the newest auctionStatus', () => {
     const paused: AuctionStatus = { ...OPEN, paused: true };
     const extended: AuctionStatus = { ...OPEN, endTime: 6000 };
     const state = run(
-      { type: 'snapshot', snapshot: snapshot(10, []), generation: 0 },
+      { type: 'snapshot', snapshot: snapshot(10, []), reorgCount: 0 },
       {
         type: 'message',
         message: { type: 'auctionStatus', id: { block: 12, logIndex: 0 }, timestamp: 1, status: paused },
@@ -170,14 +170,14 @@ describe('reduceBids', () => {
         type: 'message',
         message: { type: 'auctionStatus', id: { block: 11, logIndex: 0 }, timestamp: 1, status: extended },
       },
-      { type: 'snapshot', snapshot: { ...snapshot(9, []), status: extended }, generation: 0 },
+      { type: 'snapshot', snapshot: { ...snapshot(9, []), status: extended }, reorgCount: 0 },
     );
     expect(state.status).toEqual(paused);
   });
 
   it('does not change the bids on a settlement', () => {
     const before = run({ type: 'message', message: shapeBid(11, 1, ALICE, [[A, '100']]) });
-    const version = before.version;
+    const bidsVersion = before.bidsVersion;
     const state = reduceBids(before, {
       type: 'message',
       message: {
@@ -190,45 +190,45 @@ describe('reduceBids', () => {
       },
     });
     expect(bidOf(state, A)).toEqual({ shapeId: 1, bidder: ALICE, amount: 100n });
-    expect(state.version).toBe(version);
-    expect(state.streamAfter).toEqual({ block: 20, logIndex: 0 });
+    expect(state.bidsVersion).toBe(bidsVersion);
+    expect(state.lastStreamEventId).toEqual({ block: 20, logIndex: 0 });
   });
 
   it('removes all data on a reorg and ignores snapshots from before it', () => {
     const state = run(
-      { type: 'snapshot', snapshot: snapshot(10, [[A, 1, ALICE, '100']]), generation: 0 },
+      { type: 'snapshot', snapshot: snapshot(10, [[A, 1, ALICE, '100']]), reorgCount: 0 },
       { type: 'message', message: { type: 'reorg', lastEventId: { block: 8, logIndex: 0 } } },
-      { type: 'snapshot', snapshot: snapshot(10, [[B, 1, ALICE, '100']]), generation: 0 },
+      { type: 'snapshot', snapshot: snapshot(10, [[B, 1, ALICE, '100']]), reorgCount: 0 },
     );
     expect(state.bids.size).toBe(0);
-    expect(state.loaded).toEqual([]);
+    expect(state.snapshotAreas).toEqual([]);
     expect(state.status).toBeUndefined();
-    expect(state.generation).toBe(1);
-    expect(state.streamAfter).toEqual({ block: 8, logIndex: 0 });
+    expect(state.reorgCount).toBe(1);
+    expect(state.lastStreamEventId).toEqual({ block: 8, logIndex: 0 });
 
-    const after = reduceBids(state, { type: 'snapshot', snapshot: snapshot(8, [[C, 1, BOB, '100']]), generation: 1 });
+    const after = reduceBids(state, { type: 'snapshot', snapshot: snapshot(8, [[C, 1, BOB, '100']]), reorgCount: 1 });
     expect(bidOf(after, C)).toEqual({ shapeId: 1, bidder: BOB, amount: 100n });
   });
 
   it('keeps one area for areas inside a larger one', () => {
     const small: Viewport = { south: 95, north: 100, west: 195, east: 200 };
     const state = run(
-      { type: 'snapshot', snapshot: snapshot(10, [], small), generation: 0 },
-      { type: 'snapshot', snapshot: snapshot(11, []), generation: 0 },
-      { type: 'snapshot', snapshot: snapshot(12, [], small), generation: 0 },
+      { type: 'snapshot', snapshot: snapshot(10, [], small), reorgCount: 0 },
+      { type: 'snapshot', snapshot: snapshot(11, []), reorgCount: 0 },
+      { type: 'snapshot', snapshot: snapshot(12, [], small), reorgCount: 0 },
     );
-    expect(state.loaded).toEqual([AREA]);
+    expect(state.snapshotAreas).toEqual([AREA]);
   });
 
   it('evicts the bids and the areas outside an area', () => {
     const far: Viewport = { south: 5000, north: 5010, west: 0, east: 10 };
     const state = run(
-      { type: 'snapshot', snapshot: snapshot(10, [[A, 1, ALICE, '100']]), generation: 0 },
-      { type: 'snapshot', snapshot: snapshot(10, [[sq(5000, 5), 2, BOB, '100']], far), generation: 0 },
+      { type: 'snapshot', snapshot: snapshot(10, [[A, 1, ALICE, '100']]), reorgCount: 0 },
+      { type: 'snapshot', snapshot: snapshot(10, [[sq(5000, 5), 2, BOB, '100']], far), reorgCount: 0 },
       { type: 'evict', keep: far },
     );
     expect([...state.bids.keys()]).toEqual([sq(5000, 5)]);
-    expect(state.loaded).toEqual([far]);
+    expect(state.snapshotAreas).toEqual([far]);
   });
 });
 

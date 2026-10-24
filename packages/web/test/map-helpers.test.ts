@@ -96,7 +96,7 @@ describe('layers', () => {
   it('builds flat layers under the place names', () => {
     const layers = buildLayers({
       rows: bidRows(bids, true),
-      version: 1,
+      bidsVersion: 1,
       grid: [],
       zoom: 12,
       selected: [],
@@ -116,7 +116,7 @@ describe('layers', () => {
   it('turns the bids into columns with a height scale', () => {
     const [bidsLayer] = buildLayers({
       rows: [],
-      version: 1,
+      bidsVersion: 1,
       grid: [],
       zoom: 12,
       selected: [],
