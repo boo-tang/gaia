@@ -17,7 +17,8 @@ import { zeroAddress } from 'viem';
  * Anvil and deploy again for a new auction.
  *
  * SEED_SQUARES=<n>: rectangles of up to `maxShapeSquares` squares from Anvil accounts 3 to 9, at
- * different prices: 80% south-west of London, 10% across the antimeridian (Fiji), 10% at 86°N.
+ * different prices: 80% north of London (from 51.7°N, 2°W to 2°E), 10% across the antimeridian
+ * (Fiji), 10% at 86°N.
  * A second run with the same n bids on the north half of each rectangle from another account at
  * 1.5 times the price, or one bid step more (live updates, squares taken from other shapes). Each
  * run after it outbids the north halves again. Seed before the end of the auction (one hour after
@@ -78,11 +79,12 @@ const seedSquares = async (target: number, minBid: bigint) => {
   const cols = Math.min(Math.floor(maxSquares / rows), rows * maxRatio);
   const shapeCount = Math.ceil(target / (rows * cols));
   const blocks = [
-    { lat: 14000, lng: 17500, perRow: 20, count: shapeCount - 2 * Math.floor(shapeCount / 10) },
+    { lat: 14170, lng: 17800, perRow: 20, count: shapeCount - 2 * Math.floor(shapeCount / 10) },
     { lat: 7220, lng: 35970, perRow: 4, count: Math.floor(shapeCount / 10) },
     { lat: 17600, lng: 0, perRow: 10, count: Math.floor(shapeCount / 10) },
   ];
-  // The London block must stay south of the three normal seed bids (row 14150).
+  // The London block starts north of the three normal seed bids (rows 14150 to 14160) and has room
+  // for 15 rows of rectangles (to 53.2°N).
   if (Math.ceil(blocks[0].count / blocks[0].perRow) * rows > 150) {
     throw new Error(`SEED_SQUARES=${target} is too large for the London block. Use a smaller value.`);
   }

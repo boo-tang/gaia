@@ -44,7 +44,7 @@ The script puts the ERC-6551 registry at its canonical address (`0x000000006551c
 - If port 8545 is in use, start `anvil --port 8546` and set `LOCAL_RPC_URL=http://127.0.0.1:8546` for each command.
 - A second run on the same node changes nothing. After a restart of Anvil, the script deploys again.
 
-Optional data for app work: `yarn seed:local` places three bids. `SEED_SQUARES=15000 yarn seed:local` places bids on about 15,000 squares for the map (rectangles of up to `maxShapeSquares` squares south-west of London, across the antimeridian near Fiji and at 86°N); a second run with the same value outbids the north half of each rectangle. Seed before the auction ends. `SEED_END=1 yarn seed:local` also moves the chain clock past the end of the auction and settles one shape. After that, the auction is closed; restart Anvil and deploy again for a new auction.
+Optional data for app work: `yarn seed:local` places three bids. `SEED_SQUARES=15000 yarn seed:local` places bids on about 15,000 squares for the map (rectangles of up to `maxShapeSquares` squares north of London, from Oxford to east of St Albans, across the antimeridian near Fiji and at 86°N); a second run with the same value outbids the north half of each rectangle. Seed before the auction ends. `SEED_END=1 yarn seed:local` also moves the chain clock past the end of the auction and settles one shape. After that, the auction is closed; restart Anvil and deploy again for a new auction.
 
 ### Modules
 
@@ -123,7 +123,7 @@ See the map with live bids on Anvil:
 
 1. `yarn chain:local`, then `yarn deploy:local` and `SEED_SQUARES=15000 yarn seed:local`.
 2. `yarn workspace @gaia/server start` and `yarn workspace @gaia/web dev`, then open http://localhost:5173 (in a visible browser window: a hidden tab gets no animation frames and the map loads slowly).
-3. The seed bids are south-west of London (about 50.0°N, 5°W), near Fiji across the antimeridian (17.8°S, 180°), and at 86°N, 180°W. Zoom in: the grid fades in from zoom 9. The square under the pointer and its bid show at the bottom left; a click selects the square.
+3. The seed bids are north of London (from 51.7°N, 2°W to 2°E: Oxford, Luton, St Albans), near Fiji across the antimeridian (17.8°S, 180°), and at 86°N, 180°W. Zoom in: the grid fades in from zoom 9. The square under the pointer and its bid show at the bottom left; a click selects the square.
 4. Live bids: run `SEED_SQUARES=15000 yarn seed:local` again. The north halves change colour and price with no reload.
 5. "Zoom in": start the server with `MAX_SNAPSHOT_BIDS=100`. A view with more bids shows "Zoom in to load the bids." and keeps the bids that the map has.
 6. Stream failure: stop the server. After 5 s the map shows "Live updates failed. Please refresh the page." The app tries again; when the server is back, the message goes away.
