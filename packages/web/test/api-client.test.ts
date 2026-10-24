@@ -1,4 +1,4 @@
-import type { AuctionResponse } from '@gaia/core';
+import type { AuctionResponse, ViewportSnapshot } from '@gaia/core';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -53,6 +53,32 @@ describe('createApiClient', () => {
       .getAuction()
       .catch((caught: unknown) => caught);
     expect(error).toMatchObject({ status: 502, body: 'Bad Gateway', message: 'GET /auction failed with HTTP 502' });
+  });
+
+  it('gets the bids of a viewport', async () => {
+    const snapshot: ViewportSnapshot = {
+      lastEventId: { block: 12, logIndex: 3 },
+      viewport: { south: 14150, north: 14160, west: 35990, east: 9 },
+      status: auction.status,
+      bids: [{ squareId: 927_334_400, shapeId: 1, bidder: auction.rules.auction, amount: '1000000000000000' }],
+    };
+    const fetchFn = fetchAnswer(200, JSON.stringify(snapshot));
+    await expect(createApiClient('/api', fetchFn).getBids(snapshot.viewport)).resolves.toEqual(snapshot);
+    expect(fetchFn.mock.calls[0][0]).toBe('/api/bids?south=14150&north=14160&west=35990&east=9');
+  });
+
+  it('gives an ApiError with status 400 when the viewport has too many bids', async () => {
+    const body = { error: 'The viewport has more than 50000 bids. Zoom in.' };
+    const error = await createApiClient('/api', fetchAnswer(400, JSON.stringify(body)))
+      .getBids({ south: 0, north: 17999, west: 0, east: 35999 })
+      .catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ status: 400, body });
+  });
+
+  it('makes the stream URL', () => {
+    const client = createApiClient('/api/');
+    expect(client.streamUrl()).toBe('/api/stream');
+    expect(client.streamUrl({ block: 12, logIndex: 3 })).toBe('/api/stream?after=12:3');
   });
 
   it('rejects with the fetch error when the server is not reachable', async () => {

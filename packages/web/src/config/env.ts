@@ -6,10 +6,14 @@ import type { GaiaChain } from './chain';
 /** An empty value in an env file is the same as no value. */
 const emptyToUndefined = (value: unknown) => (typeof value === 'string' && value.trim() === '' ? undefined : value);
 
+/** The OpenFreeMap "Positron" style: OpenMapTiles schema, no key. */
+export const OPENFREEMAP_POSITRON = 'https://tiles.openfreemap.org/styles/positron';
+
 const webEnvSchema = z.object({
   VITE_API_URL: z.preprocess(emptyToUndefined, z.string().trim().default('/api')),
   VITE_RPC_URL: z.preprocess(emptyToUndefined, z.url().optional()),
   VITE_WALLETCONNECT_PROJECT_ID: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+  VITE_MAP_STYLE_URL: z.preprocess(emptyToUndefined, z.url().default(OPENFREEMAP_POSITRON)),
 });
 
 export interface WebConfig {
@@ -18,6 +22,8 @@ export interface WebConfig {
   rpcUrl: string;
   /** Not there: the app has no WalletConnect wallets. */
   walletConnectProjectId?: string;
+  /** A map style of the OpenMapTiles schema. The map uses its sources with our own colours. */
+  mapStyleUrl: string;
 }
 
 /** Reads the configuration. Throws an error that names each wrong variable. */
@@ -37,5 +43,6 @@ export const parseWebEnv = (env: Record<string, unknown>, gaiaChain: GaiaChain):
     apiUrl: result.data.VITE_API_URL.replace(/\/+$/, ''),
     rpcUrl,
     walletConnectProjectId: result.data.VITE_WALLETCONNECT_PROJECT_ID,
+    mapStyleUrl: result.data.VITE_MAP_STYLE_URL,
   };
 };
