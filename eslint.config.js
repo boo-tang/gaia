@@ -15,6 +15,18 @@ const PACKAGE_FILES = ['packages/*/{src,test,scripts}/**/*.{ts,tsx}', 'packages/
 // The browser code of the web app. Its Vite config and plugin run in Node.
 const WEB_FILES = ['packages/web/{src,test}/**/*.{ts,tsx}'];
 
+// The map libraries are large. Only src/map/ imports them, so they stay in the lazy map chunk.
+const NO_MAP_LIBRARY_IMPORTS = {
+  group: ['maplibre-gl', 'maplibre-gl/*', 'react-map-gl', 'react-map-gl/*', '@deck.gl/*', '@luma.gl/*'],
+  message: 'Only packages/web/src/map/ imports the map libraries (lazy chunk).',
+};
+
+// Only src/wallet/ knows the wallet kit. The rest of the app uses wagmi hooks.
+const NO_WALLET_KIT_IMPORTS = {
+  group: ['@rainbow-me/rainbowkit', '@rainbow-me/rainbowkit/*'],
+  message: 'Use wagmi hooks. Only packages/web/src/wallet/ uses the wallet kit.',
+};
+
 const NO_DIST_IMPORTS = {
   group: ['dist'],
   message: 'You should not be importing from a build directory. Did you accidentally do a relative import?',
@@ -125,17 +137,10 @@ export default [
       ...reactHooks.configs.flat.recommended.rules,
       // TypeScript checks the props.
       'react/prop-types': 'off',
-      // Only src/wallet/ knows the wallet kit. The rest of the app uses wagmi hooks.
       'no-restricted-imports': [
         'error',
         {
-          patterns: [
-            NO_DIST_IMPORTS,
-            {
-              group: ['@rainbow-me/rainbowkit', '@rainbow-me/rainbowkit/*'],
-              message: 'Use wagmi hooks. Only packages/web/src/wallet/ uses the wallet kit.',
-            },
-          ],
+          patterns: [NO_DIST_IMPORTS, NO_MAP_LIBRARY_IMPORTS, NO_WALLET_KIT_IMPORTS],
         },
       ],
     },
@@ -143,7 +148,18 @@ export default [
   {
     files: ['packages/web/src/wallet/**/*.{ts,tsx}'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: [NO_DIST_IMPORTS] }],
+      'no-restricted-imports': ['error', { patterns: [NO_DIST_IMPORTS, NO_MAP_LIBRARY_IMPORTS] }],
+    },
+  },
+  {
+    files: ['packages/web/src/map/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [NO_DIST_IMPORTS, NO_WALLET_KIT_IMPORTS],
+        },
+      ],
     },
   },
 ];

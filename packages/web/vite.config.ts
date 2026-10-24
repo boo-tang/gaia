@@ -15,6 +15,8 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), deploymentPlugin(deploymentFile)],
+    // The MapLibre worker is an ES module (src/map/maplibre-worker.ts).
+    worker: { format: 'es' },
     server: {
       proxy: {
         // The server has no CORS. In development, the browser calls `/api/*` on the Vite server,
