@@ -155,6 +155,64 @@ describe('createBidsStore', () => {
     expect(sources).toHaveLength(0);
   });
 
+  it('loads an area of loadArea after the map request, and keeps the map viewport', async () => {
+    getBids
+      .mockResolvedValueOnce(snapshot(10, AREA))
+      .mockResolvedValueOnce(snapshot(11, OTHER, 5000 * 65536 + 5))
+      .mockResolvedValueOnce(snapshot(12, INSIDE));
+    store.requestArea(AREA);
+    store.loadArea(OTHER);
+    store.loadArea(OTHER);
+    await settle();
+    expect(getBids.mock.calls.map(([viewport]) => viewport)).toEqual([AREA, OTHER]);
+    expect(store.getView().data.bids.size).toBe(2);
+    // A reorg loads the map viewport again, not the selection area.
+    sources[0].send({ type: 'reorg', lastEventId: { block: 12, logIndex: 0 } });
+    await settle();
+    expect(getBids.mock.calls.map(([viewport]) => viewport)).toEqual([AREA, OTHER, AREA]);
+  });
+
+  it('does not load an area of loadArea that is loaded', async () => {
+    getBids.mockResolvedValueOnce(snapshot(10, AREA));
+    store.requestArea(AREA);
+    await settle();
+    store.loadArea(INSIDE);
+    await settle();
+    expect(getBids).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a failed loadArea as selectionError, not as a map notice', async () => {
+    getBids
+      .mockResolvedValueOnce(snapshot(10, AREA))
+      .mockRejectedValueOnce(new ApiError('/bids', 400, {}))
+      .mockResolvedValueOnce(snapshot(11, OTHER));
+    store.requestArea(AREA);
+    await settle();
+    store.loadArea(OTHER);
+    await settle();
+    expect(store.getView()).toMatchObject({ selectionError: true, tooMany: false, serverError: false });
+    // A new call tries again.
+    store.loadArea(OTHER);
+    expect(store.getView().selectionError).toBe(false);
+    await settle();
+    expect(getBids).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not evict the bids of the map view after a loadArea snapshot', async () => {
+    const small = createBidsStore({
+      client: { getAuction, getBids, streamUrl: () => '/api/stream' },
+      openEventSource: url => new FakeEventSource(url),
+      maxBids: 1,
+    });
+    getBids.mockResolvedValueOnce(snapshot(10, AREA)).mockResolvedValueOnce(snapshot(11, OTHER, 5000 * 65536 + 5));
+    small.requestArea(AREA);
+    await settle();
+    small.loadArea(OTHER);
+    await settle();
+    expect(small.getView().data.bids.size).toBe(2);
+    small.close();
+  });
+
   it('applies stream messages and gives them to the listeners', async () => {
     getBids.mockResolvedValueOnce(snapshot(10, AREA));
     const received: StreamMessage[] = [];

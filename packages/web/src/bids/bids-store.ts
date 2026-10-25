@@ -21,6 +21,8 @@ export interface BidsView {
   loading: boolean;
   /** The last snapshot request failed after its retries (network or server error). */
   serverError: boolean;
+  /** The last `loadArea` request failed (too many bids, or a network or server error). */
+  selectionError: boolean;
   stream: StreamState;
 }
 
@@ -47,6 +49,12 @@ export interface BidsStore {
   subscribe: (listener: () => void) => () => void;
   /** Makes sure that the bids of `viewport` are loaded. Call it after each map move. */
   requestArea: (viewport: Viewport) => void;
+  /**
+   * Makes sure that the bids of `viewport` are loaded, for an area that is not the map view (the
+   * selection). It does not change the map viewport of the store, the eviction area or `tooMany`.
+   * A map request goes first.
+   */
+  loadArea: (viewport: Viewport) => void;
   /** Each stream message, after the store applied it. */
   onMessage: (listener: (message: StreamMessage) => void) => () => void;
   /** Closes the stream and stops all timers. */
@@ -65,7 +73,14 @@ export const createBidsStore = ({
   maxBids = 200_000,
   downAfterMs = 5_000,
 }: BidsStoreOptions): BidsStore => {
-  let view: BidsView = { data: initialBidsState(), tooMany: false, loading: false, serverError: false, stream: 'idle' };
+  let view: BidsView = {
+    data: initialBidsState(),
+    tooMany: false,
+    loading: false,
+    serverError: false,
+    selectionError: false,
+    stream: 'idle',
+  };
   const listeners = new Set<() => void>();
   const messageListeners = new Set<(message: StreamMessage) => void>();
 
@@ -73,6 +88,9 @@ export const createBidsStore = ({
   let wanted: Viewport | undefined;
   let queued: Viewport | undefined;
   let inFlight = false;
+  // The area of the last `loadArea` call that waits, and the area that loads now.
+  let queuedArea: Viewport | undefined;
+  let loadingArea: Viewport | undefined;
   // The last viewport with too many bids. The same viewport gets the same answer.
   let tooManyArea: Viewport | undefined;
 
@@ -127,9 +145,11 @@ export const createBidsStore = ({
     }
   };
 
-  const load = async (viewport: Viewport) => {
+  // `mapView`: a viewport of `requestArea` (false: an area of `loadArea`).
+  const load = async (viewport: Viewport, mapView = true) => {
     inFlight = true;
-    setView({ loading: true });
+    loadingArea = mapView ? undefined : viewport;
+    setView(mapView ? { loading: true } : { loading: true, selectionError: false });
     // After a reorg during this request, the reducer ignores the answer (`BidsState.reorgCount`).
     const reorgCount = view.data.reorgCount;
     for (let attempt = 0; ; attempt++) {
@@ -139,11 +159,13 @@ export const createBidsStore = ({
           return;
         }
         dispatch({ type: 'snapshot', snapshot, reorgCount });
-        if (view.data.bids.size > maxBids) {
-          dispatch({ type: 'evict', keep: viewport });
+        if (mapView) {
+          if (view.data.bids.size > maxBids) {
+            dispatch({ type: 'evict', keep: viewport });
+          }
+          tooManyArea = undefined;
+          setView({ tooMany: false, serverError: false });
         }
-        tooManyArea = undefined;
-        setView({ tooMany: false, serverError: false });
         if (!streamStarted()) {
           openStream(snapshot.lastEventId);
         }
@@ -151,6 +173,10 @@ export const createBidsStore = ({
       } catch (error) {
         if (closed) {
           return;
+        }
+        if (!mapView && error instanceof ApiError && error.status === 400) {
+          setView({ selectionError: true });
+          break;
         }
         if (error instanceof ApiError && error.status === 400) {
           // Too many bids: keep the bids that the map has.
@@ -161,18 +187,25 @@ export const createBidsStore = ({
         }
         const retryable = !(error instanceof ApiError && error.status < 500);
         if (!retryable || attempt >= SNAPSHOT_RETRIES - 1) {
-          setView({ serverError: true });
+          setView(mapView ? { serverError: true } : { selectionError: true });
           break;
         }
         await wait(1000 * 2 ** attempt);
       }
     }
     inFlight = false;
+    loadingArea = undefined;
     setView({ loading: false });
     const next = queued;
     queued = undefined;
     if (next !== undefined && !isLoaded(next)) {
       void load(next);
+      return;
+    }
+    const area = queuedArea;
+    queuedArea = undefined;
+    if (area !== undefined && !isLoaded(area)) {
+      void load(area, false);
     }
   };
 
@@ -197,6 +230,17 @@ export const createBidsStore = ({
       return;
     }
     request(viewport);
+  };
+
+  const loadArea = (viewport: Viewport) => {
+    if (isLoaded(viewport) || (loadingArea !== undefined && sameArea(loadingArea, viewport))) {
+      return;
+    }
+    if (inFlight) {
+      queuedArea = viewport;
+    } else {
+      void load(viewport, false);
+    }
   };
 
   const startDownTimer = () => {
@@ -276,6 +320,7 @@ export const createBidsStore = ({
       return () => listeners.delete(listener);
     },
     requestArea,
+    loadArea,
     onMessage: listener => {
       messageListeners.add(listener);
       return () => messageListeners.delete(listener);
