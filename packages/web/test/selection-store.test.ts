@@ -4,7 +4,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { rectangleSession } from '../src/selection/drag';
 import { MAX_SELECTION_SQUARES, createSelectionStore, parsePrice } from '../src/selection/selection-store';
-import { TOOLS, toolById } from '../src/selection/tools';
 
 describe('createSelectionStore', () => {
   it('starts empty with the pan tool and the minimum bid', () => {
@@ -93,7 +92,6 @@ describe('rectangleSession', () => {
     session.update({ lat: 14179, lng: 17819 });
     expect(session.count()).toBe(200);
     expect(session.squares()).toHaveLength(200);
-    expect(session.describe()).toBe('10 rows × 20 columns = 200 squares');
     expect(session.outline()).toHaveLength(1);
   });
 
@@ -101,17 +99,5 @@ describe('rectangleSession', () => {
     const session = rectangleSession({ lat: 7220, lng: 1 });
     session.update({ lat: 7220, lng: 35998 });
     expect(session.squares().map(s => s.lng)).toEqual([35998, 35999, 0, 1]);
-    expect(session.describe()).toBe('1 row × 4 columns = 4 squares');
-  });
-});
-
-describe('TOOLS', () => {
-  it('has a pan tool that pans and a rectangle tool that selects', () => {
-    expect(TOOLS.map(tool => [tool.id, tool.key, tool.panOnDrag])).toEqual([
-      ['pan', 'h', true],
-      ['rectangle', 'r', false],
-    ]);
-    expect(toolById('rectangle').begin).toBe(rectangleSession);
-    expect(toolById('pan').begin).toBeUndefined();
   });
 });

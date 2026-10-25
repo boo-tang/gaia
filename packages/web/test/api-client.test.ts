@@ -1,9 +1,9 @@
-import type { AuctionResponse, ViewportSnapshot } from '@gaia/core';
+import type { Address, AuctionResponse, StreamMessage, ViewportSnapshot } from '@gaia/core';
 
 import { describe, expect, it, vi } from 'vitest';
 
 import { ApiError, createApiClient } from '../src/api/api-client';
-import { retryServerErrors } from '../src/api/queries';
+import { changesRefundOf, retryServerErrors } from '../src/api/queries';
 
 const auction: AuctionResponse = {
   lastEventId: { block: 12, logIndex: 3 },
@@ -92,6 +92,37 @@ describe('createApiClient', () => {
   it('rejects with the fetch error when the server is not reachable', async () => {
     const fetchFn = vi.fn<typeof fetch>(() => Promise.reject(new TypeError('Failed to fetch')));
     await expect(createApiClient('/api', fetchFn).getAuction()).rejects.toThrow('Failed to fetch');
+  });
+});
+
+describe('changesRefundOf', () => {
+  const ALICE: Address = '0x00000000000000000000000000000000000000a1';
+  const BOB: Address = '0x00000000000000000000000000000000000000b2';
+  const bid = (bidder: Address, taken: Address[] = []): StreamMessage => ({
+    type: 'shapeBid',
+    id: { block: 1, logIndex: 0 },
+    timestamp: 1,
+    shapeId: 1,
+    bidder,
+    squareIds: [],
+    amounts: [],
+    paid: '0',
+    taken: taken.map(owner => ({ shapeId: 2, bidder: owner, squareIds: [] })),
+  });
+  const status = (isCancelled: boolean): StreamMessage => ({
+    type: 'auctionStatus',
+    id: { block: 1, logIndex: 0 },
+    timestamp: 1,
+    status: { endTime: 1, paused: false, cancelled: isCancelled },
+  });
+
+  it('is true for own bids, outbids and a cancel', () => {
+    expect(changesRefundOf(bid(ALICE), ALICE)).toBe(true);
+    expect(changesRefundOf(bid(BOB, [ALICE]), ALICE)).toBe(true);
+    expect(changesRefundOf(bid(BOB, [BOB]), ALICE)).toBe(false);
+    expect(changesRefundOf(status(true), ALICE)).toBe(true);
+    expect(changesRefundOf(status(false), ALICE)).toBe(false);
+    expect(changesRefundOf({ type: 'reorg' }, ALICE)).toBe(false);
   });
 });
 

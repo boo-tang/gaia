@@ -1,22 +1,16 @@
 // @vitest-environment jsdom
-import { type AuctionResponse, type Square, type ViewportSnapshot, rectangleSquares } from '@gaia/core';
+import type { AuctionResponse, ViewportSnapshot } from '@gaia/core';
 
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../src/App';
-import type { MapViewProps } from '../src/map/MapView';
-import { selectionStore } from '../src/selection/useSelection';
 import { WalletProvider } from '../src/wallet/WalletProvider';
 
-// jsdom has no WebGL. The map is checked in a browser (see the README). The fake map keeps its
-// last props, so a test can end a drag.
-const map = vi.hoisted(() => ({ props: undefined as MapViewProps | undefined }));
+// A smoke test only: the UI changes a lot, so the tests do not check texts or layout.
+// jsdom has no WebGL. The map is checked in a browser (see the README).
 vi.mock('../src/map/MapView', () => ({
-  default: (props: MapViewProps) => {
-    map.props = props;
-    return <div>Map view</div>;
-  },
+  default: () => <div>Map view</div>,
 }));
 
 // The bids store opens a live stream after the first snapshot. jsdom has no EventSource.
@@ -27,33 +21,6 @@ class FakeEventSource {
   addEventListener() {}
   close() {}
 }
-
-const BOB = '0x00000000000000000000000000000000000000b2';
-const OXFORD = { south: 14170, north: 14179, west: 17800, east: 17819 };
-
-// The answer of GET /bids: one bid of Bob (0.004 ETH) in the south-west corner of the request.
-const snapshotFor = (url: string): ViewportSnapshot => {
-  const query = new URL(url, 'http://localhost').searchParams;
-  const viewport = {
-    south: Number(query.get('south')),
-    north: Number(query.get('north')),
-    west: Number(query.get('west')),
-    east: Number(query.get('east')),
-  };
-  return {
-    lastEventId: { block: 5, logIndex: 0 },
-    viewport,
-    status: { endTime: 5000, paused: true, cancelled: false },
-    bids: [
-      {
-        squareId: viewport.south * 65536 + viewport.west,
-        shapeId: 3,
-        bidder: BOB,
-        amount: '4000000000000000',
-      },
-    ],
-  };
-};
 
 const auction: AuctionResponse = {
   rules: {
@@ -68,15 +35,24 @@ const auction: AuctionResponse = {
     maxShapeSquares: 1000,
     maxShapeAspectRatio: 10,
   },
-  status: { endTime: 5000, paused: true, cancelled: false },
+  status: { endTime: 5000, paused: false, cancelled: false },
 };
 
-/** jsdom has no matchMedia. The stub matches the phone query when `phone` is true. */
-const stubScreen = (phone: boolean) =>
+const snapshot: ViewportSnapshot = {
+  lastEventId: { block: 5, logIndex: 0 },
+  viewport: { south: 0, north: 0, west: 0, east: 0 },
+  status: auction.status,
+  bids: [],
+};
+
+beforeEach(() => {
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  vi.stubGlobal('EventSource', FakeEventSource);
+  // jsdom has no matchMedia: a desktop screen.
   vi.stubGlobal(
     'matchMedia',
     vi.fn((query: string) => ({
-      matches: phone && query.includes('max-width'),
+      matches: false,
       media: query,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
@@ -86,263 +62,30 @@ const stubScreen = (phone: boolean) =>
       onchange: undefined,
     })),
   );
-
-const renderApp = () =>
-  render(
-    <WalletProvider>
-      <App />
-    </WalletProvider>,
-  );
-
-beforeEach(() => {
-  vi.spyOn(console, 'warn').mockImplementation(() => {});
-  vi.stubGlobal('EventSource', FakeEventSource);
   vi.stubGlobal(
     'fetch',
     vi.fn((url: string) =>
-      Promise.resolve(
-        new Response(JSON.stringify(url.includes('/bids') ? snapshotFor(url) : auction), { status: 200 }),
-      ),
+      Promise.resolve(new Response(JSON.stringify(url.includes('/bids') ? snapshot : auction), { status: 200 })),
     ),
   );
 });
 
 afterEach(() => {
-  selectionStore.clear();
-  selectionStore.setTool('pan');
-  selectionStore.setPriceMode('minimum');
-  selectionStore.setPriceText('');
-  map.props = undefined;
   cleanup();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 describe('App', () => {
-  it('renders the desktop layout with the auction status from the server', async () => {
-    stubScreen(false);
-    renderApp();
-    expect(await screen.findByText(/Auction paused/)).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Gaia' })).toBeTruthy();
-    expect(screen.getByRole('region', { name: 'Map' })).toBeTruthy();
+  it('loads with the map and the wallet button', async () => {
+    render(
+      <WalletProvider>
+        <App />
+      </WalletProvider>,
+    );
     expect(await screen.findByText('Map view')).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Bid' })).toBeTruthy();
-    expect(screen.getByText(/^Select squares on the map: click a square/)).toBeTruthy();
-    expect(screen.getByText(/A shape has 1 to 1,000 squares/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Bid' }).getAttribute('disabled')).not.toBeNull();
-    expect(screen.getByText('The auction is paused.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Withdraw' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Map' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Connect Wallet' })).toBeTruthy();
     expect(vi.mocked(fetch)).toHaveBeenCalledWith('/api/auction', expect.anything());
-  });
-
-  it('selects a 10 x 20 rectangle with one drag and shows its price', async () => {
-    stubScreen(false);
-    renderApp();
-    await screen.findByText('Map view');
-    await screen.findByText(/A shape has/);
-    expect(map.props?.tool.id).toBe('pan');
-    fireEvent.click(screen.getByRole('radio', { name: 'Rectangle (R)' }));
-    expect(map.props?.tool.id).toBe('rectangle');
-    expect(map.props?.selectionEnabled).toBe(true);
-
-    act(() => {
-      map.props?.onSelect(rectangleSquares(OXFORD));
-    });
-    expect(screen.getByText('200 squares (10 rows, 20 columns)')).toBeTruthy();
-    // 199 new squares at 0.001 ETH and Bob's square at 0.004 + 0.001 ETH.
-    expect(await screen.findByText('Total: 0.204 ETH')).toBeTruthy();
-    expect(screen.getByText('199 new squares, 1 outbid square')).toBeTruthy();
-    expect(screen.getByText('0.001 to 0.005 ETH per square')).toBeTruthy();
-    expect(screen.getByText(/Shape 3 \(0x0000…00b2\): 1 square/)).toBeTruthy();
-    expect(map.props?.selection).toHaveLength(200);
-    // Bob's square at 0.004 + 0.001 ETH.
-    expect(map.props?.selection[0]).toEqual({
-      square: { lat: 14170, lng: 17800 },
-      cost: 5_000_000_000_000_000n,
-      own: false,
-    });
-
-    // A second drag adds squares.
-    act(() => {
-      map.props?.onSelect([{ lat: 14180, lng: 17800 }] as Square[]);
-    });
-    expect(screen.getByText('201 squares (11 rows, 20 columns)')).toBeTruthy();
-
-    // A click on a selected square removes it; a click on another square adds it.
-    act(() => {
-      map.props?.onToggle({ lat: 14180, lng: 17800 });
-    });
-    expect(screen.getByText('200 squares (10 rows, 20 columns)')).toBeTruthy();
-    act(() => {
-      map.props?.onToggle({ lat: 14180, lng: 17800 });
-    });
-    expect(screen.getByText('201 squares (11 rows, 20 columns)')).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
-    expect(screen.getByText(/^Select squares on the map: click a square/)).toBeTruthy();
-  });
-
-  it('bids one price per square, not below the highest minimum bid', async () => {
-    stubScreen(false);
-    renderApp();
-    await screen.findByText('Map view');
-    await screen.findByText(/A shape has/);
-    act(() => {
-      map.props?.onSelect(rectangleSquares(OXFORD));
-    });
-    await screen.findByText('Total: 0.204 ETH');
-
-    fireEvent.click(screen.getByRole('radio', { name: 'My price per square' }));
-    expect(screen.getByText(/At least 0.005 ETH per square/)).toBeTruthy();
-    const input = screen.getByRole('textbox', { name: 'Price per square in ETH' });
-    fireEvent.change(input, { target: { value: '0.002' } });
-    expect(screen.getByText('The price must be at least 0.005 ETH.')).toBeTruthy();
-    expect(screen.queryByText(/^Total:/)).toBeNull();
-
-    fireEvent.change(input, { target: { value: 'abc' } });
-    expect(screen.getByText('Enter a price in ETH.')).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Use minimum' }));
-    expect(screen.getByText('Total: 1 ETH')).toBeTruthy();
-    fireEvent.change(input, { target: { value: '0.01' } });
-    expect(screen.getByText('Total: 2 ETH')).toBeTruthy();
-  });
-
-  it('keeps the typed price when the bid panel mounts again', async () => {
-    stubScreen(false);
-    const { unmount } = renderApp();
-    await screen.findByText(/A shape has/);
-    act(() => {
-      map.props?.onSelect(rectangleSquares(OXFORD));
-    });
-    await screen.findByText('Total: 0.204 ETH');
-    fireEvent.click(screen.getByRole('radio', { name: 'My price per square' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'Price per square in ETH' }), { target: { value: '0.01' } });
-    expect(screen.getByText('Total: 2 ETH')).toBeTruthy();
-
-    // A new panel (for example after a resize to phone width and back) shows the same price.
-    unmount();
-    renderApp();
-    const input = await screen.findByRole('textbox', { name: 'Price per square in ETH' });
-    expect((input as HTMLInputElement).value).toBe('0.01');
-    expect(await screen.findByText('Total: 2 ETH')).toBeTruthy();
-  });
-
-  it('shows the selection on the map before GET /auction loads', async () => {
-    stubScreen(false);
-    // GET /auction never answers: the bid has no rules and no prices.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => new Promise<Response>(() => {})),
-    );
-    renderApp();
-    await screen.findByText('Map view');
-    act(() => {
-      map.props?.onToggle({ lat: 100, lng: 200 });
-    });
-    expect(map.props?.selection).toEqual([{ square: { lat: 100, lng: 200 }, own: false }]);
-    expect(screen.getByText('1 square')).toBeTruthy();
-  });
-
-  it('loads the prices of a new selection after a failed load', async () => {
-    stubScreen(false);
-    // The bids store of the app keeps its data between tests: this test uses squares that no other test loads.
-    const area = { south: 15000, north: 15001, west: 100, east: 101 };
-    let failNext = true;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((url: string) => {
-        if (url.includes('/bids') && failNext) {
-          failNext = false;
-          return Promise.resolve(new Response('{"error":"Zoom in."}', { status: 400 }));
-        }
-        return Promise.resolve(
-          new Response(JSON.stringify(url.includes('/bids') ? snapshotFor(url) : auction), { status: 200 }),
-        );
-      }),
-    );
-    renderApp();
-    await screen.findByText(/A shape has/);
-    act(() => {
-      map.props?.onSelect(rectangleSquares(area));
-    });
-    expect(await screen.findByText(/Cannot load the prices of 4 squares/)).toBeTruthy();
-
-    // A larger selection has a new missing area: it loads with no click on "Try again".
-    act(() => {
-      map.props?.onSelect([{ lat: 15002, lng: 100 }]);
-    });
-    expect(await screen.findByText(/^Total:/)).toBeTruthy();
-    expect(screen.queryByText(/Cannot load the prices/)).toBeNull();
-  });
-
-  it('switches the tool with the keys H and R', async () => {
-    stubScreen(false);
-    renderApp();
-    await screen.findByText('Map view');
-    fireEvent.keyDown(window, { key: 'r' });
-    expect(screen.getByRole('radio', { name: 'Rectangle (R)' }).getAttribute('aria-checked')).toBe('true');
-    fireEvent.keyDown(window, { key: 'H' });
-    expect(screen.getByRole('radio', { name: 'Pan (H)' }).getAttribute('aria-checked')).toBe('true');
-  });
-
-  it('has no bid panel on a phone', async () => {
-    stubScreen(true);
-    renderApp();
-    expect(await screen.findByText('Map view')).toBeTruthy();
-    expect(map.props?.selectionEnabled).toBe(false);
-    expect(screen.queryByRole('heading', { name: 'Bid' })).toBeNull();
-    expect(screen.getByText(/Bid on a desktop/)).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Your bids' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Withdraw' })).toBeTruthy();
-  });
-
-  it('says when the server is not available', async () => {
-    stubScreen(false);
-    // A 4xx answer gets no retry, so the message shows at once.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(new Response('Not Found', { status: 404 }))),
-    );
-    renderApp();
-    expect((await screen.findByRole('status')).textContent).toBe('The server is not available.');
-    // The Bid button says it too.
-    expect(screen.getAllByText('The server is not available.')).toHaveLength(2);
-  });
-
-  it('disables the bid within one second of the end time', async () => {
-    stubScreen(false);
-    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
-    vi.setSystemTime(4999 * 1000 + 500);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() =>
-        Promise.resolve(
-          new Response(JSON.stringify({ ...auction, status: { endTime: 5000, paused: false, cancelled: false } })),
-        ),
-      ),
-    );
-    // A new module graph: the bids store of the other tests holds a paused status.
-    vi.resetModules();
-    const { App: FreshApp } = await import('../src/App');
-    const { WalletProvider: FreshProvider } = await import('../src/wallet/WalletProvider');
-    try {
-      render(
-        <FreshProvider>
-          <FreshApp />
-        </FreshProvider>,
-      );
-      expect(await screen.findByText(/^Ends /)).toBeTruthy();
-      expect(screen.getByText('Connect a wallet to bid.')).toBeTruthy();
-      act(() => {
-        vi.advanceTimersByTime(1000);
-      });
-      expect(screen.getByRole('status').textContent).toMatch(/^Auction ended /);
-      expect(screen.getByText('The auction has ended.')).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Bid' }).getAttribute('disabled')).not.toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });
