@@ -123,10 +123,25 @@ See the map with live bids on Anvil:
 
 1. `yarn chain:local`, then `yarn deploy:local` and `SEED_SQUARES=15000 yarn seed:local`.
 2. `yarn workspace @gaia/server start` and `yarn workspace @gaia/web dev`, then open http://localhost:5173 (in a visible browser window: a hidden tab gets no animation frames and the map loads slowly).
-3. The seed bids are north of London (from 51.7°N, 2°W to 2°E: Oxford, Luton, St Albans), near Fiji across the antimeridian (17.8°S, 180°), and at 86°N, 180°W. Zoom in: the grid fades in from zoom 9. The square under the pointer and its bid show at the bottom left; a click selects the square.
+3. The seed bids are north of London (from 51.7°N, 2°W to 2°E: Oxford, Luton, St Albans), near Fiji across the antimeridian (17.8°S, 180°), and at 86°N, 180°W. Zoom in: the grid fades in from zoom 9. The square under the pointer and its bid show at the bottom left.
 4. Live bids: run `SEED_SQUARES=15000 yarn seed:local` again. The north halves change colour and price with no reload.
 5. "Zoom in": start the server with `MAX_SNAPSHOT_BIDS=100`. A view with more bids shows "Zoom in to load the bids." and keeps the bids that the map has.
 6. Stream failure: stop the server. After 5 s the map shows "Live updates failed. Please refresh the page." The app tries again; when the server is back, the message goes away.
+
+### Shape selection
+
+The bid panel has a tool picker, as in an image editor: "Pan" (key H) pans the map with a drag, "Rectangle" (key R) selects squares with a drag. With the rectangle tool the map does not pan; the wheel zoom and the right-drag rotation still work. Each drag adds all squares inside the rectangle to the selection, also across the antimeridian. "Clear" removes all selected squares. The app keeps at most 10,000 selected squares.
+
+The price has two options: "Minimum bid" (each square gets its minimum next bid) or "My price per square" (one price in ETH for each square, at least the highest minimum next bid of the selection). The squares of the connected wallet cost 0. The panel shows the total, the new, outbid and own squares, the shapes that the selection takes squares from, and the shape limits of the auction as information. The client does not check the shape rules: the simulation of the bid gives the contract error before the wallet opens. The map colours each selected square by its cost (own squares green), and the readout shows the price of the square under the pointer.
+
+Try it on Anvil (after the steps of the map above):
+
+1. Near Oxford, press R and drag over seed bids and empty squares. The panel shows the squares, the total and the shapes that the selection cuts into. Drag again: the squares are added.
+2. Choose "My price per square", then "Use minimum". The total is the price times the number of squares.
+3. Near Fiji, drag across 180°: the selection has the columns on both sides.
+4. Drag a very large rectangle at a low zoom: the map says "Too many squares" and the selection does not change.
+
+`packages/server/test/anvil-integration.test.ts` checks that a bid with the total of the app (`priceSelection` of `packages/core` on the data of `GET /bids`) pays exactly that total (`paid` of `ShapeBid`).
 
 The map needs WebGL, so the unit tests do not render it (jsdom). `yarn workspace @gaia/web time-zones` makes `src/map/time-zones.ts` again from the IANA `zone.tab`.
 
