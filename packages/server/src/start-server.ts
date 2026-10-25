@@ -6,6 +6,7 @@ import { type ServerType, serve } from '@hono/node-server';
 import type { AddressInfo } from 'node:net';
 
 import { createHttpApi } from './api/http-api';
+import { createSite } from './api/site';
 import { createRpcClient, readAuctionRules, readBidderRefund } from './auction-rpc';
 import { AuctionIndexer } from './indexer/auction-indexer';
 import { LiveMessageBus } from './live-message-bus';
@@ -58,19 +59,26 @@ export const startServer = async (
   log(`Backfill done in ${Date.now() - started} ms: at block ${(await store.lastBlock())?.number}.`);
   indexer.start();
 
-  const app = createHttpApi({
+  const api = createHttpApi({
     store,
     liveMessageBus,
     rules,
     refundOf: (bidder, cancelled) => readBidderRefund(client, auction, bidder, cancelled),
     maxSnapshotBids: config.maxSnapshotBids,
   });
+  const app = config.webDir === undefined ? api : createSite(api, config.webDir);
   const server: ServerType = await new Promise(resolve => {
-    const s = serve({ fetch: app.fetch, port: config.port }, () => resolve(s));
+    const s = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, () => resolve(s));
   });
   const { port } = server.address() as AddressInfo;
-  const url = `http://127.0.0.1:${port}`;
-  log(`Gaia server on ${url} (auction ${auction}, chain ${chainId}).`);
+  // A server on all interfaces also answers on the loopback address.
+  const origin = `http://${config.host === '0.0.0.0' ? '127.0.0.1' : config.host}:${port}`;
+  const url = config.webDir === undefined ? origin : `${origin}/api`;
+  log(
+    config.webDir === undefined
+      ? `Gaia server on ${url} (auction ${auction}, chain ${chainId}).`
+      : `Gaia server on ${origin}: web app from ${config.webDir}, API under /api (auction ${auction}, chain ${chainId}).`,
+  );
 
   return {
     url,

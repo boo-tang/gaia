@@ -93,7 +93,9 @@ The server keeps all data in memory. At each start it reads all events again fro
 | --- | --- | --- |
 | `RPC_URLS` | `http://127.0.0.1:8545` | RPC URLs, separated by commas. The first is the main provider; the others are fallbacks. |
 | `DEPLOYMENT_FILE` | `deployments/local.json` | The deployment file (a relative path starts at the repository root). |
+| `HOST` | `127.0.0.1` | The address the server listens on. `0.0.0.0`: all interfaces. |
 | `PORT` | `8787` | The HTTP port. |
+| `WEB_DIR` | (empty) | The web build (`packages/web/dist`; a relative path starts at the repository root). When set, the server also serves the web app, and the endpoints below move under `/api`. |
 | `REORG_DEPTH` | `64` | The number of blocks that a reorg can undo. A deeper reorg clears the data and starts a new backfill. |
 | `POLL_INTERVAL_MS` | `2000` | The time between two polls. |
 | `LOG_RANGE` | `2000` | The largest block range of one `eth_getLogs` request. |
