@@ -100,7 +100,7 @@ yarn workspace @gaia/server start
 yarn workspace @gaia/web dev
 ```
 
-Then open http://localhost:5173. In development, Vite sends `/api/*` to the server (the server has no CORS). To connect on Anvil, use a browser wallet (for example MetaMask or Rabby) with an Anvil account key and the network `http://127.0.0.1:8545`, chain ID 31337. Base Account does not work on Anvil.
+Then open http://localhost:5173. In development, Vite sends `/api/*` to the server (the server has no CORS). To connect on Anvil, use a browser wallet with an Anvil account key (see "Bid and withdraw"). Base Account does not work on Anvil.
 
 Configuration: copy `packages/web/.env.example` to `packages/web/.env.local`. All variables are optional for the local node.
 
@@ -130,7 +130,7 @@ See the map with live bids on Anvil:
 
 ### Shape selection
 
-The bid panel has a tool picker, as in an image editor: "Pan" (key H) pans the map with a drag, "Rectangle" (key R) selects squares with a drag. With the rectangle tool the map does not pan; the wheel zoom and the right-drag rotation still work. Each drag adds all squares inside the rectangle to the selection, also across the antimeridian. With both tools, a click on a square selects it, and a click on a selected square removes it. "Clear" removes all selected squares. The app keeps at most 10,000 selected squares. The Bid button stays disabled until the bid flow is in the app.
+The bid panel has a tool picker, as in an image editor: "Pan" (key H) pans the map with a drag, "Rectangle" (key R) selects squares with a drag. With the rectangle tool the map does not pan; the wheel zoom and the right-drag rotation still work. Each drag adds all squares inside the rectangle to the selection, also across the antimeridian. With both tools, a click on a square selects it, and a click on a selected square removes it. "Clear" removes all selected squares. The app keeps at most 10,000 selected squares.
 
 The price has two options: "Minimum bid" (each square gets its minimum next bid) or "My price per square" (one price in ETH for each square, at least the highest minimum next bid of the selection). The squares of the connected wallet cost 0. The panel shows the total, the new, outbid and own squares, the shapes that the selection takes squares from, and the shape limits of the auction as information. The client does not check the shape rules: the simulation of the bid gives the contract error before the wallet opens. The map colours each selected square by its cost (own squares green), and the readout shows the price of the square under the pointer.
 
@@ -141,7 +141,31 @@ Try it on Anvil (after the steps of the map above):
 3. Near Fiji, drag across 180°: the selection has the columns on both sides.
 4. Drag a very large rectangle at a low zoom: the map says "Too many squares" and the selection does not change.
 
-`packages/server/test/anvil-integration.test.ts` checks that a bid with the total of the app (`priceSelection` of `packages/core` on the data of `GET /bids`) pays exactly that total (`paid` of `ShapeBid`).
+### Bid and withdraw
+
+"Bid" sends `bidOnShape` with exactly the total of the panel as the value. Just before the wallet opens, the app simulates the bid on the RPC node: a contract error (for example "The prices changed. The bid now costs X ETH.") shows below the button and the wallet does not open. A rejection in the wallet is not an error: the panel goes back to the selection. While the transaction waits, the button says so. After the receipt the panel shows "Bid placed: X ETH" (with a link to the block explorer; Anvil has none) and clears the selection. A bid that fails keeps the selection. Bid is disabled before the start, while the auction is paused, after a cancel and after the end time, with no wallet, and with a wallet on a different chain.
+
+"Your bids" (also on a phone) shows the refund of the wallet: the outbid amounts and, after a cancel, all bids (`refund` of `GET /bidder/:address`). It loads again after each bid and withdraw, and when the live stream sends a bid that takes squares of the wallet. "Withdraw" sends the refund to the wallet.
+
+Wallet setup on Anvil: in a browser wallet (for example MetaMask or Rabby), add the network RPC URL `http://127.0.0.1:8545`, chain ID 31337, currency ETH. Import the private key of an Anvil account (`anvil` prints the keys at the start). Accounts 3 to 9 place the seed bids; account 1 is the admin. Use a different account in a second browser profile to bid against the first. After a restart of Anvil, reset the account in the wallet (the nonce starts at 0 again).
+
+Try it on Anvil (after `yarn chain:local`, `yarn deploy:local`, `yarn seed:local`, the server and the web app):
+
+1. Connect with account 6. Select squares over a seed bid near London and click "Bid". The panel shows "Bid placed: X ETH" and the map shows the squares in the colour of the wallet.
+2. Select squares again and wait for the total. In a second profile with account 7, bid on one of these squares. The first panel shows the new total within a few seconds. To see the simulation stop a bid with an old total, stop the server before the second bid and click "Bid" in the first panel: it shows "The prices changed. The bid now costs X ETH."
+3. In the second profile, "Your bids" shows the refund of account 7 after the bid of account 6. Click "Withdraw": the panel shows "Withdrawn: X ETH" and the refund goes to 0.
+4. Pause and cancel as the admin (account 1, which Anvil unlocks):
+
+```
+cast send --unlocked --from 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 <GaiaAuction address> "pause()"
+cast send --unlocked --from 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 <GaiaAuction address> "cancel()"
+```
+
+The status bar says "Auction paused", then "Auction cancelled", and Bid is disabled. After the cancel, "Your bids" says "The auction is cancelled. Withdraw your bids." and the refund holds all bids of the wallet. The address of `GaiaAuction` is in `deployments/local.json`.
+
+5. End time: deploy with `AUCTION_MINUTES=3` on a new Anvil. At the end time the status bar says "Auction ended" and Bid is disabled within one second. A bid in the last 15 minutes (`extensionWindow`) moves the end time, and the status bar shows the new time within a few seconds.
+
+`packages/server/test/anvil-integration.test.ts` checks that a bid with the total of the app (`priceSelection` of `packages/core` on the data of `GET /bids`) pays exactly that total (`paid` of `ShapeBid`), and that after a different bid on one of its squares, the simulation with the old total reverts with `InsufficientValue` and the new total of the app.
 
 The map needs WebGL, so the unit tests do not render it (jsdom). `yarn workspace @gaia/web time-zones` makes `src/map/time-zones.ts` again from the IANA `zone.tab`.
 
