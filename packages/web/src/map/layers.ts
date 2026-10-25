@@ -5,6 +5,7 @@ import { type Bounds, type Square, gridLines, squareBounds, unpackSquare } from 
 import { PathLayer, PolygonLayer, SolidPolygonLayer } from '@deck.gl/layers';
 
 import type { HeldBid } from '../bids/bids-reducer';
+import type { SelectionCell } from '../selection/selection-cells';
 import { bidderColor } from './bidder-colors';
 import { MERCATOR_MAX_LAT, clampToMercator } from './viewport';
 
@@ -22,26 +23,19 @@ export const LAYER_IDS = {
   hover: 'hover',
 } as const;
 
-/** One selected square and what the bid pays for it. */
-export interface SelectionCell {
-  square: Square;
-  cost: bigint;
-  /** The square of the connected wallet: it costs 0. */
-  own: boolean;
-}
-
 const SELECTION_RED = [220, 38, 38] as const;
 const OWN_GREEN = [22, 163, 74] as const;
 
 /**
  * The fill of each selected square: green for own squares, else red with an alpha from 40 (the
- * lowest cost of the selection) to 160 (the highest), so the expensive squares show.
+ * lowest cost of the selection) to 160 (the highest), so the expensive squares show. A square
+ * with no price gets alpha 100.
  */
 export const selectionFill = (cells: readonly SelectionCell[]) => {
   let low: bigint | undefined;
   let high: bigint | undefined;
   for (const { cost, own } of cells) {
-    if (!own) {
+    if (!own && cost !== undefined) {
       low = low === undefined || cost < low ? cost : low;
       high = high === undefined || cost > high ? cost : high;
     }
@@ -50,7 +44,7 @@ export const selectionFill = (cells: readonly SelectionCell[]) => {
     if (own) {
       return [...OWN_GREEN, 90];
     }
-    if (low === undefined || high === undefined || high === low) {
+    if (cost === undefined || low === undefined || high === undefined || high === low) {
       return [...SELECTION_RED, 100];
     }
     return [...SELECTION_RED, 40 + Math.round((Number(cost - low) / Number(high - low)) * 120)];

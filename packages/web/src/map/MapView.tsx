@@ -1,6 +1,6 @@
 // The map: MapLibre GL (globe, our own style) with the deck.gl layers of layers.ts, on the data of
 // the bids store. Loaded lazily (LazyMap.tsx), because MapLibre and deck.gl are large.
-import { type Bounds, type PricedSelection, type Square, describeSquare, packSquare, squareAt } from '@gaia/core';
+import { type Bounds, type Square, describeSquare, packSquare, squareAt } from '@gaia/core';
 
 import type { Map as MapLibreMap, TransformConstrainFunction } from 'maplibre-gl';
 // eslint-disable-next-line no-restricted-imports -- the CSS file of the package, not our build
@@ -19,18 +19,19 @@ import { useAccount } from 'wagmi';
 import { bidsStore, useBids } from '../bids/useBids';
 import { webConfig } from '../config/app-config';
 import type { DragSession } from '../selection/drag';
+import type { SelectionCell } from '../selection/selection-cells';
 import { MAX_SELECTION_SQUARES } from '../selection/selection-store';
 import type { SelectionTool } from '../selection/tools';
 import { DeckOverlay } from './DeckOverlay';
 import { type CameraView, browserTimeZone, firstView, readSavedView, saveView } from './first-view';
 import { type GaiaStyle, loadGaiaStyle } from './gaia-style';
-import { type SelectionCell, bidRows, buildLayers, gridPaths } from './layers';
+import { bidRows, buildLayers, gridPaths } from './layers';
 import './maplibre-worker';
 import { boundsToViewport, padBounds } from './viewport';
 
 export interface MapViewProps {
-  /** The selected squares with their prices (useSelectionBid). */
-  selection?: PricedSelection;
+  /** The selected squares, with their prices when they are known (useSelectionCells). */
+  selection: readonly SelectionCell[];
   /** The active selection tool. */
   tool: SelectionTool;
   /** False on a phone: no selection, a tap shows one square in the readout. */
@@ -40,6 +41,17 @@ export interface MapViewProps {
   /** A click on a square: removes it when it is selected, else adds it. */
   onToggle: (square: Square) => void;
 }
+
+/** The readout line of a selected square. */
+const cellText = ({ own, cost }: SelectionCell) => {
+  if (own) {
+    return 'Your square: 0 ETH';
+  }
+  if (cost === undefined) {
+    return 'Selected';
+  }
+  return `You bid ${formatEther(cost)} ETH on this square`;
+};
 
 interface DragPreview {
   outline: [number, number][][];
@@ -147,7 +159,7 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
     requestTimer.current = setTimeout(() => bidsStore.requestArea(viewport), REQUEST_DELAY_MS);
   }, []);
 
-  const selectedCount = selection?.sorted.length ?? 0;
+  const selectedCount = selection.length;
   const showDrag = useCallback(
     (session: DragSession) => {
       const tooMany = session.count() + selectedCount > MAX_SELECTION_SQUARES;
@@ -247,14 +259,7 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
     [selectionEnabled, tool, onToggle],
   );
 
-  const cells = useMemo<SelectionCell[]>(
-    () =>
-      selection === undefined
-        ? []
-        : selection.sorted.map((square, i) => ({ square, cost: selection.costs[i], own: selection.own[i] })),
-    [selection],
-  );
-  const cellIndex = useMemo(() => new Map(cells.map((cell, i) => [packSquare(cell.square), i])), [cells]);
+  const cellIndex = useMemo(() => new Map(selection.map((cell, i) => [packSquare(cell.square), i])), [selection]);
 
   // `data.bids` changes in place: `data.bidsVersion` tells when.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -268,20 +273,20 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
         ownAddress: address,
         grid,
         zoom,
-        selection: cells,
+        selection,
         preview: preview?.outline,
         hover,
         marked,
         beforeId: gaiaStyle?.beforeId,
         globe,
       }),
-    [rows, data.bidsVersion, address, grid, zoom, cells, preview, hover, marked, gaiaStyle?.beforeId, globe],
+    [rows, data.bidsVersion, address, grid, zoom, selection, preview, hover, marked, gaiaStyle?.beforeId, globe],
   );
 
   // The square under the pointer; on a touch screen (no pointer) the tapped square.
   const shown = hover ?? marked;
   const shownBid = shown === undefined ? undefined : data.bids.get(packSquare(shown));
-  const shownCell = shown === undefined ? undefined : cells[cellIndex.get(packSquare(shown)) ?? -1];
+  const shownCell = shown === undefined ? undefined : selection[cellIndex.get(packSquare(shown)) ?? -1];
   const dragPan = !selectionEnabled || tool.panOnDrag;
 
   return (
@@ -336,7 +341,7 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
           {shownCell !== undefined && (
             <>
               <br />
-              {shownCell.own ? 'Your square: 0 ETH' : `You bid ${formatEther(shownCell.cost)} ETH on this square`}
+              {cellText(shownCell)}
             </>
           )}
         </p>

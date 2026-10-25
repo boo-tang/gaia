@@ -155,8 +155,13 @@ describe('App', () => {
     expect(screen.getByText('199 new squares, 1 outbid square')).toBeTruthy();
     expect(screen.getByText('0.001 to 0.005 ETH per square')).toBeTruthy();
     expect(screen.getByText(/Shape 3 \(0x0000…00b2\): 1 square/)).toBeTruthy();
-    expect(map.props?.selection?.sorted).toHaveLength(200);
-    expect(map.props?.selection?.packed[0]).toBe(14170 * 65536 + 17800);
+    expect(map.props?.selection).toHaveLength(200);
+    // Bob's square at 0.004 + 0.001 ETH.
+    expect(map.props?.selection[0]).toEqual({
+      square: { lat: 14170, lng: 17800 },
+      cost: 5_000_000_000_000_000n,
+      own: false,
+    });
 
     // A second drag adds squares.
     act(() => {
@@ -222,6 +227,22 @@ describe('App', () => {
     const input = await screen.findByRole('textbox', { name: 'Price per square in ETH' });
     expect((input as HTMLInputElement).value).toBe('0.01');
     expect(await screen.findByText('Total: 2 ETH')).toBeTruthy();
+  });
+
+  it('shows the selection on the map before GET /auction loads', async () => {
+    stubScreen(false);
+    // GET /auction never answers: the bid has no rules and no prices.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => {})),
+    );
+    renderApp();
+    await screen.findByText('Map view');
+    act(() => {
+      map.props?.onToggle({ lat: 100, lng: 200 });
+    });
+    expect(map.props?.selection).toEqual([{ square: { lat: 100, lng: 200 }, own: false }]);
+    expect(screen.getByText('1 square')).toBeTruthy();
   });
 
   it('loads the prices of a new selection after a failed load', async () => {

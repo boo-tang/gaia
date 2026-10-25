@@ -10,13 +10,14 @@ import {
   unpackSquare,
 } from '@gaia/core';
 
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useAccount } from 'wagmi';
 
 import { useAuction } from '../api/queries';
 import { sameViewport, viewportHolds } from '../bids/areas';
 import type { BidsState } from '../bids/bids-reducer';
 import { bidsStore, useBidsSelector } from '../bids/useBids';
+import { type SelectionCell, selectionCells } from './selection-cells';
 import { type SelectionState, createSelectionStore } from './selection-store';
 
 export const selectionStore = createSelectionStore();
@@ -130,4 +131,14 @@ export const useSelectionBid = (): BidInput => {
       }
     },
   };
+};
+
+/**
+ * The selected squares for the map: with prices when the bid has them, else with no price (for
+ * example before `GET /auction` loads, or when it fails).
+ */
+export const useSelectionCells = (): readonly SelectionCell[] => {
+  const squareIds = useSelection(state => state.squareIds);
+  const { priced } = useSelectionBid();
+  return useMemo(() => selectionCells(squareIds, priced), [squareIds, priced]);
 };

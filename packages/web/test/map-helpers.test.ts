@@ -1,4 +1,4 @@
-import { type Address, packSquare } from '@gaia/core';
+import { type Address, type PricedSelection, packSquare } from '@gaia/core';
 
 import { describe, expect, it } from 'vitest';
 
@@ -14,6 +14,7 @@ import {
 } from '../src/map/first-view';
 import { bidRows, buildLayers, gridAlpha, gridPaths, selectionFill } from '../src/map/layers';
 import { boundsToViewport, padBounds } from '../src/map/viewport';
+import { selectionCells } from '../src/selection/selection-cells';
 
 const ALICE: Address = '0x00000000000000000000000000000000000000a1';
 const bid = (bidder: Address = ALICE): HeldBid => ({
@@ -135,6 +136,16 @@ describe('layers', () => {
     expect(fill(cell(0n, true))[1]).toBe(163);
     // One price for all squares.
     expect(selectionFill([cell(5n), cell(5n)])(cell(5n))).toEqual([220, 38, 38, 100]);
+    // No prices yet.
+    const unpriced = { square: { lat: 1, lng: 1 }, own: false };
+    expect(selectionFill([unpriced])(unpriced)).toEqual([220, 38, 38, 100]);
+  });
+
+  it('makes cells with prices when the bid has them, else with no price', () => {
+    const squareIds = new Set([packSquare({ lat: 2, lng: 3 })]);
+    expect(selectionCells(squareIds, undefined)).toEqual([{ square: { lat: 2, lng: 3 }, own: false }]);
+    const priced = { sorted: [{ lat: 2, lng: 3 }], costs: [7n], own: [true] } as PricedSelection;
+    expect(selectionCells(squareIds, priced)).toEqual([{ square: { lat: 2, lng: 3 }, cost: 7n, own: true }]);
   });
 });
 

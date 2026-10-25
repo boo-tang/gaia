@@ -11,13 +11,13 @@ import { AppLayout } from './layout/AppLayout';
 import { LazyMap } from './map/LazyMap';
 import { SelectionPanel } from './selection/SelectionPanel';
 import { toolById } from './selection/tools';
-import { selectionStore, useSelection, useSelectionBid } from './selection/useSelection';
+import { selectionStore, useSelection, useSelectionCells } from './selection/useSelection';
 import { WalletButton } from './wallet/WalletButton';
 
 export const App = () => {
   const isPhone = useIsPhone();
   const tool = toolById(useSelection(state => state.tool));
-  const { priced } = useSelectionBid();
+  const selection = useSelectionCells();
   const onSelect = useCallback((squares: Square[]) => selectionStore.addSquares(squares), []);
   const onToggle = useCallback((square: Square) => selectionStore.toggle(square), []);
 
@@ -34,7 +34,13 @@ export const App = () => {
       }
       notices={<NetworkGuard />}
       map={
-        <LazyMap selection={priced} tool={tool} selectionEnabled={!isPhone} onSelect={onSelect} onToggle={onToggle} />
+        <LazyMap
+          selection={selection}
+          tool={tool}
+          selectionEnabled={!isPhone}
+          onSelect={onSelect}
+          onToggle={onToggle}
+        />
       }
       bidPanel={<SelectionPanel />}
       bidderView={
