@@ -1,12 +1,13 @@
 import hardhatIgnitionViem from '@nomicfoundation/hardhat-ignition-viem';
+import hardhatKeystore from '@nomicfoundation/hardhat-keystore';
 import hardhatMocha from '@nomicfoundation/hardhat-mocha';
 import hardhatNetworkHelpers from '@nomicfoundation/hardhat-network-helpers';
 import hardhatVerify from '@nomicfoundation/hardhat-verify';
 import hardhatViem from '@nomicfoundation/hardhat-viem';
-import { defineConfig } from 'hardhat/config';
+import { configVariable, defineConfig } from 'hardhat/config';
 
 export default defineConfig({
-  plugins: [hardhatViem, hardhatMocha, hardhatNetworkHelpers, hardhatIgnitionViem, hardhatVerify],
+  plugins: [hardhatViem, hardhatMocha, hardhatNetworkHelpers, hardhatIgnitionViem, hardhatVerify, hardhatKeystore],
   // The deployable contracts have the exact pragma 0.8.37. Base runs the osaka rules since its Azul
   // upgrade (May 2026). Change the version, the pragmas and the EVM version only together.
   solidity: {
@@ -20,6 +21,9 @@ export default defineConfig({
   },
   // `default` runs tests and scripts in-process. `node` is the chain `hardhat node` serves.
   // `anvil` is a local Anvil node (`yarn chain:local`), which `yarn deploy:local` deploys to.
+  // `baseSepolia` is the public testnet, which `yarn deploy:base-sepolia` deploys to. Its RPC URL and
+  // deployer key are in the Hardhat keystore (`yarn hardhat keystore set <name>`), or in the
+  // environment variables of the same names.
   networks: {
     default: {
       type: 'edr-simulated',
@@ -38,6 +42,12 @@ export default defineConfig({
       accounts: {
         mnemonic: 'test test test test test test test test test test test junk',
       },
+    },
+    baseSepolia: {
+      type: 'http',
+      url: configVariable('BASE_SEPOLIA_RPC_URL'),
+      chainId: 84532,
+      accounts: [configVariable('BASE_SEPOLIA_DEPLOYER_KEY')],
     },
   },
 });

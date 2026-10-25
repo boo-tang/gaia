@@ -44,13 +44,36 @@ The script puts the ERC-6551 registry at its canonical address (`0x000000006551c
 - If port 8545 is in use, start `anvil --port 8546` and set `LOCAL_RPC_URL=http://127.0.0.1:8546` for each command.
 - A second run on the same node changes nothing. After a restart of Anvil, the script deploys again.
 
+### Base Sepolia
+
+Store the RPC URL and the key of a new testnet-only deployer in the Hardhat keystore (encrypted, outside the repository), and fund the deployer from a Base Sepolia faucet:
+
+```
+yarn hardhat keystore set BASE_SEPOLIA_RPC_URL
+yarn hardhat keystore set BASE_SEPOLIA_DEPLOYER_KEY
+```
+
+Deploy with the admin, the treasury and the auction times (Unix seconds):
+
+```
+GAIA_ADMIN=0x… GAIA_TREASURY=0x… AUCTION_START_TIME=… AUCTION_END_TIME=… AUCTION_MAX_END_TIME=… yarn deploy:base-sepolia
+```
+
+The script checks the chain ID (84532) and that the canonical ERC-6551 registry has code, then deploys `GaiaSystem.ts` with `ignition/parameters/base-sepolia.json` and writes `deployments/base-sepolia.json`. The server and the web build need this file, so commit it with `git add -f`.
+
+- `GAIA_ADMIN` must not be the deployer: the deployer gives up the admin role.
+- The land sale does not get `ISSUER_ROLE`. The admin grants it after the auction ends.
+- The first run saves its parameters in `deployments/base-sepolia.parameters.json`. A later run resumes the Ignition deployment with them (for example after a failed transaction) and ignores the environment values. For a new deployment, remove that file and `ignition/deployments/base-sepolia`.
+
+### Seed data
+
 Optional data for app work: `yarn seed:local` places three bids. `SEED_SQUARES=15000 yarn seed:local` places bids on about 15,000 squares for the map (rectangles of up to `maxShapeSquares` squares north of London, from Oxford to east of St Albans, across the antimeridian near Fiji and at 86°N); a second run with the same value outbids the north half of each rectangle. Seed before the auction ends. `SEED_END=1 yarn seed:local` also moves the chain clock past the end of the auction and settles one shape. After that, the auction is closed; restart Anvil and deploy again for a new auction.
 
 ### Modules
 
 `ignition/modules/Gaia.ts` deploys the country account implementation, `GaiaCountries`, `GaiaSquares` and `GaiaAuction`, makes the auction the only issuer, and moves the admin role from the deployer to `admin`. `GaiaLandSale.ts` deploys the sale of leftover squares, and `GaiaCountryMarket.ts` deploys the country market. `GaiaSystem.ts` deploys all of them. The parameters file has one section for each module (see `ignition/parameters/local.json`), with bigint values as strings that end in `n`. `GaiaModule` also needs `startTime`, `endTime` and `maxEndTime`. An ERC-6551 registry must be at `registry`.
 
-On Base, the admin multisig grants `ISSUER_ROLE` to the land sale only after the auction ends. The Base networks and the Base parameters are not ready yet.
+On Base, the admin grants `ISSUER_ROLE` to the land sale only after the auction ends.
 
 `LOCAL_DEPLOYMENT_ID` (default `local`) changes the names of the deployment files (`deployments/<id>.json`, `deployments/<id>.parameters.json`, `ignition/deployments/<id>`), for `deploy:local` and `seed:local`. The server test uses it for its own Anvil node.
 
@@ -108,12 +131,18 @@ Configuration: copy `packages/web/.env.example` to `packages/web/.env.local`. Al
 | --- | --- | --- |
 | `DEPLOYMENT_FILE` | `deployments/local.json` | The deployment file (a relative path starts at the repository root). Its chain ID selects the chain of the app: 31337 (Anvil) or 84532 (Base Sepolia). A missing or wrong file stops `dev` and `build`. |
 | `API_PROXY_TARGET` | `http://localhost:8787` | Development only: the server for `/api/*`. |
-| `VITE_API_URL` | `/api` | The API base URL in the browser. A production build sets the URL of the server. |
+| `VITE_API_URL` | `/api` | The API base URL in the browser. A server with `WEB_DIR` serves the API at `/api` on the same origin. |
 | `VITE_RPC_URL` | `http://127.0.0.1:8545` on Anvil | The RPC URL of the chain. Required for Base Sepolia. |
 | `VITE_WALLETCONNECT_PROJECT_ID` | (empty) | The WalletConnect project ID. With no ID, the wallet list has only the browser wallet and Base Account. |
 | `VITE_MAP_STYLE_URL` | `https://tiles.openfreemap.org/styles/positron` | A map style of the OpenMapTiles schema. The map takes its tiles and place names and uses its own colours. |
 
-Base Sepolia: set `DEPLOYMENT_FILE` to the Base Sepolia deployment file, `VITE_RPC_URL` and `VITE_API_URL`, then `yarn workspace @gaia/web build`. The files are in `packages/web/dist`.
+Base Sepolia build (the files are in `packages/web/dist`):
+
+```
+DEPLOYMENT_FILE=deployments/base-sepolia.json VITE_RPC_URL=https://sepolia.base.org yarn workspace @gaia/web build
+```
+
+Each `VITE_*` value is public in the build. `VITE_RPC_URL` is the public Base Sepolia RPC, never a URL with a key.
 
 ### Map
 

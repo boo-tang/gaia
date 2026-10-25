@@ -5,13 +5,8 @@ import path from 'node:path';
 import { getAddress } from 'viem';
 
 import GaiaSystemModule from '../ignition/modules/GaiaSystem';
-import {
-  auctionTimes,
-  bigintReplacer,
-  readParameters,
-  withAuctionTimes,
-  writeParameters,
-} from './lib/local-parameters';
+import { writeDeploymentFile } from './lib/deployment-file';
+import { auctionTimes, readParameters, withAuctionTimes, writeParameters } from './lib/local-parameters';
 import { CANONICAL_REGISTRY, ensureRegistry } from './lib/registry';
 import { grantSaleIssuer } from './lib/sale-issuer';
 
@@ -87,52 +82,27 @@ if (await ensureRegistry(connection)) {
   console.log(`Put the ERC-6551 registry at ${CANONICAL_REGISTRY}.`);
 }
 
-const { accountImplementation, countries, squares, auction, sale, market } = await connection.ignition.deploy(
-  GaiaSystemModule,
-  { parameters, deploymentId: DEPLOYMENT_ID },
-);
+const contracts = await connection.ignition.deploy(GaiaSystemModule, { parameters, deploymentId: DEPLOYMENT_ID });
 
 // The land sale gets ISSUER_ROLE at once. This is different from Base: there, the admin multisig
 // grants it only after the auction ends (operating rule). Locally an early grant is safe, because
 // the sale stays closed until auction.endTime(), and the sale then works without one more step.
 // The deployer has no admin role after GaiaModule, so the grant comes from the admin account.
 const admin = getAddress(gaia.admin as string);
-await grantSaleIssuer(connection, countries.address, sale.address, admin);
+await grantSaleIssuer(connection, contracts.countries.address, contracts.sale.address, admin);
 
-const out = {
+writeDeploymentFile(OUT_FILE, {
   chainId,
   deployBlock: Number(state.deployBlock),
-  contracts: {
-    GaiaCountries: countries.address,
-    GaiaSquares: squares.address,
-    GaiaCountryAccount: accountImplementation.address,
-    GaiaAuction: auction.address,
-    GaiaLandSale: sale.address,
-    GaiaCountryMarket: market.address,
-    ERC6551Registry: CANONICAL_REGISTRY,
-  },
+  contracts,
   admin,
-  treasury: getAddress(gaia.treasury as string),
+  treasury: gaia.treasury as string,
   auction: {
-    startTime: Number(gaia.startTime),
-    endTime: Number(gaia.endTime),
-    maxEndTime: Number(gaia.maxEndTime),
+    startTime: gaia.startTime as bigint,
+    endTime: gaia.endTime as bigint,
+    maxEndTime: gaia.maxEndTime as bigint,
   },
-};
-fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
-fs.writeFileSync(OUT_FILE, `${JSON.stringify(out, bigintReplacer, 2)}\n`);
-
-const iso = (s: number) => new Date(s * 1000).toISOString();
-console.log(`
-Gaia is deployed on chain ${chainId} (from block ${out.deployBlock}).
-${Object.entries(out.contracts)
-  .map(([name, address]) => `  ${name.padEnd(20)} ${address}`)
-  .join('\n')}
-  admin                ${out.admin}
-  treasury             ${out.treasury}
-  auction start        ${iso(out.auction.startTime)}
-  auction end          ${iso(out.auction.endTime)} (max ${iso(out.auction.maxEndTime)})
-Addresses: ${OUT_FILE}`);
+});
 
 function readState(): State | undefined {
   if (!fs.existsSync(STATE_FILE)) return undefined;

@@ -1630,6 +1630,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@noble/ciphers@npm:2.4.0":
+  version: 2.4.0
+  resolution: "@noble/ciphers@npm:2.4.0"
+  checksum: 10c0/f8c0cfec0c96554a379385e0a851e4f4eb3ceb1ac645885d8f94f6e75b8d56233e4a434413cb2bf37ec08960cc05dad1ddf98d25311e990ea6505c56a1c1ca95
+  languageName: node
+  linkType: hard
+
 "@noble/curves@npm:1.2.0":
   version: 1.2.0
   resolution: "@noble/curves@npm:1.2.0"
@@ -1757,6 +1764,13 @@ __metadata:
   version: 2.2.0
   resolution: "@noble/hashes@npm:2.2.0"
   checksum: 10c0/cad8630c504d6b9271984f685cd0af9101b40988fc2dfbe17ccdf068a9941f95cc5c9957d89e9ca4b7ca94c15cb35f93510c5d53a09fbcc83ee503b93d0a1034
+  languageName: node
+  linkType: hard
+
+"@noble/hashes@npm:2.4.0":
+  version: 2.4.0
+  resolution: "@noble/hashes@npm:2.4.0"
+  checksum: 10c0/f5820a38c52886073a69722a030688ad188bbacb822d01554545371259961c2b916266c57c013c2ce5a0d78aec977142fc68fd2a79be4c97b0644fcee9bb35f6
   languageName: node
   linkType: hard
 
@@ -1892,6 +1906,22 @@ __metadata:
     "@nomicfoundation/hardhat-verify": ^3.0.0
     hardhat: ^3.8.0
   checksum: 10c0/49fc358cfa56ed5d6b9b644d25f8f650e745b7e17ec77770a22ae5465203e8b71d0a1dd34fbf98e1472a9c1da030604caaf2e40228ee47d4f242007d0529677a
+  languageName: node
+  linkType: hard
+
+"@nomicfoundation/hardhat-keystore@npm:^3":
+  version: 3.1.2
+  resolution: "@nomicfoundation/hardhat-keystore@npm:3.1.2"
+  dependencies:
+    "@noble/ciphers": "npm:2.4.0"
+    "@noble/hashes": "npm:2.4.0"
+    "@nomicfoundation/hardhat-errors": "npm:^3.0.15"
+    "@nomicfoundation/hardhat-utils": "npm:^5.0.0"
+    "@nomicfoundation/hardhat-zod-utils": "npm:^3.0.5"
+    zod: "npm:^3.23.8"
+  peerDependencies:
+    hardhat: ^3.13.0
+  checksum: 10c0/9c28328838b02ab8638c3f728c44680aeef8a238729af881119bd1c843a5731a0516248232d2422f91ded140d12e2ca06978971eb1e03887e3843e2aa7f384c7
   languageName: node
   linkType: hard
 
@@ -6666,6 +6696,7 @@ __metadata:
     "@eslint/js": "npm:^9.26.0"
     "@nomicfoundation/hardhat-ignition": "npm:^3"
     "@nomicfoundation/hardhat-ignition-viem": "npm:^3"
+    "@nomicfoundation/hardhat-keystore": "npm:^3"
     "@nomicfoundation/hardhat-mocha": "npm:^4"
     "@nomicfoundation/hardhat-network-helpers": "npm:^3"
     "@nomicfoundation/hardhat-verify": "npm:^3"

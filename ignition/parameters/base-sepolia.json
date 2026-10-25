@@ -1,0 +1,17 @@
+{
+  "GaiaModule": {
+    "registry": "0x000000006551c19487814612e58FE06813775758",
+    "extensionWindow": "900n",
+    "minBidPerSquareWei": "10000000000000n",
+    "minBidIncrementBps": "500n",
+    "minShapeSquares": "1n",
+    "maxShapeSquares": "200n",
+    "maxShapeAspectRatio": "10n"
+  },
+  "GaiaLandSaleModule": {
+    "startPrice": "10000000000000000n",
+    "endPrice": "1000000000000000n",
+    "holdDuration": "600n",
+    "dropDuration": "1800n"
+  }
+}
