@@ -30,6 +30,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import {
+  BaseError,
+  ContractFunctionRevertedError,
   type PublicClient,
   createPublicClient,
   createWalletClient,
@@ -344,5 +346,70 @@ describe.skipIf(!hasAnvil)('server against Anvil', { timeout: 30_000 }, () => {
     const own = await bidLikeTheApp(9, rect(14150, 17988, 2, 5));
     expect([own.newCount, own.ownCount]).toEqual([2, 8]);
     expect(own.total).toBe(2n * rules.minBidPerSquareWei);
+  });
+
+  it('stops a bid with an old total in the simulation after a different bid on its squares', async () => {
+    const auctionRules = (await get<{ rules: { minBidPerSquareWei: string; minBidIncrementBps: number } }>('/auction'))
+      .rules;
+    const rules = {
+      minBidPerSquareWei: BigInt(auctionRules.minBidPerSquareWei),
+      minBidIncrementBps: BigInt(auctionRules.minBidIncrementBps),
+    };
+    const area = { south: 14190, north: 14191, west: 17950, east: 17952 };
+    const squares = rect(14190, 17950, 2, 3);
+    const alice = mnemonicToAccount(MNEMONIC, { addressIndex: 6 }).address;
+    // The total of the app for the selection, from the snapshot data.
+    const appTotal = async () => {
+      const snapshot = await get<ViewportSnapshot>(`/bids?${query(area)}`);
+      const bids = new Map<number, SelectionBid>(
+        snapshot.bids.map(b => [b.squareId, { shapeId: b.shapeId, bidder: b.bidder, amount: BigInt(b.amount) }]),
+      );
+      return priceSelection(
+        squares.map(unpackSquare),
+        id => bids.get(id),
+        () => true,
+        rules,
+        { ownAddress: alice },
+      );
+    };
+    const simulate = (value: bigint) =>
+      client.simulateContract({
+        address: deployment.contracts.GaiaAuction,
+        abi: gaiaAuctionAbi,
+        functionName: 'bidOnShape',
+        args: [squares, 0n, false],
+        value,
+        account: alice,
+      });
+
+    const before = await appTotal();
+    expect(before.total).toBe(6n * rules.minBidPerSquareWei);
+
+    // A second account bids on one square of the selection after the app showed the total.
+    const receipt = await bid(7, [squares[0]], rules.minBidPerSquareWei);
+    const [event] = parseEventLogs({ abi: gaiaAuctionAbi, eventName: 'ShapeBid', logs: receipt.logs });
+    await until(
+      async () =>
+        (await get<ViewportSnapshot>(`/bids?${query(area)}`)).bids.some(
+          b => b.shapeId === Number(event.args.shapeId),
+        ) || undefined,
+      'the server indexes the bid',
+    );
+    const after = await appTotal();
+    expect(after.total).toBeGreaterThan(before.total);
+
+    // The old total fails in the simulation with the new total of the app as `required`.
+    const error = await simulate(before.total).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(BaseError);
+    const reverted = (error as BaseError).walk(e => e instanceof ContractFunctionRevertedError);
+    expect(reverted).toBeInstanceOf(ContractFunctionRevertedError);
+    expect((reverted as ContractFunctionRevertedError).data?.errorName).toBe('InsufficientValue');
+    expect((reverted as ContractFunctionRevertedError).data?.args).toEqual([before.total, after.total]);
+
+    // The new total passes.
+    await expect(simulate(after.total)).resolves.toBeDefined();
   });
 });
