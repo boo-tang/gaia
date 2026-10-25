@@ -65,11 +65,13 @@ const BIDDER_RELOAD_MS = 2_000;
 
 /**
  * The view of one bidder (`GET /bidder/:address`): their shapes, history and refund. It loads
- * again after each stream message that can change the refund (at most once each 2 s). After a
- * transaction of the bidder, invalidate `bidderKey(address)`.
+ * again after each stream message that can change the refund (at most once each 2 s), and every
+ * 30 s while the stream is not open. After a transaction of the bidder, invalidate
+ * `bidderKey(address)`.
  */
 export const useBidder = (address: Address | undefined) => {
   const queryClient = useQueryClient();
+  const streamOpen = useStreamState() === 'open';
 
   useEffect(() => {
     if (address === undefined) {
@@ -105,6 +107,7 @@ export const useBidder = (address: Address | undefined) => {
     queryKey: bidderKey(address),
     queryFn: () => apiClient.getBidder(address as Address),
     enabled: address !== undefined,
+    refetchInterval: streamOpen ? false : 30_000,
     retry: retryServerErrors,
   });
 };
