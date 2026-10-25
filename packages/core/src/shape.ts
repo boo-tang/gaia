@@ -48,9 +48,11 @@ const normLng = (lng: number, refLng: number) => (lng + LNG_COLUMNS + LNG_ORIGIN
 
 const isUint16 = (value: number) => Number.isInteger(value) && value >= 0 && value < 65536;
 
-// The west edge of the shape is the column after the largest gap between occupied columns. The
-// gap that wraps around the antimeridian is included.
-const westEdgeLng = (locs: readonly Square[]): number => {
+/**
+ * The west edge of a set of squares: the column after the largest gap between occupied columns.
+ * The gap that wraps around the antimeridian is included. `locs` must not be empty.
+ */
+export const westEdgeLng = (locs: readonly Square[]): number => {
   const lngs = [...new Set(locs.map(loc => loc.lng))].sort((a, b) => a - b);
   let west = lngs[0];
   let largestGap = lngs[0] + LNG_COLUMNS - lngs[lngs.length - 1];
