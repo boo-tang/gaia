@@ -2,7 +2,7 @@
 // the transaction, the receipt or the error.
 import { formatEther } from 'viem';
 
-import { txUrl } from '../tx/explorer';
+import { TxLink } from '../tx/TxLink';
 import type { Bid } from './useBid';
 
 const eth = (wei: bigint) => `${formatEther(wei)} ETH`;
@@ -11,15 +11,6 @@ const BUTTON_TEXT: Record<string, string> = {
   simulating: 'Checking the bid…',
   signing: 'Confirm in your wallet…',
   confirming: 'Waiting for the transaction…',
-};
-
-const TxLink = ({ hash }: { hash: `0x${string}` }) => {
-  const url = txUrl(hash);
-  return url === undefined ? undefined : (
-    <a href={url} target="_blank" rel="noreferrer">
-      View the transaction
-    </a>
-  );
 };
 
 /** The line below the button. */

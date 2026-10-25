@@ -1,5 +1,13 @@
 // A small typed client for the Gaia server API. The types come from `packages/core` (api.ts).
-import { type AuctionResponse, type EventId, type Viewport, type ViewportSnapshot, formatEventId } from '@gaia/core';
+import {
+  type Address,
+  type AuctionResponse,
+  type BidderView,
+  type EventId,
+  type Viewport,
+  type ViewportSnapshot,
+  formatEventId,
+} from '@gaia/core';
 
 /** The server answered with a status that is not 2xx. */
 export class ApiError extends Error {
@@ -35,6 +43,8 @@ export interface ApiClient {
   getAuction: () => Promise<AuctionResponse>;
   /** All bids in `viewport`. More bids than the server limit: an `ApiError` with status 400. */
   getBids: (viewport: Viewport) => Promise<ViewportSnapshot>;
+  /** The shapes, the history and the refund of one bidder. */
+  getBidder: (address: Address) => Promise<BidderView>;
   /** The URL of the live stream (SSE), after the event `after` (none: from the start). */
   streamUrl: (after?: EventId) => string;
 }
@@ -61,6 +71,7 @@ export const createApiClient = (
     getAuction: () => getJson<AuctionResponse>('/auction'),
     getBids: ({ south, north, west, east }) =>
       getJson<ViewportSnapshot>(`/bids?south=${south}&north=${north}&west=${west}&east=${east}`),
+    getBidder: address => getJson<BidderView>(`/bidder/${address}`),
     streamUrl: after => `${root}/stream${after === undefined ? '' : `?after=${formatEventId(after)}`}`,
   };
 };

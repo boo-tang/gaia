@@ -32,6 +32,14 @@ describe('createApiClient', () => {
     expect(fetchFn).toHaveBeenCalledWith('/api/auction', { headers: { accept: 'application/json' } });
   });
 
+  it('gets the view of a bidder', async () => {
+    const bidder = '0x00000000000000000000000000000000000000a1';
+    const view = { bidder, shapes: [], refund: '5', history: [] };
+    const fetchFn = fetchAnswer(200, JSON.stringify(view));
+    await expect(createApiClient('/api', fetchFn).getBidder(bidder)).resolves.toEqual(view);
+    expect(fetchFn.mock.calls[0][0]).toBe(`/api/bidder/${bidder}`);
+  });
+
   it('removes the last / of the base URL', async () => {
     const fetchFn = fetchAnswer(200, JSON.stringify(auction));
     await createApiClient('https://api.example.com//', fetchFn).getAuction();

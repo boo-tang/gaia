@@ -5,16 +5,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
 import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
 
-import { useAuction } from '../api/queries';
+import { bidderKey, useAuction } from '../api/queries';
 import { describeAuction } from '../components/auction-status';
 import { deployment, gaiaChain } from '../config/app-config';
 import { useNowSeconds } from '../hooks/useNowSeconds';
 import { type BidInput, useSelectionBid } from '../selection/useSelection';
 import { type TxState, runTx } from '../tx/tx-flow';
 import { type BidAuctionState, type BidCall, bidDisabledReason, bidFlow, bidSteps } from './bid-flow';
-
-/** The query key of the bidder view of `GET /bidder/:address`. */
-export const bidderKey = (address: string | undefined) => ['bidder', address?.toLowerCase()];
 
 export interface Bid {
   state: TxState<bigint>;

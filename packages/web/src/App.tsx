@@ -1,11 +1,11 @@
-// The app: the layout with its parts. The bidder view replaces its placeholder.
+// The app: the layout with its parts.
 import type { Square } from '@gaia/core';
 
 import { useCallback } from 'react';
 
+import { BidderPanel } from './bidder/BidderPanel';
 import { AuctionStatusBar } from './components/AuctionStatusBar';
 import { NetworkGuard } from './components/NetworkGuard';
-import { Placeholder } from './components/Placeholder';
 import { useIsPhone } from './hooks/useIsPhone';
 import { AppLayout } from './layout/AppLayout';
 import { LazyMap } from './map/LazyMap';
@@ -43,13 +43,7 @@ export const App = () => {
         />
       }
       bidPanel={<SelectionPanel />}
-      bidderView={
-        <Placeholder title="Your bids">
-          <button type="button" disabled>
-            Withdraw
-          </button>
-        </Placeholder>
-      }
+      bidderView={<BidderPanel />}
     />
   );
 };
