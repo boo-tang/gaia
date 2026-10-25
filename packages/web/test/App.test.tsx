@@ -111,7 +111,7 @@ afterEach(() => {
   selectionStore.clear();
   selectionStore.setTool('pan');
   selectionStore.setPriceMode('minimum');
-  selectionStore.setPricePerSquare(undefined);
+  selectionStore.setPriceText('');
   map.props = undefined;
   cleanup();
   vi.unstubAllGlobals();
@@ -202,6 +202,26 @@ describe('App', () => {
     expect(screen.getByText('Total: 1 ETH')).toBeTruthy();
     fireEvent.change(input, { target: { value: '0.01' } });
     expect(screen.getByText('Total: 2 ETH')).toBeTruthy();
+  });
+
+  it('keeps the typed price when the bid panel mounts again', async () => {
+    stubScreen(false);
+    const { unmount } = renderApp();
+    await screen.findByText(/A shape has/);
+    act(() => {
+      map.props?.onSelect(rectangleSquares(OXFORD));
+    });
+    await screen.findByText('Total: 0.204 ETH');
+    fireEvent.click(screen.getByRole('radio', { name: 'My price per square' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Price per square in ETH' }), { target: { value: '0.01' } });
+    expect(screen.getByText('Total: 2 ETH')).toBeTruthy();
+
+    // A new panel (for example after a resize to phone width and back) shows the same price.
+    unmount();
+    renderApp();
+    const input = await screen.findByRole('textbox', { name: 'Price per square in ETH' });
+    expect((input as HTMLInputElement).value).toBe('0.01');
+    expect(await screen.findByText('Total: 2 ETH')).toBeTruthy();
   });
 
   it('switches the tool with the keys H and R', async () => {

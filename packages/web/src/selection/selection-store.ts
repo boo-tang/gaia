@@ -5,6 +5,8 @@
 // only place that has them).
 import { type Square, packSquare } from '@gaia/core';
 
+import { parseEther } from 'viem';
+
 /**
  * The app does not keep more squares in the selection. A memory and speed limit, not a shape
  * rule: `maxShapeSquares` of the contract is much lower.
@@ -21,9 +23,21 @@ export interface SelectionState {
   squareIds: ReadonlySet<number>;
   tool: ToolId;
   priceMode: PriceMode;
-  /** Wei. Undefined while the input has no valid price. Used only in `perSquare` mode. */
+  /** The price in ETH as the user typed it. The input of the bid panel shows it. */
+  priceText: string;
+  /** Wei, from `priceText`. Undefined while the text is not a valid price. Used only in `perSquare` mode. */
   pricePerSquare?: bigint;
 }
+
+/** The price that the user typed, in wei. Undefined when it is not a positive ETH amount. */
+export const parsePrice = (text: string): bigint | undefined => {
+  try {
+    const wei = parseEther(text.trim());
+    return wei > 0n ? wei : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 export interface SelectionStore {
   getState: () => SelectionState;
@@ -37,11 +51,12 @@ export interface SelectionStore {
   replace: (squareIds: readonly number[]) => void;
   clear: () => void;
   setPriceMode: (mode: PriceMode) => void;
-  setPricePerSquare: (wei: bigint | undefined) => void;
+  /** Sets the typed price and its value in wei. */
+  setPriceText: (text: string) => void;
 }
 
 export const createSelectionStore = (): SelectionStore => {
-  let state: SelectionState = { squareIds: new Set(), tool: 'pan', priceMode: 'minimum' };
+  let state: SelectionState = { squareIds: new Set(), tool: 'pan', priceMode: 'minimum', priceText: '' };
   const listeners = new Set<() => void>();
 
   const set = (change: Partial<SelectionState>) => {
@@ -94,6 +109,6 @@ export const createSelectionStore = (): SelectionStore => {
       }
     },
     setPriceMode: priceMode => set({ priceMode }),
-    setPricePerSquare: pricePerSquare => set({ pricePerSquare }),
+    setPriceText: priceText => set({ priceText, pricePerSquare: parsePrice(priceText) }),
   };
 };

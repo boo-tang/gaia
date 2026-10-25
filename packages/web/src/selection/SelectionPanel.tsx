@@ -2,8 +2,8 @@
 // simulation and the wallet) comes with the bid flow; it reads useSelectionBid.
 import { type AuctionRules, rectangleSize, selectionExtent } from '@gaia/core';
 
-import { useMemo, useState } from 'react';
-import { formatEther, parseEther } from 'viem';
+import { useMemo } from 'react';
+import { formatEther } from 'viem';
 import { useAccount } from 'wagmi';
 
 import { useAuction } from '../api/queries';
@@ -14,16 +14,6 @@ const eth = (wei: bigint) => `${formatEther(wei)} ETH`;
 const count = (n: number, word: string) => `${n.toLocaleString('en-US')} ${word}${n === 1 ? '' : 's'}`;
 const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
 
-/** The price that the user typed, in wei. Undefined when it is not a positive ETH amount. */
-export const parsePrice = (text: string): bigint | undefined => {
-  try {
-    const wei = parseEther(text.trim());
-    return wei > 0n ? wei : undefined;
-  } catch {
-    return undefined;
-  }
-};
-
 const Limits = ({ rules }: { rules: AuctionRules }) => (
   <p className="bid-limits">
     A shape has {rules.minShapeSquares.toLocaleString('en-US')} to {rules.maxShapeSquares.toLocaleString('en-US')}{' '}
@@ -32,11 +22,10 @@ const Limits = ({ rules }: { rules: AuctionRules }) => (
 );
 
 export const SelectionPanel = () => {
-  const { priceMode, pricePerSquare } = useSelection(state => state);
+  const { priceMode, priceText, pricePerSquare } = useSelection(state => state);
   const bid = useSelectionBid();
   const rules = useAuction().data?.rules;
   const { address } = useAccount();
-  const [priceText, setPriceText] = useState('');
   const { priced } = bid;
 
   const extent = useMemo(() => {
@@ -59,10 +48,7 @@ export const SelectionPanel = () => {
     );
   }, [priced]);
 
-  const changePrice = (text: string) => {
-    setPriceText(text);
-    selectionStore.setPricePerSquare(parsePrice(text));
-  };
+  const changePrice = (text: string) => selectionStore.setPriceText(text);
 
   return (
     <section className="bid-panel" aria-label="Bid">

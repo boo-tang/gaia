@@ -3,7 +3,7 @@ import { packSquare, rectangleSquares } from '@gaia/core';
 import { describe, expect, it, vi } from 'vitest';
 
 import { rectangleSession } from '../src/selection/drag';
-import { MAX_SELECTION_SQUARES, createSelectionStore } from '../src/selection/selection-store';
+import { MAX_SELECTION_SQUARES, createSelectionStore, parsePrice } from '../src/selection/selection-store';
 import { TOOLS, toolById } from '../src/selection/tools';
 
 describe('createSelectionStore', () => {
@@ -12,6 +12,7 @@ describe('createSelectionStore', () => {
     expect(state.squareIds.size).toBe(0);
     expect(state.tool).toBe('pan');
     expect(state.priceMode).toBe('minimum');
+    expect(state.priceText).toBe('');
     expect(state.pricePerSquare).toBeUndefined();
   });
 
@@ -64,8 +65,24 @@ describe('createSelectionStore', () => {
     const store = createSelectionStore();
     store.setTool('rectangle');
     store.setPriceMode('perSquare');
-    store.setPricePerSquare(5n);
-    expect(store.getState()).toMatchObject({ tool: 'rectangle', priceMode: 'perSquare', pricePerSquare: 5n });
+    store.setPriceText('0.002');
+    expect(store.getState()).toMatchObject({
+      tool: 'rectangle',
+      priceMode: 'perSquare',
+      priceText: '0.002',
+      pricePerSquare: 2_000_000_000_000_000n,
+    });
+    // A text that is not a price keeps the text and has no value.
+    store.setPriceText('0.0.1');
+    expect(store.getState()).toMatchObject({ priceText: '0.0.1', pricePerSquare: undefined });
+  });
+
+  it('reads only positive ETH amounts as a price', () => {
+    expect(parsePrice(' 1.5 ')).toBe(1_500_000_000_000_000_000n);
+    expect(parsePrice('0')).toBeUndefined();
+    expect(parsePrice('-1')).toBeUndefined();
+    expect(parsePrice('')).toBeUndefined();
+    expect(parsePrice('abc')).toBeUndefined();
   });
 });
 
