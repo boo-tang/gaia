@@ -3,7 +3,7 @@
 Code that the web app (`packages/web`), the server (`packages/server`) and the root scripts share. No React and no map library.
 
 - `grid`: the square grid. A square is its south-west corner in 1/100 degree. Longitude wraps. Packed key `(lat << 16) | lng`.
-- `shape`: the shape rules and the prices of `GaiaAuction`. `validateShape` returns the name of the contract error.
+- `shape`: the square order, the packing and the prices of `GaiaAuction`. The shape rules are only in the contract: the simulation of `bidOnShape` checks them.
 - `settlement`: the chunk rule of `settleShape`. A chunk always continues to the end of its row.
 - `deployment`: `parseDeployment` checks the JSON of a deployment file (`deployments/local.json`, and the same format for Base). It does not read files, so it works in Node and in the browser.
 - `api`: the types of the server API (auction state, viewport snapshot, stream messages). First draft.
