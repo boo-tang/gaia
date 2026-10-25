@@ -224,6 +224,38 @@ describe('App', () => {
     expect(await screen.findByText('Total: 2 ETH')).toBeTruthy();
   });
 
+  it('loads the prices of a new selection after a failed load', async () => {
+    stubScreen(false);
+    // The bids store of the app keeps its data between tests: this test uses squares that no other test loads.
+    const area = { south: 15000, north: 15001, west: 100, east: 101 };
+    let failNext = true;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.includes('/bids') && failNext) {
+          failNext = false;
+          return Promise.resolve(new Response('{"error":"Zoom in."}', { status: 400 }));
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(url.includes('/bids') ? snapshotFor(url) : auction), { status: 200 }),
+        );
+      }),
+    );
+    renderApp();
+    await screen.findByText(/A shape has/);
+    act(() => {
+      map.props?.onSelect(rectangleSquares(area));
+    });
+    expect(await screen.findByText(/Cannot load the prices of 4 squares/)).toBeTruthy();
+
+    // A larger selection has a new missing area: it loads with no click on "Try again".
+    act(() => {
+      map.props?.onSelect([{ lat: 15002, lng: 100 }]);
+    });
+    expect(await screen.findByText(/^Total:/)).toBeTruthy();
+    expect(screen.queryByText(/Cannot load the prices/)).toBeNull();
+  });
+
   it('switches the tool with the keys H and R', async () => {
     stubScreen(false);
     renderApp();

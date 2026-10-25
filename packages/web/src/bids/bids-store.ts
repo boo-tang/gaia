@@ -4,7 +4,7 @@
 import type { EventId, StreamMessage, Viewport } from '@gaia/core';
 
 import { type ApiClient, ApiError } from '../api/api-client';
-import { viewportContains } from './areas';
+import { sameViewport, viewportContains } from './areas';
 import { type BidsAction, type BidsState, initialBidsState, reduceBids } from './bids-reducer';
 
 /**
@@ -21,8 +21,11 @@ export interface BidsView {
   loading: boolean;
   /** The last snapshot request failed after its retries (network or server error). */
   serverError: boolean;
-  /** The last `loadArea` request failed (too many bids, or a network or server error). */
-  selectionError: boolean;
+  /**
+   * The area of the last `loadArea` request when it failed (too many bids, or a network or server
+   * error). `loadArea` does not ask for this area again, except with `retry`.
+   */
+  selectionError?: Viewport;
   stream: StreamState;
 }
 
@@ -52,9 +55,9 @@ export interface BidsStore {
   /**
    * Makes sure that the bids of `viewport` are loaded, for an area that is not the map view (the
    * selection). It does not change the map viewport of the store, the eviction area or `tooMany`.
-   * A map request goes first.
+   * A map request goes first. After a failure it asks for the same area again only with `retry`.
    */
-  loadArea: (viewport: Viewport) => void;
+  loadArea: (viewport: Viewport, options?: { retry?: boolean }) => void;
   /** Each stream message, after the store applied it. */
   onMessage: (listener: (message: StreamMessage) => void) => () => void;
   /** Closes the stream and stops all timers. */
@@ -78,7 +81,6 @@ export const createBidsStore = ({
     tooMany: false,
     loading: false,
     serverError: false,
-    selectionError: false,
     stream: 'idle',
   };
   const listeners = new Set<() => void>();
@@ -116,9 +118,6 @@ export const createBidsStore = ({
     }
   };
 
-  const sameArea = (a: Viewport, b: Viewport) =>
-    a.south === b.south && a.north === b.north && a.west === b.west && a.east === b.east;
-
   const isLoaded = (viewport: Viewport) => view.data.snapshotAreas.some(area => viewportContains(area, viewport));
 
   const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -149,7 +148,7 @@ export const createBidsStore = ({
   const load = async (viewport: Viewport, mapView = true) => {
     inFlight = true;
     loadingArea = mapView ? undefined : viewport;
-    setView(mapView ? { loading: true } : { loading: true, selectionError: false });
+    setView(mapView ? { loading: true } : { loading: true, selectionError: undefined });
     // After a reorg during this request, the reducer ignores the answer (`BidsState.reorgCount`).
     const reorgCount = view.data.reorgCount;
     for (let attempt = 0; ; attempt++) {
@@ -175,7 +174,7 @@ export const createBidsStore = ({
           return;
         }
         if (!mapView && error instanceof ApiError && error.status === 400) {
-          setView({ selectionError: true });
+          setView({ selectionError: viewport });
           break;
         }
         if (error instanceof ApiError && error.status === 400) {
@@ -187,7 +186,7 @@ export const createBidsStore = ({
         }
         const retryable = !(error instanceof ApiError && error.status < 500);
         if (!retryable || attempt >= SNAPSHOT_RETRIES - 1) {
-          setView(mapView ? { serverError: true } : { selectionError: true });
+          setView(mapView ? { serverError: true } : { selectionError: viewport });
           break;
         }
         await wait(1000 * 2 ** attempt);
@@ -226,14 +225,17 @@ export const createBidsStore = ({
       }
       return;
     }
-    if (tooManyArea !== undefined && sameArea(tooManyArea, viewport)) {
+    if (tooManyArea !== undefined && sameViewport(tooManyArea, viewport)) {
       return;
     }
     request(viewport);
   };
 
-  const loadArea = (viewport: Viewport) => {
-    if (isLoaded(viewport) || (loadingArea !== undefined && sameArea(loadingArea, viewport))) {
+  const loadArea = (viewport: Viewport, { retry = false } = {}) => {
+    if (isLoaded(viewport) || (loadingArea !== undefined && sameViewport(loadingArea, viewport))) {
+      return;
+    }
+    if (!retry && view.selectionError !== undefined && sameViewport(view.selectionError, viewport)) {
       return;
     }
     if (inFlight) {

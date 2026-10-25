@@ -14,7 +14,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { useAccount } from 'wagmi';
 
 import { useAuction } from '../api/queries';
-import { viewportHolds } from '../bids/areas';
+import { sameViewport, viewportHolds } from '../bids/areas';
 import type { BidsState } from '../bids/bids-reducer';
 import { bidsStore, useBidsSelector } from '../bids/useBids';
 import { type SelectionState, createSelectionStore } from './selection-store';
@@ -102,13 +102,15 @@ export const useSelectionBid = (): BidInput => {
   const { priced, missing } = rules === undefined ? ({} as Computed) : compute(selection, data, address, rules);
   const missingKey = missing === undefined ? '' : `${missing.south},${missing.north},${missing.west},${missing.east}`;
 
+  // The store does not ask again for an area that failed: "Try again" does. A different area loads.
   useEffect(() => {
-    if (missing !== undefined && !selectionError) {
+    if (missing !== undefined) {
       bidsStore.loadArea(missing);
     }
     // `missingKey` holds the values of `missing`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [missingKey, selectionError]);
+  }, [missingKey]);
+  const failed = missing !== undefined && selectionError !== undefined && sameViewport(missing, selectionError);
 
   const priceValid =
     selection.priceMode === 'minimum' || (selection.pricePerSquare !== undefined && priced?.priceTooLow === false);
@@ -120,11 +122,11 @@ export const useSelectionBid = (): BidInput => {
     floorPerSquare: priced?.floorPerSquare ?? 0n,
     total: ready ? priced.total : undefined,
     priced,
-    loading: missing !== undefined && !selectionError,
-    loadFailed: missing !== undefined && selectionError,
+    loading: missing !== undefined && !failed,
+    loadFailed: failed,
     retry: () => {
       if (missing !== undefined) {
-        bidsStore.loadArea(missing);
+        bidsStore.loadArea(missing, { retry: true });
       }
     },
   };

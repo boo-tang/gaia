@@ -190,12 +190,32 @@ describe('createBidsStore', () => {
     await settle();
     store.loadArea(OTHER);
     await settle();
-    expect(store.getView()).toMatchObject({ selectionError: true, tooMany: false, serverError: false });
-    // A new call tries again.
+    expect(store.getView()).toMatchObject({ selectionError: OTHER, tooMany: false, serverError: false });
+    // The same area is not asked again, except with `retry`.
     store.loadArea(OTHER);
-    expect(store.getView().selectionError).toBe(false);
+    await settle();
+    expect(getBids).toHaveBeenCalledTimes(2);
+    store.loadArea(OTHER, { retry: true });
+    expect(store.getView().selectionError).toBeUndefined();
     await settle();
     expect(getBids).toHaveBeenCalledTimes(3);
+  });
+
+  it('loads a different area after a failed loadArea', async () => {
+    const next: Viewport = { ...OTHER, north: OTHER.north + 1 };
+    getBids
+      .mockResolvedValueOnce(snapshot(10, AREA))
+      .mockRejectedValueOnce(new ApiError('/bids', 400, {}))
+      .mockResolvedValueOnce(snapshot(11, next));
+    store.requestArea(AREA);
+    await settle();
+    store.loadArea(OTHER);
+    await settle();
+    expect(store.getView().selectionError).toEqual(OTHER);
+    store.loadArea(next);
+    await settle();
+    expect(getBids.mock.calls.map(([viewport]) => viewport)).toEqual([AREA, OTHER, next]);
+    expect(store.getView().selectionError).toBeUndefined();
   });
 
   it('does not evict the bids of the map view after a loadArea snapshot', async () => {

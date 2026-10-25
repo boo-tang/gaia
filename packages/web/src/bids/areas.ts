@@ -35,3 +35,7 @@ export const viewportContains = (outer: Viewport, inner: Viewport) => {
     outerRanges.some(([outerFrom, outerTo]) => from >= outerFrom && to <= outerTo),
   );
 };
+
+/** True when the two viewports have the same rows and columns. */
+export const sameViewport = (a: Viewport, b: Viewport) =>
+  a.south === b.south && a.north === b.north && a.west === b.west && a.east === b.east;
