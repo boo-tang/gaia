@@ -10,6 +10,7 @@ import {
   type BidderView,
   type Deployment,
   type EventId,
+  type SelectionBid,
   type ShapeBidMessage,
   type StreamMessage,
   type ViewportSnapshot,
@@ -18,6 +19,8 @@ import {
   packSquare,
   parseDeployment,
   parseEventId,
+  priceSelection,
+  unpackSquare,
 } from '@gaia/core';
 
 import { type ChildProcess, execFile, spawn, spawnSync } from 'node:child_process';
@@ -26,7 +29,15 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { type PublicClient, createPublicClient, createWalletClient, getAddress, http, zeroAddress } from 'viem';
+import {
+  type PublicClient,
+  createPublicClient,
+  createWalletClient,
+  getAddress,
+  http,
+  parseEventLogs,
+  zeroAddress,
+} from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
 import { anvil } from 'viem/chains';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -104,12 +115,12 @@ describe.skipIf(!hasAnvil)('server against Anvil', { timeout: 30_000 }, () => {
       chain: anvil,
       transport: http(rpcUrl),
     });
-  const bid = async (index: number, squares: number[], value: bigint, raiseOwnSquares = false) => {
+  const bid = async (index: number, squares: number[], value: bigint, raiseOwnSquares = false, floorPerSquare = 0n) => {
     const hash = await wallet(index).writeContract({
       address: deployment.contracts.GaiaAuction,
       abi: gaiaAuctionAbi,
       functionName: 'bidOnShape',
-      args: [squares, 0n, raiseOwnSquares],
+      args: [squares, floorPerSquare, raiseOwnSquares],
       value,
     });
     const receipt = await client.waitForTransactionReceipt({ hash });
@@ -277,5 +288,61 @@ describe.skipIf(!hasAnvil)('server against Anvil', { timeout: 30_000 }, () => {
     }
     // The dropped shape 7 is not on the chain either.
     expect(await client.readContract({ ...auction, functionName: 'shapeBidder', args: [7n] })).toBe(zeroAddress);
+  });
+
+  it('takes exactly the total of the app prices from the snapshot data', async () => {
+    const auctionRules = (await get<{ rules: { minBidPerSquareWei: string; minBidIncrementBps: number } }>('/auction'))
+      .rules;
+    const rules = {
+      minBidPerSquareWei: BigInt(auctionRules.minBidPerSquareWei),
+      minBidIncrementBps: BigInt(auctionRules.minBidIncrementBps),
+    };
+    const area = { south: 14150, north: 14151, west: 17988, east: 17992 };
+    const account = (index: number) => mnemonicToAccount(MNEMONIC, { addressIndex: index }).address;
+
+    // The bid of the app: the prices from GET /bids, the total as `msg.value`, no margin.
+    const bidLikeTheApp = async (index: number, squares: number[], pricePerSquare?: bigint) => {
+      const snapshot = await get<ViewportSnapshot>(`/bids?${query(area)}`);
+      const bids = new Map<number, SelectionBid>(
+        snapshot.bids.map(b => [b.squareId, { shapeId: b.shapeId, bidder: b.bidder, amount: BigInt(b.amount) }]),
+      );
+      const priced = priceSelection(
+        squares.map(unpackSquare),
+        id => bids.get(id),
+        () => true,
+        rules,
+        {
+          ownAddress: account(index),
+          pricePerSquare,
+        },
+      );
+      expect(priced.priceTooLow).toBe(false);
+      const receipt = await bid(index, priced.packed, priced.total, false, priced.floorPerSquare);
+      const [event] = parseEventLogs({ abi: gaiaAuctionAbi, eventName: 'ShapeBid', logs: receipt.logs });
+      expect(event.args.paid).toBe(priced.total);
+      // Wait until the server has the bid, for the next snapshot.
+      await until(
+        async () =>
+          (await get<ViewportSnapshot>(`/bids?${query(area)}`)).bids.some(
+            b => b.shapeId === Number(event.args.shapeId),
+          ) || undefined,
+        'the server indexes the bid',
+      );
+      return priced;
+    };
+
+    // The minimum bid: all of seed shape 1 (2 x 2, account 3) and four new squares.
+    const minimum = await bidLikeTheApp(8, rect(14150, 17988, 2, 4));
+    expect([minimum.newCount, minimum.outbidCount, minimum.ownCount]).toEqual([4, 4, 0]);
+    expect(minimum.cuts.map(c => c.shapeId)).toEqual([1]);
+
+    // A price per square: twice the highest minimum bid of the same squares.
+    const jump = await bidLikeTheApp(9, rect(14150, 17988, 2, 4), 2n * minimum.minPricePerSquare);
+    expect(jump.costs.every(cost => cost === 2n * minimum.minPricePerSquare)).toBe(true);
+
+    // Own squares cost 0: account 9 adds one new column to its shape.
+    const own = await bidLikeTheApp(9, rect(14150, 17988, 2, 5));
+    expect([own.newCount, own.ownCount]).toEqual([2, 8]);
+    expect(own.total).toBe(2n * rules.minBidPerSquareWei);
   });
 });
