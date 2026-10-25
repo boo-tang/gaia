@@ -18,7 +18,8 @@ export const App = () => {
   const isPhone = useIsPhone();
   const tool = toolById(useSelection(state => state.tool));
   const { priced } = useSelectionBid();
-  const onDragEnd = useCallback((squares: Square[]) => selectionStore.addSquares(squares), []);
+  const onSelect = useCallback((squares: Square[]) => selectionStore.addSquares(squares), []);
+  const onToggle = useCallback((square: Square) => selectionStore.toggle(square), []);
 
   return (
     <AppLayout
@@ -32,7 +33,9 @@ export const App = () => {
         </>
       }
       notices={<NetworkGuard />}
-      map={<LazyMap selection={priced} tool={tool} selectionEnabled={!isPhone} onDragEnd={onDragEnd} />}
+      map={
+        <LazyMap selection={priced} tool={tool} selectionEnabled={!isPhone} onSelect={onSelect} onToggle={onToggle} />
+      }
       bidPanel={<SelectionPanel />}
       bidderView={
         <Placeholder title="Your bids">

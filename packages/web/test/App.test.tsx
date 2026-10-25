@@ -127,8 +127,10 @@ describe('App', () => {
     expect(screen.getByRole('region', { name: 'Map' })).toBeTruthy();
     expect(await screen.findByText('Map view')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Bid' })).toBeTruthy();
-    expect(screen.getByText('Select squares on the map: drag with the rectangle tool (R).')).toBeTruthy();
+    expect(screen.getByText(/^Select squares on the map: click a square/)).toBeTruthy();
     expect(screen.getByText(/A shape has 1 to 1,000 squares/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Bid' }).getAttribute('disabled')).not.toBeNull();
+    expect(screen.getByText(/Bidding is not ready yet/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Withdraw' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Connect Wallet' })).toBeTruthy();
     expect(vi.mocked(fetch)).toHaveBeenCalledWith('/api/auction', expect.anything());
@@ -145,7 +147,7 @@ describe('App', () => {
     expect(map.props?.selectionEnabled).toBe(true);
 
     act(() => {
-      map.props?.onDragEnd(rectangleSquares(OXFORD));
+      map.props?.onSelect(rectangleSquares(OXFORD));
     });
     expect(screen.getByText('200 squares (10 rows, 20 columns)')).toBeTruthy();
     // 199 new squares at 0.001 ETH and Bob's square at 0.004 + 0.001 ETH.
@@ -158,12 +160,22 @@ describe('App', () => {
 
     // A second drag adds squares.
     act(() => {
-      map.props?.onDragEnd([{ lat: 14180, lng: 17800 }] as Square[]);
+      map.props?.onSelect([{ lat: 14180, lng: 17800 }] as Square[]);
+    });
+    expect(screen.getByText('201 squares (11 rows, 20 columns)')).toBeTruthy();
+
+    // A click on a selected square removes it; a click on another square adds it.
+    act(() => {
+      map.props?.onToggle({ lat: 14180, lng: 17800 });
+    });
+    expect(screen.getByText('200 squares (10 rows, 20 columns)')).toBeTruthy();
+    act(() => {
+      map.props?.onToggle({ lat: 14180, lng: 17800 });
     });
     expect(screen.getByText('201 squares (11 rows, 20 columns)')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
-    expect(screen.getByText('Select squares on the map: drag with the rectangle tool (R).')).toBeTruthy();
+    expect(screen.getByText(/^Select squares on the map: click a square/)).toBeTruthy();
   });
 
   it('bids one price per square, not below the highest minimum bid', async () => {
@@ -172,7 +184,7 @@ describe('App', () => {
     await screen.findByText('Map view');
     await screen.findByText(/A shape has/);
     act(() => {
-      map.props?.onDragEnd(rectangleSquares(OXFORD));
+      map.props?.onSelect(rectangleSquares(OXFORD));
     });
     await screen.findByText('Total: 0.204 ETH');
 

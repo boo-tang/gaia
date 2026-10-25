@@ -70,7 +70,10 @@ export const SelectionPanel = () => {
       <ToolPicker />
 
       {bid.squareCount === 0 ? (
-        <p className="bid-summary">Select squares on the map: drag with the rectangle tool (R).</p>
+        <p className="bid-summary">
+          Select squares on the map: click a square, or drag with the rectangle tool (R). A click on a selected square
+          removes it.
+        </p>
       ) : (
         <p className="bid-summary">
           {count(bid.squareCount, 'square')}
@@ -183,10 +186,13 @@ export const SelectionPanel = () => {
         <button type="button" onClick={() => selectionStore.clear()} disabled={bid.squareCount === 0}>
           Clear
         </button>
-        <button type="button" disabled>
+        <button type="button" disabled aria-describedby="bid-not-ready">
           Bid
         </button>
       </div>
+      <p id="bid-not-ready" className="bid-hint">
+        Bidding is not ready yet: it comes in the next version of the app.
+      </p>
     </section>
   );
 };

@@ -35,8 +35,10 @@ export interface MapViewProps {
   tool: SelectionTool;
   /** False on a phone: no selection, a tap shows one square in the readout. */
   selectionEnabled: boolean;
-  /** The end of a drag of a selection tool. Returns false when the selection would be too large. */
-  onDragEnd: (squares: Square[]) => boolean;
+  /** Adds the squares of a drag. Returns false when the selection would be too large. */
+  onSelect: (squares: Square[]) => boolean;
+  /** A click on a square: removes it when it is selected, else adds it. */
+  onToggle: (square: Square) => void;
 }
 
 interface DragPreview {
@@ -83,7 +85,7 @@ const poleInView = (map: MapLibreMap) => {
 const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
 const sameSquare = (a: Square | undefined, b: Square) => a !== undefined && a.lat === b.lat && a.lng === b.lng;
 
-const MapView = ({ selection, tool, selectionEnabled, onDragEnd }: MapViewProps) => {
+const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapViewProps) => {
   const mapRef = useRef<MapRef>(null);
   const requestTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [gaiaStyle, setGaiaStyle] = useState<GaiaStyle>();
@@ -172,7 +174,23 @@ const MapView = ({ selection, tool, selectionEnabled, onDragEnd }: MapViewProps)
     [showDrag],
   );
 
-  // A selection tool: the drag starts on the map and ends at a mouse-up anywhere in the page.
+  const select = useCallback(
+    (squares: Square[]) => {
+      if (!onSelect(squares)) {
+        setTooLarge(true);
+        clearTimeout(tooLargeTimer.current);
+        tooLargeTimer.current = setTimeout(() => setTooLarge(false), TOO_LARGE_NOTICE_MS);
+      }
+    },
+    [onSelect],
+  );
+
+  // Removes the window listeners of the current drag.
+  const endDrag = useRef<() => void>(undefined);
+  useEffect(() => () => endDrag.current?.(), []);
+
+  // A selection tool: the drag starts on the map and ends at a mouse-up anywhere in the page. The
+  // listeners are added here, not in an effect, so a fast click does not end before they exist.
   // Ctrl or Cmd + drag turns the map (MapLibre), so it does not select.
   const onMouseDown = useCallback(
     (event: MapLayerMouseEvent) => {
@@ -180,51 +198,53 @@ const MapView = ({ selection, tool, selectionEnabled, onDragEnd }: MapViewProps)
       if (!selectionEnabled || tool.begin === undefined || button !== 0 || ctrlKey || metaKey) {
         return;
       }
+      endDrag.current?.();
       const session = tool.begin(squareAt(event.lngLat.lat, event.lngLat.lng));
       drag.current = session;
       showDrag(session);
+
+      const stop = () => {
+        window.removeEventListener('mouseup', onMouseUp);
+        window.removeEventListener('keydown', onKeyDown);
+        endDrag.current = undefined;
+        drag.current = undefined;
+        setPreview(undefined);
+      };
+      const onMouseUp = () => {
+        stop();
+        // A drag that stays in one square is a click.
+        const squares = session.squares();
+        if (squares.length === 1) {
+          onToggle(squares[0]);
+        } else {
+          select(squares);
+        }
+      };
+      const onKeyDown = (keyEvent: KeyboardEvent) => {
+        if (keyEvent.key === 'Escape') {
+          stop();
+        }
+      };
+      window.addEventListener('mouseup', onMouseUp);
+      window.addEventListener('keydown', onKeyDown);
+      endDrag.current = stop;
     },
-    [selectionEnabled, tool, showDrag],
+    [selectionEnabled, tool, showDrag, select, onToggle],
   );
 
-  useEffect(() => {
-    if (preview === undefined) {
-      return;
-    }
-    const stop = () => {
-      drag.current = undefined;
-      setPreview(undefined);
-    };
-    const onMouseUp = () => {
-      const session = drag.current;
-      stop();
-      if (session !== undefined && !onDragEnd(session.squares())) {
-        setTooLarge(true);
-        clearTimeout(tooLargeTimer.current);
-        tooLargeTimer.current = setTimeout(() => setTooLarge(false), TOO_LARGE_NOTICE_MS);
-      }
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        stop();
-      }
-    };
-    window.addEventListener('mouseup', onMouseUp);
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('mouseup', onMouseUp);
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [preview !== undefined, onDragEnd]); // eslint-disable-line react-hooks/exhaustive-deps
-
+  // A click with the pan tool selects or deselects the square (MapLibre sends no click after a
+  // pan). A selection tool does it at the mouse-up of its drag. On a phone a tap only shows the
+  // square.
   const onClick = useCallback(
     (event: MapLayerMouseEvent) => {
+      const square = squareAt(event.lngLat.lat, event.lngLat.lng);
       if (!selectionEnabled) {
-        const square = squareAt(event.lngLat.lat, event.lngLat.lng);
         setMarked(old => (sameSquare(old, square) ? undefined : square));
+      } else if (tool.panOnDrag) {
+        onToggle(square);
       }
     },
-    [selectionEnabled],
+    [selectionEnabled, tool, onToggle],
   );
 
   const cells = useMemo<SelectionCell[]>(

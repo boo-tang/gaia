@@ -38,6 +38,19 @@ describe('createSelectionStore', () => {
     expect(store.getState().squareIds.size).toBe(1);
   });
 
+  it('toggles one square, within the cap', () => {
+    const store = createSelectionStore();
+    store.toggle({ lat: 1, lng: 1 });
+    expect(store.getState().squareIds.has(packSquare({ lat: 1, lng: 1 }))).toBe(true);
+    store.toggle({ lat: 1, lng: 1 });
+    expect(store.getState().squareIds.size).toBe(0);
+    store.addSquares(rectangleSquares({ south: 0, north: 99, west: 0, east: MAX_SELECTION_SQUARES / 100 - 1 }));
+    store.toggle({ lat: 5000, lng: 5000 });
+    expect(store.getState().squareIds.size).toBe(MAX_SELECTION_SQUARES);
+    store.toggle({ lat: 0, lng: 0 });
+    expect(store.getState().squareIds.size).toBe(MAX_SELECTION_SQUARES - 1);
+  });
+
   it('clears and replaces the selection', () => {
     const store = createSelectionStore();
     store.addSquares([{ lat: 1, lng: 1 }]);

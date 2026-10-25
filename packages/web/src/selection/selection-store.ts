@@ -31,6 +31,8 @@ export interface SelectionStore {
   setTool: (tool: ToolId) => void;
   /** Adds the squares. Returns false, with no change, when the selection would be too large. */
   addSquares: (squares: readonly Square[]) => boolean;
+  /** Removes the square when it is selected, else adds it (a click). */
+  toggle: (square: Square) => void;
   /** Replaces the selection (for example, an old shape of the bidder). */
   replace: (squareIds: readonly number[]) => void;
   clear: () => void;
@@ -72,6 +74,18 @@ export const createSelectionStore = (): SelectionStore => {
         set({ squareIds: next });
       }
       return true;
+    },
+    toggle: square => {
+      const squareId = packSquare(square);
+      const next = new Set(state.squareIds);
+      if (next.has(squareId)) {
+        next.delete(squareId);
+      } else if (next.size < MAX_SELECTION_SQUARES) {
+        next.add(squareId);
+      } else {
+        return;
+      }
+      set({ squareIds: next });
     },
     replace: squareIds => set({ squareIds: new Set(squareIds.slice(0, MAX_SELECTION_SQUARES)) }),
     clear: () => {
