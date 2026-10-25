@@ -1,5 +1,5 @@
-// The bid panel: the tools, the selected squares, the price and the total. The bid itself (the
-// simulation and the wallet) comes with the bid flow; it reads useSelectionBid.
+// The bid panel: the tools, the selected squares, the price, the total and the Bid button (the
+// bid flow is in src/bid/).
 import { type AuctionRules, rectangleSize, selectionExtent } from '@gaia/core';
 
 import { useMemo } from 'react';
@@ -7,8 +7,10 @@ import { formatEther } from 'viem';
 import { useAccount } from 'wagmi';
 
 import { useAuction } from '../api/queries';
+import { BidButton, BidStatus } from '../bid/BidButton';
+import { useBid } from '../bid/useBid';
 import { ToolPicker } from './ToolPicker';
-import { selectionStore, useSelection, useSelectionBid } from './useSelection';
+import { selectionStore, useSelection } from './useSelection';
 
 const eth = (wei: bigint) => `${formatEther(wei)} ETH`;
 const count = (n: number, word: string) => `${n.toLocaleString('en-US')} ${word}${n === 1 ? '' : 's'}`;
@@ -23,7 +25,8 @@ const Limits = ({ rules }: { rules: AuctionRules }) => (
 
 export const SelectionPanel = () => {
   const { priceMode, priceText, pricePerSquare } = useSelection(state => state);
-  const bid = useSelectionBid();
+  const placing = useBid();
+  const bid = placing.input;
   const rules = useAuction().data?.rules;
   const { address } = useAccount();
   const { priced } = bid;
@@ -172,13 +175,9 @@ export const SelectionPanel = () => {
         <button type="button" onClick={() => selectionStore.clear()} disabled={bid.squareCount === 0}>
           Clear
         </button>
-        <button type="button" disabled aria-describedby="bid-not-ready">
-          Bid
-        </button>
+        <BidButton bid={placing} />
       </div>
-      <p id="bid-not-ready" className="bid-hint">
-        Bidding is not ready yet: it comes in the next version of the app.
-      </p>
+      <BidStatus bid={placing} />
     </section>
   );
 };

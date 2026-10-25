@@ -40,14 +40,18 @@ describe('describeAuction', () => {
       phase: 'open',
       text: expect.stringContaining('in 16 min 40 s'),
     });
-    expect(describeAuction(response(), 5000).phase).toBe('ended');
+    expect(describeAuction(response(), 4999).phase).toBe('open');
+    expect(describeAuction(response(), 5000)).toMatchObject({
+      phase: 'ended',
+      text: expect.stringMatching(/^Auction ended /),
+    });
   });
 
   it('shows paused and cancelled first', () => {
     expect(describeAuction(response({ paused: true }), 4000).phase).toBe('paused');
     expect(describeAuction(response({ paused: true, cancelled: true }), 4000)).toEqual({
       phase: 'cancelled',
-      text: 'Auction cancelled. You can withdraw all your bids.',
+      text: 'Auction cancelled',
     });
   });
 });

@@ -130,7 +130,7 @@ describe('App', () => {
     expect(screen.getByText(/^Select squares on the map: click a square/)).toBeTruthy();
     expect(screen.getByText(/A shape has 1 to 1,000 squares/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Bid' }).getAttribute('disabled')).not.toBeNull();
-    expect(screen.getByText(/Bidding is not ready yet/)).toBeTruthy();
+    expect(screen.getByText('The auction is paused.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Withdraw' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Connect Wallet' })).toBeTruthy();
     expect(vi.mocked(fetch)).toHaveBeenCalledWith('/api/auction', expect.anything());
@@ -306,6 +306,43 @@ describe('App', () => {
       vi.fn(() => Promise.resolve(new Response('Not Found', { status: 404 }))),
     );
     renderApp();
-    expect(await screen.findByText('The server is not available.')).toBeTruthy();
+    expect((await screen.findByRole('status')).textContent).toBe('The server is not available.');
+    // The Bid button says it too.
+    expect(screen.getAllByText('The server is not available.')).toHaveLength(2);
+  });
+
+  it('disables the bid within one second of the end time', async () => {
+    stubScreen(false);
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(4999 * 1000 + 500);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ ...auction, status: { endTime: 5000, paused: false, cancelled: false } })),
+        ),
+      ),
+    );
+    // A new module graph: the bids store of the other tests holds a paused status.
+    vi.resetModules();
+    const { App: FreshApp } = await import('../src/App');
+    const { WalletProvider: FreshProvider } = await import('../src/wallet/WalletProvider');
+    try {
+      render(
+        <FreshProvider>
+          <FreshApp />
+        </FreshProvider>,
+      );
+      expect(await screen.findByText(/^Ends /)).toBeTruthy();
+      expect(screen.getByText('Connect a wallet to bid.')).toBeTruthy();
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(screen.getByRole('status').textContent).toMatch(/^Auction ended /);
+      expect(screen.getByText('The auction has ended.')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Bid' }).getAttribute('disabled')).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

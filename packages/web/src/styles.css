@@ -284,6 +284,20 @@ body {
   gap: 8px;
 }
 
+.bid-status p {
+  margin: 4px 0;
+}
+
+.bid-done {
+  font-weight: 600;
+}
+
+.bid-done a,
+.bid-status a {
+  margin-left: 4px;
+  font-weight: normal;
+}
+
 .link-button {
   padding: 0;
   border: none;

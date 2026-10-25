@@ -33,7 +33,7 @@ export interface AuctionStatusText {
 /** The phase and the text of the status bar at `nowSeconds` (Unix seconds). */
 export const describeAuction = ({ rules, status }: AuctionResponse, nowSeconds: number): AuctionStatusText => {
   if (status.cancelled) {
-    return { phase: 'cancelled', text: 'Auction cancelled. You can withdraw all your bids.' };
+    return { phase: 'cancelled', text: 'Auction cancelled' };
   }
   if (status.paused) {
     return { phase: 'paused', text: `Auction paused. End: ${formatTime(status.endTime)}` };
@@ -50,5 +50,5 @@ export const describeAuction = ({ rules, status }: AuctionResponse, nowSeconds: 
       text: `Ends ${formatTime(status.endTime)} (in ${formatDuration(status.endTime - nowSeconds)})`,
     };
   }
-  return { phase: 'ended', text: `Ended ${formatTime(status.endTime)}` };
+  return { phase: 'ended', text: `Auction ended ${formatTime(status.endTime)}` };
 };
