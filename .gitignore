@@ -18,3 +18,6 @@ deployments/
 .env
 .env.*
 !.env.example
+
+# Local audit proof-of-concept tests
+test/audit/
