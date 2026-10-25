@@ -1,4 +1,4 @@
-// The deck.gl layers of the map: bids, grid, selection and hover square. deck.gl draws them in
+// The deck.gl layers of the map: bids, grid, selection, drag preview and hover square. deck.gl draws them in
 // MapLibre's canvas (interleaved), under the place names (`beforeId`).
 import { type Bounds, type Square, gridLines, squareBounds, unpackSquare } from '@gaia/core';
 
@@ -14,7 +14,48 @@ type Ring = [number, number][];
 export type BidRow = readonly [number, HeldBid];
 
 /** The layer IDs. The 3D view and the shape selection use the same layers. */
-export const LAYER_IDS = { bids: 'bids', grid: 'grid', selection: 'selection', hover: 'hover' } as const;
+export const LAYER_IDS = {
+  bids: 'bids',
+  grid: 'grid',
+  selection: 'selection',
+  preview: 'preview',
+  hover: 'hover',
+} as const;
+
+/** One selected square and what the bid pays for it. */
+export interface SelectionCell {
+  square: Square;
+  cost: bigint;
+  /** The square of the connected wallet: it costs 0. */
+  own: boolean;
+}
+
+const SELECTION_RED = [220, 38, 38] as const;
+const OWN_GREEN = [22, 163, 74] as const;
+
+/**
+ * The fill of each selected square: green for own squares, else red with an alpha from 40 (the
+ * lowest cost of the selection) to 160 (the highest), so the expensive squares show.
+ */
+export const selectionFill = (cells: readonly SelectionCell[]) => {
+  let low: bigint | undefined;
+  let high: bigint | undefined;
+  for (const { cost, own } of cells) {
+    if (!own) {
+      low = low === undefined || cost < low ? cost : low;
+      high = high === undefined || cost > high ? cost : high;
+    }
+  }
+  return ({ cost, own }: SelectionCell): [number, number, number, number] => {
+    if (own) {
+      return [...OWN_GREEN, 90];
+    }
+    if (low === undefined || high === undefined || high === low) {
+      return [...SELECTION_RED, 100];
+    }
+    return [...SELECTION_RED, 40 + Math.round((Number(cost - low) / Number(high - low)) * 120)];
+  };
+};
 
 const ring = (square: Square): Ring => {
   const b = squareBounds(square);
@@ -88,8 +129,12 @@ export interface LayerInput {
   ownAddress?: string;
   grid: Ring[];
   zoom: number;
-  selected: readonly Square[];
+  selection: readonly SelectionCell[];
+  /** The outline of the drag of a selection tool, in degrees. */
+  preview?: [number, number][][];
   hover?: Square;
+  /** A square with an outline as the hover square (on a phone: the tapped square). */
+  marked?: Square;
   /** The first symbol layer of the style: our layers go under it. */
   beforeId?: string;
   globe: boolean;
@@ -103,8 +148,10 @@ export const buildLayers = ({
   ownAddress,
   grid,
   zoom,
-  selected,
+  selection,
+  preview = [],
   hover,
+  marked,
   beforeId,
   globe,
   metersPerEth,
@@ -138,21 +185,33 @@ export const buildLayers = ({
       parameters: FLAT,
       beforeId,
     }),
-    new PolygonLayer<Square, OverlayProps>({
+    // A new `selection` array at each change of the selection or its prices: deck.gl computes
+    // the attributes again (at most MAX_SELECTION_SQUARES squares).
+    new PolygonLayer<SelectionCell, OverlayProps>({
       id: LAYER_IDS.selection,
-      data: selected.filter(shown),
-      getPolygon: ring,
-      getFillColor: [220, 38, 38, 40],
-      getLineColor: [220, 38, 38, 255],
+      data: selection.filter(cell => shown(cell.square)),
+      getPolygon: cell => ring(cell.square),
+      getFillColor: selectionFill(selection),
+      getLineColor: [...SELECTION_RED, 255],
       getLineWidth: 2,
       lineWidthUnits: 'pixels',
       stroked: true,
       parameters: FLAT,
       beforeId,
     }),
+    new PathLayer<[number, number][], OverlayProps>({
+      id: LAYER_IDS.preview,
+      data: preview,
+      getPath: path => path,
+      getColor: [...SELECTION_RED, 255],
+      getWidth: 2,
+      widthUnits: 'pixels',
+      parameters: FLAT,
+      beforeId,
+    }),
     new PolygonLayer<Square, OverlayProps>({
       id: LAYER_IDS.hover,
-      data: hover !== undefined && shown(hover) ? [hover] : [],
+      data: [hover, marked].filter((square): square is Square => square !== undefined && shown(square)),
       getPolygon: ring,
       filled: false,
       stroked: true,

@@ -1,6 +1,6 @@
 // The map: MapLibre GL (globe, our own style) with the deck.gl layers of layers.ts, on the data of
 // the bids store. Loaded lazily (LazyMap.tsx), because MapLibre and deck.gl are large.
-import { type Bounds, type Square, describeSquare, packSquare, squareAt } from '@gaia/core';
+import { type Bounds, type PricedSelection, type Square, describeSquare, packSquare, squareAt } from '@gaia/core';
 
 import type { Map as MapLibreMap, TransformConstrainFunction } from 'maplibre-gl';
 // eslint-disable-next-line no-restricted-imports -- the CSS file of the package, not our build
@@ -18,22 +18,36 @@ import { useAccount } from 'wagmi';
 
 import { bidsStore, useBids } from '../bids/useBids';
 import { webConfig } from '../config/app-config';
+import type { DragSession } from '../selection/drag';
+import { MAX_SELECTION_SQUARES } from '../selection/selection-store';
+import type { SelectionTool } from '../selection/tools';
 import { DeckOverlay } from './DeckOverlay';
 import { type CameraView, browserTimeZone, firstView, readSavedView, saveView } from './first-view';
 import { type GaiaStyle, loadGaiaStyle } from './gaia-style';
-import { bidRows, buildLayers, gridPaths } from './layers';
+import { type SelectionCell, bidRows, buildLayers, gridPaths } from './layers';
 import './maplibre-worker';
 import { boundsToViewport, padBounds } from './viewport';
 
 export interface MapViewProps {
-  /** The selected squares (drawn with a red outline). */
-  selected: readonly Square[];
-  /** A click on the map: the square under the pointer. */
-  onSquareClick: (square: Square) => void;
+  /** The selected squares with their prices (useSelectionBid). */
+  selection?: PricedSelection;
+  /** The active selection tool. */
+  tool: SelectionTool;
+  /** False on a phone: no selection, a tap shows one square in the readout. */
+  selectionEnabled: boolean;
+  /** The end of a drag of a selection tool. Returns false when the selection would be too large. */
+  onDragEnd: (squares: Square[]) => boolean;
+}
+
+interface DragPreview {
+  outline: [number, number][][];
+  text: string;
 }
 
 // The time between the end of a move and the snapshot request.
 const REQUEST_DELAY_MS = 250;
+// How long the map shows that a drag selected too many squares.
+const TOO_LARGE_NOTICE_MS = 4_000;
 // Near a pole, MapLibre draws Web Mercator from zoom 12 and the view breaks.
 const POLE_MAX_ZOOM = 11.5;
 
@@ -67,8 +81,9 @@ const poleInView = (map: MapLibreMap) => {
 };
 
 const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
+const sameSquare = (a: Square | undefined, b: Square) => a !== undefined && a.lat === b.lat && a.lng === b.lng;
 
-const MapView = ({ selected, onSquareClick }: MapViewProps) => {
+const MapView = ({ selection, tool, selectionEnabled, onDragEnd }: MapViewProps) => {
   const mapRef = useRef<MapRef>(null);
   const requestTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [gaiaStyle, setGaiaStyle] = useState<GaiaStyle>();
@@ -78,6 +93,12 @@ const MapView = ({ selected, onSquareClick }: MapViewProps) => {
   const [zoom, setZoom] = useState(initialView.zoom);
   const [globe, setGlobe] = useState(true);
   const [hover, setHover] = useState<Square>();
+  // On a phone: the tapped square.
+  const [marked, setMarked] = useState<Square>();
+  const drag = useRef<DragSession>(undefined);
+  const [preview, setPreview] = useState<DragPreview>();
+  const [tooLarge, setTooLarge] = useState(false);
+  const tooLargeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const { address } = useAccount();
   const { data, tooMany, serverError, stream } = useBids();
 
@@ -97,7 +118,13 @@ const MapView = ({ selected, onSquareClick }: MapViewProps) => {
     };
   }, []);
 
-  useEffect(() => () => clearTimeout(requestTimer.current), []);
+  useEffect(
+    () => () => {
+      clearTimeout(requestTimer.current);
+      clearTimeout(tooLargeTimer.current);
+    },
+    [],
+  );
 
   // After each move: the grid of the visible area, the snapshot request, the saved view.
   const updateView = useCallback(() => {
@@ -118,15 +145,96 @@ const MapView = ({ selected, onSquareClick }: MapViewProps) => {
     requestTimer.current = setTimeout(() => bidsStore.requestArea(viewport), REQUEST_DELAY_MS);
   }, []);
 
-  const onMouseMove = useCallback((event: MapLayerMouseEvent) => {
-    const square = squareAt(event.lngLat.lat, event.lngLat.lng);
-    setHover(old => (old !== undefined && old.lat === square.lat && old.lng === square.lng ? old : square));
-  }, []);
+  const selectedCount = selection?.sorted.length ?? 0;
+  const showDrag = useCallback(
+    (session: DragSession) => {
+      const tooMany = session.count() + selectedCount > MAX_SELECTION_SQUARES;
+      setPreview({
+        outline: session.outline(),
+        text: tooMany
+          ? `${session.describe()}. Too many: select at most ${MAX_SELECTION_SQUARES.toLocaleString('en-US')}.`
+          : session.describe(),
+      });
+    },
+    [selectedCount],
+  );
+
+  const onMouseMove = useCallback(
+    (event: MapLayerMouseEvent) => {
+      const square = squareAt(event.lngLat.lat, event.lngLat.lng);
+      setHover(old => (sameSquare(old, square) ? old : square));
+      const session = drag.current;
+      if (session !== undefined) {
+        session.update(square);
+        showDrag(session);
+      }
+    },
+    [showDrag],
+  );
+
+  // A selection tool: the drag starts on the map and ends at a mouse-up anywhere in the page.
+  // Ctrl or Cmd + drag turns the map (MapLibre), so it does not select.
+  const onMouseDown = useCallback(
+    (event: MapLayerMouseEvent) => {
+      const { button, ctrlKey, metaKey } = event.originalEvent;
+      if (!selectionEnabled || tool.begin === undefined || button !== 0 || ctrlKey || metaKey) {
+        return;
+      }
+      const session = tool.begin(squareAt(event.lngLat.lat, event.lngLat.lng));
+      drag.current = session;
+      showDrag(session);
+    },
+    [selectionEnabled, tool, showDrag],
+  );
+
+  useEffect(() => {
+    if (preview === undefined) {
+      return;
+    }
+    const stop = () => {
+      drag.current = undefined;
+      setPreview(undefined);
+    };
+    const onMouseUp = () => {
+      const session = drag.current;
+      stop();
+      if (session !== undefined && !onDragEnd(session.squares())) {
+        setTooLarge(true);
+        clearTimeout(tooLargeTimer.current);
+        tooLargeTimer.current = setTimeout(() => setTooLarge(false), TOO_LARGE_NOTICE_MS);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        stop();
+      }
+    };
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [preview !== undefined, onDragEnd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onClick = useCallback(
-    (event: MapLayerMouseEvent) => onSquareClick(squareAt(event.lngLat.lat, event.lngLat.lng)),
-    [onSquareClick],
+    (event: MapLayerMouseEvent) => {
+      if (!selectionEnabled) {
+        const square = squareAt(event.lngLat.lat, event.lngLat.lng);
+        setMarked(old => (sameSquare(old, square) ? undefined : square));
+      }
+    },
+    [selectionEnabled],
   );
+
+  const cells = useMemo<SelectionCell[]>(
+    () =>
+      selection === undefined
+        ? []
+        : selection.sorted.map((square, i) => ({ square, cost: selection.costs[i], own: selection.own[i] })),
+    [selection],
+  );
+  const cellIndex = useMemo(() => new Map(cells.map((cell, i) => [packSquare(cell.square), i])), [cells]);
 
   // `data.bids` changes in place: `data.bidsVersion` tells when.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -140,17 +248,21 @@ const MapView = ({ selected, onSquareClick }: MapViewProps) => {
         ownAddress: address,
         grid,
         zoom,
-        selected,
+        selection: cells,
+        preview: preview?.outline,
         hover,
+        marked,
         beforeId: gaiaStyle?.beforeId,
         globe,
       }),
-    [rows, data.bidsVersion, address, grid, zoom, selected, hover, gaiaStyle?.beforeId, globe],
+    [rows, data.bidsVersion, address, grid, zoom, cells, preview, hover, marked, gaiaStyle?.beforeId, globe],
   );
 
-  // The square under the pointer; on a touch screen (no pointer) the selected square.
-  const shown = hover ?? selected[0];
+  // The square under the pointer; on a touch screen (no pointer) the tapped square.
+  const shown = hover ?? marked;
   const shownBid = shown === undefined ? undefined : data.bids.get(packSquare(shown));
+  const shownCell = shown === undefined ? undefined : cells[cellIndex.get(packSquare(shown)) ?? -1];
+  const dragPan = !selectionEnabled || tool.panOnDrag;
 
   return (
     <div className="map-view">
@@ -166,8 +278,11 @@ const MapView = ({ selected, onSquareClick }: MapViewProps) => {
           onMoveEnd={updateView}
           onMouseMove={onMouseMove}
           onMouseOut={() => setHover(undefined)}
+          onMouseDown={onMouseDown}
           onClick={onClick}
-          cursor="pointer"
+          dragPan={dragPan}
+          boxZoom={dragPan}
+          cursor={selectionEnabled ? tool.cursor : undefined}
           style={{ width: '100%', height: '100%' }}
         >
           <NavigationControl position="top-right" visualizePitch />
@@ -182,8 +297,14 @@ const MapView = ({ selected, onSquareClick }: MapViewProps) => {
         {stream === 'down' && <p className="map-notice">Live updates failed. Please refresh the page.</p>}
         {tooMany && <p className="map-notice">Zoom in to load the bids.</p>}
         {serverError && <p className="map-notice">Cannot load the bids from the server.</p>}
+        {tooLarge && (
+          <p className="map-notice">
+            Too many squares. Select at most {MAX_SELECTION_SQUARES.toLocaleString('en-US')}.
+          </p>
+        )}
       </div>
-      {shown !== undefined && (
+      {preview !== undefined && <p className="map-readout">{preview.text}</p>}
+      {preview === undefined && shown !== undefined && (
         <p className="map-readout">
           {describeSquare(shown)}
           <br />
@@ -192,6 +313,12 @@ const MapView = ({ selected, onSquareClick }: MapViewProps) => {
             : `${formatEther(shownBid.amount)} ETH · ${shortAddress(shownBid.bidder)}${
                 address !== undefined && shownBid.bidder.toLowerCase() === address.toLowerCase() ? ' (you)' : ''
               }`}
+          {shownCell !== undefined && (
+            <>
+              <br />
+              {shownCell.own ? 'Your square: 0 ETH' : `You bid ${formatEther(shownCell.cost)} ETH on this square`}
+            </>
+          )}
         </p>
       )}
     </div>

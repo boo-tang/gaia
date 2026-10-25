@@ -1,0 +1,192 @@
+// The bid panel: the tools, the selected squares, the price and the total. The bid itself (the
+// simulation and the wallet) comes with the bid flow; it reads useSelectionBid.
+import { type AuctionRules, rectangleSize, selectionExtent } from '@gaia/core';
+
+import { useMemo, useState } from 'react';
+import { formatEther, parseEther } from 'viem';
+import { useAccount } from 'wagmi';
+
+import { useAuction } from '../api/queries';
+import { ToolPicker } from './ToolPicker';
+import { selectionStore, useSelection, useSelectionBid } from './useSelection';
+
+const eth = (wei: bigint) => `${formatEther(wei)} ETH`;
+const count = (n: number, word: string) => `${n.toLocaleString('en-US')} ${word}${n === 1 ? '' : 's'}`;
+const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
+
+/** The price that the user typed, in wei. Undefined when it is not a positive ETH amount. */
+export const parsePrice = (text: string): bigint | undefined => {
+  try {
+    const wei = parseEther(text.trim());
+    return wei > 0n ? wei : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const Limits = ({ rules }: { rules: AuctionRules }) => (
+  <p className="bid-limits">
+    A shape has {rules.minShapeSquares.toLocaleString('en-US')} to {rules.maxShapeSquares.toLocaleString('en-US')}{' '}
+    squares. The longer side is at most {rules.maxShapeAspectRatio} times the shorter side.
+  </p>
+);
+
+export const SelectionPanel = () => {
+  const { priceMode, pricePerSquare } = useSelection(state => state);
+  const bid = useSelectionBid();
+  const rules = useAuction().data?.rules;
+  const { address } = useAccount();
+  const [priceText, setPriceText] = useState('');
+  const { priced } = bid;
+
+  const extent = useMemo(() => {
+    const area = priced === undefined ? undefined : selectionExtent(priced.sorted);
+    return area === undefined ? undefined : rectangleSize(area);
+  }, [priced]);
+
+  // The cost range of the squares that are not own squares.
+  const costRange = useMemo(() => {
+    if (priced === undefined) {
+      return undefined;
+    }
+    const costs = priced.costs.filter((_, i) => !priced.own[i]);
+    if (costs.length === 0) {
+      return undefined;
+    }
+    return costs.reduce(
+      ([low, high], cost) => [cost < low ? cost : low, cost > high ? cost : high],
+      [costs[0], costs[0]],
+    );
+  }, [priced]);
+
+  const changePrice = (text: string) => {
+    setPriceText(text);
+    selectionStore.setPricePerSquare(parsePrice(text));
+  };
+
+  return (
+    <section className="bid-panel" aria-label="Bid">
+      <h2 className="panel-title">Bid</h2>
+      <ToolPicker />
+
+      {bid.squareCount === 0 ? (
+        <p className="bid-summary">Select squares on the map: drag with the rectangle tool (R).</p>
+      ) : (
+        <p className="bid-summary">
+          {count(bid.squareCount, 'square')}
+          {extent !== undefined && ` (${count(extent.rows, 'row')}, ${count(extent.columns, 'column')})`}
+        </p>
+      )}
+
+      {rules !== undefined && <Limits rules={rules} />}
+
+      <fieldset className="bid-price">
+        <legend>Price</legend>
+        <label>
+          <input
+            type="radio"
+            name="price-mode"
+            checked={priceMode === 'minimum'}
+            onChange={() => selectionStore.setPriceMode('minimum')}
+          />{' '}
+          Minimum bid
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="price-mode"
+            checked={priceMode === 'perSquare'}
+            onChange={() => selectionStore.setPriceMode('perSquare')}
+          />{' '}
+          My price per square
+        </label>
+        {priceMode === 'perSquare' && (
+          <div className="bid-price-input">
+            <label>
+              <input
+                type="text"
+                inputMode="decimal"
+                aria-label="Price per square in ETH"
+                placeholder="0.01"
+                value={priceText}
+                onChange={event => changePrice(event.target.value)}
+              />{' '}
+              ETH per square
+            </label>
+            {priced !== undefined && priced.minPricePerSquare > 0n && (
+              <p className="bid-hint">
+                At least {eth(priced.minPricePerSquare)} per square.{' '}
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => changePrice(formatEther(priced.minPricePerSquare))}
+                >
+                  Use minimum
+                </button>
+              </p>
+            )}
+            {priceText !== '' && pricePerSquare === undefined && <p className="bid-error">Enter a price in ETH.</p>}
+            {pricePerSquare !== undefined && priced?.priceTooLow === true && (
+              <p className="bid-error">The price must be at least {eth(priced.minPricePerSquare)}.</p>
+            )}
+          </div>
+        )}
+      </fieldset>
+
+      {priced !== undefined && (
+        <div className="bid-total">
+          {bid.loading && <p>Loading the prices of {count(priced.missingCount, 'square')}…</p>}
+          {bid.loadFailed && (
+            <p className="bid-error">
+              Cannot load the prices of {count(priced.missingCount, 'square')}.{' '}
+              <button type="button" className="link-button" onClick={bid.retry}>
+                Try again
+              </button>
+            </p>
+          )}
+          {bid.total !== undefined && <p className="bid-total-value">Total: {eth(bid.total)}</p>}
+          <p>
+            {[
+              priced.newCount > 0 && count(priced.newCount, 'new square'),
+              priced.outbidCount > 0 && count(priced.outbidCount, 'outbid square'),
+              priced.ownCount > 0 && `${priced.ownCount.toLocaleString('en-US')} of your squares (0 ETH)`,
+            ]
+              .filter(Boolean)
+              .join(', ')}
+          </p>
+          {priceMode === 'minimum' && costRange !== undefined && priced.missingCount === 0 && (
+            <p>
+              {costRange[0] === costRange[1]
+                ? `${eth(costRange[0])} per square`
+                : `${formatEther(costRange[0])} to ${eth(costRange[1])} per square`}
+            </p>
+          )}
+          {address === undefined && <p className="bid-hint">Connect a wallet to see your own squares.</p>}
+        </div>
+      )}
+
+      {priced !== undefined && priced.cuts.length > 0 && (
+        <div className="bid-cuts">
+          <p>Takes squares from {count(priced.cuts.length, 'shape')}:</p>
+          <ul>
+            {priced.cuts.map(cut => (
+              <li key={cut.shapeId}>
+                Shape {cut.shapeId} ({shortAddress(cut.bidder)}): {count(cut.squareCount, 'square')}
+                {cut.own && ' (yours)'}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="bid-actions">
+        <button type="button" onClick={() => selectionStore.clear()} disabled={bid.squareCount === 0}>
+          Clear
+        </button>
+        <button type="button" disabled>
+          Bid
+        </button>
+      </div>
+    </section>
+  );
+};

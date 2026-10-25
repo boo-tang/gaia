@@ -8,6 +8,7 @@
   --color-warning-bg: #fff4d6;
   --color-warning-border: #e8c15a;
   --color-error: #b42318;
+  --color-accent: #2563eb;
   --header-height: 56px;
   --side-panel-width: 360px;
   --gap: 12px;
@@ -198,7 +199,97 @@ body {
   overflow-wrap: anywhere;
 }
 
-.selected-square {
+/* The bid panel (src/selection/). */
+.bid-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.bid-panel p {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.tool-picker {
+  display: flex;
+  gap: 4px;
+}
+
+.tool-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.tool-button[aria-checked='true'] {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #ffffff;
+}
+
+.bid-limits,
+.bid-hint {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.bid-price {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.bid-price-input input {
+  width: 8em;
+}
+
+.bid-error {
+  color: var(--color-error);
+}
+
+.bid-total {
+  font-variant-numeric: tabular-nums;
+}
+
+.bid-total-value {
+  font-weight: 600;
+}
+
+.bid-cuts ul {
+  margin: 4px 0 0;
+  padding-left: 20px;
+}
+
+.bid-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
 }

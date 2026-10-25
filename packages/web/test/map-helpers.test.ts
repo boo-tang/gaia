@@ -12,7 +12,7 @@ import {
   saveView,
   viewForTimeZone,
 } from '../src/map/first-view';
-import { bidRows, buildLayers, gridAlpha, gridPaths } from '../src/map/layers';
+import { bidRows, buildLayers, gridAlpha, gridPaths, selectionFill } from '../src/map/layers';
 import { boundsToViewport, padBounds } from '../src/map/viewport';
 
 const ALICE: Address = '0x00000000000000000000000000000000000000a1';
@@ -99,11 +99,11 @@ describe('layers', () => {
       bidsVersion: 1,
       grid: [],
       zoom: 12,
-      selected: [],
+      selection: [],
       beforeId: 'label_city',
       globe: true,
     });
-    expect(layers.map(layer => layer.id)).toEqual(['bids', 'grid', 'selection', 'hover']);
+    expect(layers.map(layer => layer.id)).toEqual(['bids', 'grid', 'selection', 'preview', 'hover']);
     for (const layer of layers) {
       expect(layer.props).toMatchObject({
         beforeId: 'label_city',
@@ -119,11 +119,22 @@ describe('layers', () => {
       bidsVersion: 1,
       grid: [],
       zoom: 12,
-      selected: [],
+      selection: [],
       globe: true,
       metersPerEth: 1000,
     });
     expect(bidsLayer.props).toMatchObject({ extruded: true, pickable: true, parameters: {} });
+  });
+
+  it('fills own selected squares green and the others red by cost', () => {
+    const cell = (cost: bigint, own = false) => ({ square: { lat: 1, lng: 1 }, cost, own });
+    const fill = selectionFill([cell(10n), cell(20n), cell(30n), cell(0n, true)]);
+    expect(fill(cell(10n))).toEqual([220, 38, 38, 40]);
+    expect(fill(cell(20n))).toEqual([220, 38, 38, 100]);
+    expect(fill(cell(30n))).toEqual([220, 38, 38, 160]);
+    expect(fill(cell(0n, true))[1]).toBe(163);
+    // One price for all squares.
+    expect(selectionFill([cell(5n), cell(5n)])(cell(5n))).toEqual([220, 38, 38, 100]);
   });
 });
 
