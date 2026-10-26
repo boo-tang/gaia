@@ -7,12 +7,17 @@
 // During an auction a square never loses its bid (a higher bid replaces it), so a snapshot never
 // removes a square. Only a reorg removes data.
 //
+// The user's own bid comes first from its transaction receipt: the same event, with the same ID,
+// as the stream message that follows, so that message changes nothing. The receipt does not move
+// the stream position, else the stream would skip the events before it.
+//
 // The bids map can hold many thousand squares. The reducer changes it in place and returns a new
 // state object with a new `bidsVersion`, so React and deck.gl see the change without a copy.
 import {
   type Address,
   type AuctionStatus,
   type EventId,
+  type ShapeBidMessage,
   type StreamMessage,
   type Viewport,
   type ViewportSnapshot,
@@ -56,10 +61,14 @@ export interface BidsState {
   reorgCount: number;
 }
 
+/** The `ShapeBid` event of the user's own bid, read from its transaction receipt. */
+export type ReceiptBid = Pick<ShapeBidMessage, 'id' | 'shapeId' | 'bidder' | 'squareIds' | 'amounts'>;
+
 export type BidsAction =
   /** `reorgCount`: the value of `BidsState.reorgCount` when the request started. */
   | { type: 'snapshot'; snapshot: ViewportSnapshot; reorgCount: number }
   | { type: 'message'; message: StreamMessage }
+  | { type: 'receipt'; bid: ReceiptBid }
   /** Removes the bids and the areas outside `keep`, to limit the memory. */
   | { type: 'evict'; keep: Viewport };
 
@@ -99,6 +108,20 @@ const applySnapshot = (state: BidsState, snapshot: ViewportSnapshot): BidsState 
   };
 };
 
+// Sets the squares of a bid that are older than it. Does not change the stream position.
+const applyShapeBid = (state: BidsState, bid: ReceiptBid): BidsState => {
+  let changed = false;
+  bid.squareIds.forEach((squareId, index) => {
+    const held = state.bids.get(squareId);
+    if (held === undefined || isBefore(held.asOf, bid.id)) {
+      const amount = BigInt(bid.amounts[index]);
+      state.bids.set(squareId, { shapeId: bid.shapeId, bidder: bid.bidder, amount, asOf: bid.id });
+      changed = true;
+    }
+  });
+  return changed ? { ...state, bidsVersion: state.bidsVersion + 1 } : state;
+};
+
 const applyMessage = (state: BidsState, message: StreamMessage): BidsState => {
   if (message.type === 'reorg') {
     return {
@@ -110,16 +133,7 @@ const applyMessage = (state: BidsState, message: StreamMessage): BidsState => {
   }
   const lastStreamEventId = isNewer(message.id, state.lastStreamEventId) ? message.id : state.lastStreamEventId;
   if (message.type === 'shapeBid') {
-    let changed = false;
-    message.squareIds.forEach((squareId, index) => {
-      const held = state.bids.get(squareId);
-      if (held === undefined || isBefore(held.asOf, message.id)) {
-        const amount = BigInt(message.amounts[index]);
-        state.bids.set(squareId, { shapeId: message.shapeId, bidder: message.bidder, amount, asOf: message.id });
-        changed = true;
-      }
-    });
-    return { ...state, lastStreamEventId, bidsVersion: changed ? state.bidsVersion + 1 : state.bidsVersion };
+    return applyShapeBid({ ...state, lastStreamEventId }, message);
   }
   if (message.type === 'auctionStatus') {
     if (isNewer(message.id, state.statusEventId)) {
@@ -155,6 +169,9 @@ export const reduceBids = (state: BidsState, action: BidsAction): BidsState => {
   }
   if (action.type === 'message') {
     return applyMessage(state, action.message);
+  }
+  if (action.type === 'receipt') {
+    return applyShapeBid(state, action.bid);
   }
   return evict(state, action.keep);
 };

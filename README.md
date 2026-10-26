@@ -79,7 +79,7 @@ On Base, the admin grants `ISSUER_ROLE` to the land sale only after the auction 
 
 ## Server
 
-`packages/server` indexes the auction events and serves the data for the map: an HTTP API and a live stream (SSE). The browser reads only this server for display. It writes through the wallet.
+`packages/server` indexes the auction events and serves the data for the map: an HTTP API and a live stream (SSE). The browser reads only this server for display, except the user's own bid, which the map shows from its transaction receipt. It writes through the wallet.
 
 Run it against the local node, after `yarn chain:local`, `yarn deploy:local` and (optional) `yarn seed:local`:
 
@@ -148,7 +148,7 @@ Each `VITE_*` value is public in the build. `VITE_RPC_URL` is the public Base Se
 
 ### Map
 
-The map (`packages/web/src/map/`) is MapLibre GL on a globe, with `deck.gl` layers in the same canvas: the bids (one square for each bid, a colour for each bidder, an own colour for the connected wallet), the grid (from zoom 9), the selection and the square under the pointer. Place names stay above the bids. The map loads in its own chunk. The first view is the last view of the browser, else the region of the browser time zone, else the whole globe; "My location" asks for the browser location. The data comes from the server only: a snapshot (`GET /bids`) after each move and one live stream (`GET /stream`) for the app (`packages/web/src/bids/`).
+The map (`packages/web/src/map/`) is MapLibre GL on a globe, with `deck.gl` layers in the same canvas: the bids (one square for each bid, a colour for each bidder, an own colour for the connected wallet), the grid (from zoom 9), the selection and the square under the pointer. Place names stay above the bids. The map loads in its own chunk. The first view is the last view of the browser, else the region of the browser time zone, else the whole globe; "My location" asks for the browser location. The data comes from the server: a snapshot (`GET /bids`) after each move and one live stream (`GET /stream`) for the app (`packages/web/src/bids/`). The user's own bid shows as soon as its receipt arrives: the receipt holds the same `ShapeBid` event, with the same event ID, as the stream message that follows, so that message changes nothing.
 
 See the map with live bids on Anvil:
 
@@ -174,9 +174,9 @@ Try it on Anvil (after the steps of the map above):
 
 ### Bid and withdraw
 
-"Bid" sends `bidOnShape` with exactly the total of the panel as the value. Just before the wallet opens, the app simulates the bid on the RPC node: a contract error (for example "The prices changed. The bid now costs X ETH.") shows below the button and the wallet does not open. A rejection in the wallet is not an error: the panel goes back to the selection. While the transaction waits, the button says so. After the receipt the panel shows "Bid placed: X ETH" (with a link to the block explorer; Anvil has none) and clears the selection. A bid that fails keeps the selection. Bid is disabled before the start, while the auction is paused, after a cancel and after the end time, with no wallet, and with a wallet on a different chain.
+"Bid" sends `bidOnShape` with exactly the total of the panel as the value. Just before the wallet opens, the app simulates the bid on the RPC node: a contract error (for example "The prices changed. The bid now costs X ETH.") shows below the button and the wallet does not open. A rejection in the wallet is not an error: the panel goes back to the selection. While the transaction waits, the button says so. After the receipt the panel shows "Bid placed: X ETH" (with a link to the block explorer; Anvil has none), the map shows the bid, and the selection clears. A bid that fails keeps the selection. Bid is disabled before the start, while the auction is paused, after a cancel and after the end time, with no wallet, and with a wallet on a different chain.
 
-"Your bids" (also on a phone) shows the refund of the wallet: the outbid amounts and, after a cancel, all bids (`refund` of `GET /bidder/:address`). It loads again after each bid and withdraw, and when the live stream sends a bid that takes squares of the wallet. "Withdraw" sends the refund to the wallet.
+"Your bids" (also on a phone) shows the refund of the wallet: the outbid amounts and, after a cancel, all bids (`refund` of `GET /bidder/:address`). It loads again after each bid and withdraw, and when the live stream sends a bid that takes squares of the wallet. Until the server has the user's last bid, it says "Bid confirmed. Updating your bids…". "Withdraw" sends the refund to the wallet.
 
 Wallet setup on Anvil: in a browser wallet (for example MetaMask or Rabby), add the network RPC URL `http://127.0.0.1:8545`, chain ID 31337, currency ETH. Import the private key of an Anvil account (`anvil` prints the keys at the start). Accounts 3 to 9 place the seed bids; account 1 is the admin. Use a different account in a second browser profile to bid against the first. After a restart of Anvil, reset the account in the wallet (the nonce starts at 0 again).
 

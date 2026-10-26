@@ -37,7 +37,7 @@ const BidLine = ({ bid }: { bid: Bid }) => {
   if (state.status === 'done') {
     return (
       <p className="bid-done" role="status">
-        Bid placed: {eth(state.result)} <TxLink hash={state.hash} />
+        Bid placed: {eth(state.result.paid)} <TxLink hash={state.hash} />
       </p>
     );
   }

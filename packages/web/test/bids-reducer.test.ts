@@ -11,7 +11,7 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { viewportContains, viewportHolds } from '../src/bids/areas';
-import { type BidsState, initialBidsState, reduceBids } from '../src/bids/bids-reducer';
+import { type BidsAction, type BidsState, initialBidsState, reduceBids } from '../src/bids/bids-reducer';
 
 const ALICE: Address = '0x00000000000000000000000000000000000000a1';
 const BOB: Address = '0x00000000000000000000000000000000000000b2';
@@ -48,7 +48,19 @@ const shapeBid = (
   taken,
 });
 
-const run = (...actions: Parameters<typeof reduceBids>[1][]) => actions.reduce(reduceBids, initialBidsState());
+/** The user's own bid from its receipt: the same event as `shapeBid` at that block. */
+const receipt = (block: number, shapeId: number, bidder: Address, squares: [number, string][]): BidsAction => ({
+  type: 'receipt',
+  bid: {
+    id: { block, logIndex: 0 },
+    shapeId,
+    bidder,
+    squareIds: squares.map(([squareId]) => squareId),
+    amounts: squares.map(([, amount]) => amount),
+  },
+});
+
+const run = (...actions: BidsAction[]) => actions.reduce(reduceBids, initialBidsState());
 
 const bidOf = (state: BidsState, squareId: number) => {
   const held = state.bids.get(squareId);
@@ -149,6 +161,35 @@ describe('reduceBids', () => {
       { type: 'message', message: shapeBid(11, 1, ALICE, [[A, '100']]) },
     );
     expect(bidOf(state, A)).toEqual({ shapeId: 2, bidder: BOB, amount: 200n });
+  });
+
+  it('shows a bid from its receipt without moving the stream position', () => {
+    const state = run(
+      { type: 'message', message: shapeBid(5, 1, BOB, [[B, '50']]) },
+      receipt(9, 2, ALICE, [[A, '100']]),
+    );
+    expect(bidOf(state, A)).toEqual({ shapeId: 2, bidder: ALICE, amount: 100n });
+    expect(state.lastStreamEventId).toEqual({ block: 5, logIndex: 0 });
+  });
+
+  it('changes no bid when the stream sends the event of the receipt', () => {
+    const before = run(receipt(9, 2, ALICE, [[A, '100']]));
+    const { bidsVersion } = before;
+    const after = reduceBids(before, { type: 'message', message: shapeBid(9, 2, ALICE, [[A, '100']]) });
+    expect(after.bidsVersion).toBe(bidsVersion);
+    expect(bidOf(after, A)).toEqual({ shapeId: 2, bidder: ALICE, amount: 100n });
+    expect(after.lastStreamEventId).toEqual({ block: 9, logIndex: 0 });
+  });
+
+  it('keeps the receipt bid over older data and replaces it with a newer bid', () => {
+    const state = run(
+      receipt(9, 2, ALICE, [[A, '100']]),
+      { type: 'message', message: shapeBid(8, 1, BOB, [[A, '90']]) },
+      { type: 'snapshot', snapshot: snapshot(8, [[A, 1, BOB, '90']]), reorgCount: 0 },
+    );
+    expect(bidOf(state, A)).toEqual({ shapeId: 2, bidder: ALICE, amount: 100n });
+    const outbid = reduceBids(state, { type: 'message', message: shapeBid(10, 3, BOB, [[A, '200']]) });
+    expect(bidOf(outbid, A)).toEqual({ shapeId: 3, bidder: BOB, amount: 200n });
   });
 
   it('does not change the bidsVersion when nothing changes', () => {

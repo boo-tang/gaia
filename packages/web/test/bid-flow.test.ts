@@ -1,6 +1,6 @@
 import { gaiaAuctionAbi } from '@gaia/core';
 
-import { type Address, type Hash, type Log, encodeAbiParameters, encodeEventTopics } from 'viem';
+import { type Address, type Hash, type Log, encodeAbiParameters, encodeEventTopics, getAddress } from 'viem';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -8,8 +8,8 @@ import {
   type BidCalls,
   bidDisabledReason,
   bidFlow,
+  bidResultFromReceipt,
   bidSteps,
-  paidFromReceipt,
 } from '../src/bid/bid-flow';
 import { selectionStore } from '../src/selection/useSelection';
 import { runTx } from '../src/tx/tx-flow';
@@ -18,10 +18,12 @@ const ALICE: Address = '0x00000000000000000000000000000000000000a1';
 const BOB: Address = '0x00000000000000000000000000000000000000b2';
 const HASH: Hash = `0x${'cd'.repeat(32)}`;
 
-/** A `ShapeBid` log as the receipt has it. */
-const shapeBidLog = (bidder: Address, paid: bigint): Log =>
+/** A `ShapeBid` log of shape 4 on square 65536, as the receipt has it, at block 12. */
+const shapeBidLog = (bidder: Address, paid: bigint, logIndex = 0): Log =>
   ({
     address: '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
+    blockNumber: 12n,
+    logIndex,
     topics: encodeEventTopics({ abi: gaiaAuctionAbi, eventName: 'ShapeBid', args: { shapeId: 4n, bidder } }),
     data: encodeAbiParameters(
       [{ type: 'uint32[]' }, { type: 'uint256[]' }, { type: 'uint256' }],
@@ -55,11 +57,25 @@ describe('bidDisabledReason', () => {
   });
 });
 
-describe('paidFromReceipt', () => {
-  it('reads paid of the ShapeBid event of the bidder', () => {
-    const receipt = { status: 'success' as const, logs: [shapeBidLog(BOB, 3n), shapeBidLog(ALICE, 9n)] };
-    expect(paidFromReceipt(receipt, ALICE)).toBe(9n);
-    expect(paidFromReceipt({ status: 'success', logs: [] }, ALICE)).toBeUndefined();
+describe('bidResultFromReceipt', () => {
+  it('reads paid and the ShapeBid event of the bidder, with its position', () => {
+    const receipt = { status: 'success' as const, logs: [shapeBidLog(BOB, 3n, 1), shapeBidLog(ALICE, 9n, 2)] };
+    expect(bidResultFromReceipt(receipt, ALICE, 10n)).toEqual({
+      paid: 9n,
+      bid: {
+        id: { block: 12, logIndex: 2 },
+        shapeId: 4,
+        bidder: getAddress(ALICE),
+        squareIds: [65_536],
+        amounts: ['9'],
+      },
+    });
+  });
+
+  it('falls back to the value when the receipt has no ShapeBid of the bidder', () => {
+    expect(bidResultFromReceipt({ status: 'success', logs: [shapeBidLog(BOB, 3n)] }, ALICE, 10n)).toEqual({
+      paid: 10n,
+    });
   });
 });
 
@@ -71,9 +87,19 @@ describe('bidSteps', () => {
     await runTx(bidFlow, bidSteps(CALL, fakes, onDone));
     expect(fakes.simulate).toHaveBeenCalledWith(CALL);
     expect(fakes.write).toHaveBeenCalledWith(CALL);
-    expect(bidFlow.getState()).toEqual({ status: 'done', hash: HASH, result: 6n });
+    const result = {
+      paid: 6n,
+      bid: {
+        id: { block: 12, logIndex: 0 },
+        shapeId: 4,
+        bidder: getAddress(ALICE),
+        squareIds: [65_536],
+        amounts: ['6'],
+      },
+    };
+    expect(bidFlow.getState()).toEqual({ status: 'done', hash: HASH, result });
     expect(selectionStore.getState().squareIds.size).toBe(0);
-    expect(onDone).toHaveBeenCalledWith(6n);
+    expect(onDone).toHaveBeenCalledWith(result);
     // "Bid placed" stays until the user selects squares again.
     selectionStore.addSquares([{ lat: 2, lng: 0 }]);
     expect(bidFlow.getState().status).toBe('idle');

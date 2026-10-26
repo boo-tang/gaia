@@ -5,7 +5,7 @@ import type { EventId, StreamMessage, Viewport } from '@gaia/core';
 
 import { type ApiClient, ApiError } from '../api/api-client';
 import { sameViewport, viewportContains } from './areas';
-import { type BidsAction, type BidsState, initialBidsState, reduceBids } from './bids-reducer';
+import { type BidsAction, type BidsState, type ReceiptBid, initialBidsState, reduceBids } from './bids-reducer';
 
 /**
  * The live stream: `idle` before the first snapshot, `connecting` while the browser connects,
@@ -60,6 +60,8 @@ export interface BidsStore {
   loadArea: (viewport: Viewport, options?: { retry?: boolean }) => void;
   /** Each stream message, after the store applied it. */
   onMessage: (listener: (message: StreamMessage) => void) => () => void;
+  /** Shows the user's own bid from its transaction receipt, before the stream sends it. */
+  applyReceipt: (bid: ReceiptBid) => void;
   /** Closes the stream and stops all timers. */
   close: () => void;
 }
@@ -327,6 +329,7 @@ export const createBidsStore = ({
       messageListeners.add(listener);
       return () => messageListeners.delete(listener);
     },
+    applyReceipt: bid => dispatch({ type: 'receipt', bid }),
     close: () => {
       closed = true;
       source?.close();

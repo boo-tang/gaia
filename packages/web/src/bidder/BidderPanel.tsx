@@ -1,12 +1,13 @@
 // The bidder view (desktop and phone): the refund of the connected wallet and "Withdraw".
-import { gaiaAuctionAbi } from '@gaia/core';
+import { gaiaAuctionAbi, isBefore } from '@gaia/core';
 
 import { useQueryClient } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
-import { formatEther } from 'viem';
+import { formatEther, isAddressEqual } from 'viem';
 import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
 
 import { bidderKey, useAuction, useBidder } from '../api/queries';
+import { bidFlow } from '../bid/bid-flow';
 import { deployment, gaiaChain } from '../config/app-config';
 import { TxLink } from '../tx/TxLink';
 import { runTx } from '../tx/tx-flow';
@@ -24,11 +25,20 @@ export const BidderPanel = () => {
   const cancelled = useAuction().data?.status.cancelled === true;
   const bidder = useBidder(address);
   const state = useSyncExternalStore(withdrawFlow.subscribe, withdrawFlow.getState);
+  const bidState = useSyncExternalStore(bidFlow.subscribe, bidFlow.getState);
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
   const queryClient = useQueryClient();
 
   const refund = bidder.data === undefined ? undefined : BigInt(bidder.data.refund);
+  // The receipt of the last bid came before the server had its event: the view is not current yet.
+  const lastBid = bidState.status === 'done' ? bidState.result.bid : undefined;
+  const updating =
+    lastBid !== undefined &&
+    address !== undefined &&
+    isAddressEqual(lastBid.bidder, address) &&
+    bidder.data !== undefined &&
+    (bidder.data.lastEventId === undefined || isBefore(bidder.data.lastEventId, lastBid.id));
   const canWithdraw =
     address !== undefined &&
     chainId === gaiaChain.chain.id &&
@@ -75,6 +85,7 @@ export const BidderPanel = () => {
         </p>
       )}
       {refund !== undefined && <p className="bidder-refund">Refund: {eth(refund)}</p>}
+      {updating && <p className="bid-hint">Bid confirmed. Updating your bids…</p>}
       <button type="button" className="withdraw-button" disabled={!canWithdraw} onClick={withdraw}>
         {BUTTON_TEXT[state.status] ?? 'Withdraw'}
       </button>

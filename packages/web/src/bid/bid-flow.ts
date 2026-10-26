@@ -4,13 +4,22 @@ import { gaiaAuctionAbi } from '@gaia/core';
 
 import { type Address, type Hash, formatEther, isAddressEqual, parseEventLogs } from 'viem';
 
+import type { ReceiptBid } from '../bids/bids-reducer';
 import type { AuctionPhase } from '../components/auction-status';
 import { selectionStore } from '../selection/useSelection';
 import type { ErrorTexts } from '../tx/tx-errors';
 import { type TxReceipt, type TxSteps, createTxFlow } from '../tx/tx-flow';
 
-/** The flow of the bid. The result is `paid` of the `ShapeBid` event. */
-export const bidFlow = createTxFlow<bigint>();
+/** The result of a bid: from the `ShapeBid` event of its receipt. */
+export interface BidResult {
+  /** `paid` of the event: the ETH that the bid spent, without the excess. */
+  paid: bigint;
+  /** The event for the map. Not there when the receipt has no `ShapeBid` of the bidder. */
+  bid?: ReceiptBid;
+}
+
+/** The flow of the bid. */
+export const bidFlow = createTxFlow<BidResult>();
 
 /** Plain texts for the errors that bidders hit most. Other errors show their name. */
 export const BID_ERROR_TEXTS: ErrorTexts = {
@@ -68,11 +77,27 @@ export const bidDisabledReason = ({
   return undefined;
 };
 
-/** `paid` of the `ShapeBid` event of `bidder` in the receipt. */
-export const paidFromReceipt = (receipt: TxReceipt, bidder: Address): bigint | undefined =>
-  parseEventLogs({ abi: gaiaAuctionAbi, eventName: 'ShapeBid', logs: receipt.logs }).find(event =>
-    isAddressEqual(event.args.bidder, bidder),
-  )?.args.paid;
+/** The result of the `ShapeBid` event of `bidder` in the receipt. `paid` falls back to `value`. */
+export const bidResultFromReceipt = (receipt: TxReceipt, bidder: Address, value: bigint): BidResult => {
+  const event = parseEventLogs({ abi: gaiaAuctionAbi, eventName: 'ShapeBid', logs: receipt.logs }).find(e =>
+    isAddressEqual(e.args.bidder, bidder),
+  );
+  if (event === undefined) {
+    return { paid: value };
+  }
+  const { blockNumber, logIndex } = event;
+  const bid: ReceiptBid | undefined =
+    blockNumber === null || logIndex === null
+      ? undefined
+      : {
+          id: { block: Number(blockNumber), logIndex },
+          shapeId: Number(event.args.shapeId),
+          bidder: event.args.bidder,
+          squareIds: [...event.args.squares],
+          amounts: event.args.amounts.map(amount => amount.toString()),
+        };
+  return { paid: event.args.paid, bid };
+};
 
 /** The selection of the bid in progress. After the receipt, only this selection is cleared. */
 let bidSquareIds: ReadonlySet<number> | undefined;
@@ -92,29 +117,29 @@ export interface BidCall {
 export interface BidCalls {
   simulate: (call: BidCall) => Promise<unknown>;
   write: (call: BidCall) => Promise<Hash>;
-  waitForReceipt: TxSteps<bigint>['waitForReceipt'];
+  waitForReceipt: TxSteps<BidResult>['waitForReceipt'];
 }
 
 /**
  * The steps of one bid on the current selection. After the receipt it clears the selection when
  * the selection did not change during the bid.
  */
-export const bidSteps = (call: BidCall, calls: BidCalls, onDone?: (paid: bigint) => void): TxSteps<bigint> => {
+export const bidSteps = (call: BidCall, calls: BidCalls, onDone?: (result: BidResult) => void): TxSteps<BidResult> => {
   bidSquareIds = selectionStore.getState().squareIds;
   return {
     simulate: () => calls.simulate(call),
     write: () => calls.write(call),
     waitForReceipt: calls.waitForReceipt,
-    read: receipt => ({ result: paidFromReceipt(receipt, call.bidder) ?? call.value }),
+    read: receipt => ({ result: bidResultFromReceipt(receipt, call.bidder, call.value) }),
     value: call.value,
     failed: 'The bid failed',
     texts: BID_ERROR_TEXTS,
-    onDone: paid => {
+    onDone: result => {
       if (isBidSelection(selectionStore.getState().squareIds)) {
         selectionStore.clear();
       }
       bidSquareIds = undefined;
-      onDone?.(paid);
+      onDone?.(result);
     },
   };
 };

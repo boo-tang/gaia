@@ -6,15 +6,16 @@ import { useSyncExternalStore } from 'react';
 import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
 
 import { bidderKey, useAuction } from '../api/queries';
+import { bidsStore } from '../bids/useBids';
 import { describeAuction } from '../components/auction-status';
 import { deployment, gaiaChain } from '../config/app-config';
 import { useNowSeconds } from '../hooks/useNowSeconds';
 import { type BidInput, useSelectionBid } from '../selection/useSelection';
 import { type TxState, runTx } from '../tx/tx-flow';
-import { type BidAuctionState, type BidCall, bidDisabledReason, bidFlow, bidSteps } from './bid-flow';
+import { type BidAuctionState, type BidCall, type BidResult, bidDisabledReason, bidFlow, bidSteps } from './bid-flow';
 
 export interface Bid {
-  state: TxState<bigint>;
+  state: TxState<BidResult>;
   input: BidInput;
   /** Why the bid is disabled, apart from the selection. */
   reason?: string;
@@ -85,7 +86,12 @@ export const useBid = (): Bid => {
             }),
           waitForReceipt: hash => publicClient.waitForTransactionReceipt({ hash }),
         },
-        () => void queryClient.invalidateQueries({ queryKey: bidderKey(address) }),
+        result => {
+          if (result.bid !== undefined) {
+            bidsStore.applyReceipt(result.bid);
+          }
+          void queryClient.invalidateQueries({ queryKey: bidderKey(address) });
+        },
       ),
     );
   };
