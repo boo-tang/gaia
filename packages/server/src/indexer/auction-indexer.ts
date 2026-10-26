@@ -1,10 +1,15 @@
 // The event loop. Each step:
-// 1. Compares the hash of the last applied block with the chain. When they differ (reorg), it finds the
-//    newest applied block that the chain still has, undoes the blocks after it, and sends a reorg
-//    message. When no block of the undo window matches, it clears the store (a new backfill).
-// 2. Gets the auction events from the block after the last applied block to the chain head, in ranges of
+// 1. Gets the head block (one call). When the head is older than the last applied block, the node
+//    that answered is behind: the step ends.
+// 2. Checks that the chain still has the last applied block: the head is that block, or its parent
+//    hash is that block. Only when blocks lie between them does it read the hash of the last applied
+//    block (a node that does not have it yet is behind: the step ends). When the hashes differ
+//    (reorg), it finds the newest applied block that the chain still has, undoes the blocks after
+//    it, and sends a reorg message. When no block of the undo window matches, it clears the store
+//    (a new backfill).
+// 3. Gets the auction events from the block after the last applied block to the head, in ranges of
 //    `logRange` blocks (the backfill is the same loop from the deploy block).
-// 3. Applies each block with events in (block, log index) order: reducer, then one
+// 4. Applies each block with events in (block, log index) order: reducer, then one
 //    `applyBlock`, then the live messages. Then it applies the head block (with no events), so
 //    that the last applied block follows the head.
 //
@@ -14,13 +19,15 @@
 // rules to the reducer; the loop stays the same.
 import type { Address } from '@gaia/core';
 
-import type { PublicClient } from 'viem';
+import type { GetBlockReturnType, PublicClient } from 'viem';
 
 import { type AuctionEventLog, fetchAuctionEvents, readBlockHash } from '../auction-rpc';
 import type { LiveMessageBus } from '../live-message-bus';
-import { type AuctionStore, UndoWindowExceededError } from '../store/auction-store';
+import { type AuctionStore, type BlockNumberAndHash, UndoWindowExceededError } from '../store/auction-store';
 import type { AuctionEvent } from './auction-events';
 import { reduceAuctionBlock } from './auction-reducer';
+
+type HeadBlock = GetBlockReturnType<undefined, false, 'latest'>;
 
 export interface AuctionIndexerOptions {
   client: PublicClient;
@@ -84,12 +91,15 @@ export class AuctionIndexer {
 
   private async syncToHead() {
     const { client, store } = this.o;
-    if (await this.undoReorgedBlocks()) {
-      return;
+    const headBlock = await client.getBlock({ blockTag: 'latest' });
+    const head = Number(headBlock.number);
+    const lastBlock = await store.lastBlock();
+    if (lastBlock !== undefined) {
+      if (head < lastBlock.number || !(await this.chainHasBlock(lastBlock, headBlock))) {
+        return;
+      }
     }
 
-    const head = Number(await client.getBlockNumber());
-    const lastBlock = await store.lastBlock();
     let from = lastBlock === undefined ? this.o.deployBlock : lastBlock.number + 1;
     if (from > head) {
       return;
@@ -107,11 +117,7 @@ export class AuctionIndexer {
     // Apply the head block, so that the next step checks the head hash.
     const last = await store.lastBlock();
     if (last === undefined || last.number < head) {
-      const block = await client.getBlock({ blockNumber: BigInt(head) });
-      if (block.hash === null) {
-        return;
-      }
-      await this.applyBlock(head, block.hash, Number(block.timestamp), []);
+      await this.applyBlock(head, headBlock.hash, Number(headBlock.timestamp), []);
     }
   }
 
@@ -135,17 +141,31 @@ export class AuctionIndexer {
     this.o.liveMessageBus.publish(changes.messages);
   }
 
-  // True when the chain no longer has the last applied block. Then undoes the dropped blocks.
-  private async undoReorgedBlocks(): Promise<boolean> {
-    const { client, store, liveMessageBus } = this.o;
-    const lastBlock = await store.lastBlock();
-    if (lastBlock === undefined) {
-      return false;
+  // True when the chain still has the last applied block. False when the node is behind (no undo),
+  // or after a reorg (the dropped blocks are undone): then the step ends.
+  private async chainHasBlock(lastBlock: BlockNumberAndHash, head: HeadBlock): Promise<boolean> {
+    if (head.number === BigInt(lastBlock.number)) {
+      if (head.hash === lastBlock.hash) {
+        return true;
+      }
+    } else if (head.number === BigInt(lastBlock.number + 1) && head.parentHash === lastBlock.hash) {
+      return true;
+    } else {
+      const hash = await readBlockHash(this.o.client, lastBlock.number);
+      if (hash === lastBlock.hash) {
+        return true;
+      }
+      if (hash === undefined) {
+        return false;
+      }
     }
-    if ((await readBlockHash(client, lastBlock.number)) === lastBlock.hash) {
-      return false;
-    }
+    await this.undoReorgedBlocks();
+    return false;
+  }
 
+  // Undoes the blocks that the chain no longer has.
+  private async undoReorgedBlocks() {
+    const { client, store, liveMessageBus } = this.o;
     for (const block of await store.recentBlocks()) {
       if ((await readBlockHash(client, block.number)) !== block.hash) {
         continue;
@@ -161,12 +181,11 @@ export class AuctionIndexer {
         this.log('Reorg deeper than the undo window: cleared the store, backfill again.');
       }
       liveMessageBus.publish([{ type: 'reorg', lastEventId: await store.lastEventId() }]);
-      return true;
+      return;
     }
     await store.reset();
     this.log('Reorg deeper than the undo window: cleared the store, backfill again.');
     liveMessageBus.publish([{ type: 'reorg', lastEventId: await store.lastEventId() }]);
-    return true;
   }
 }
 
