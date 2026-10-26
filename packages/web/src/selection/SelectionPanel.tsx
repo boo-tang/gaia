@@ -1,12 +1,11 @@
 // The bid panel: the selected squares, the price, the total and the Bid button (the
 // bid flow is in src/bid/).
-import { type AuctionRules, rectangleSize, selectionExtent } from '@gaia/core';
+import { rectangleSize, selectionExtent } from '@gaia/core';
 
 import { useMemo } from 'react';
 import { formatEther } from 'viem';
 import { useAccount } from 'wagmi';
 
-import { useAuction } from '../api/queries';
 import { BidButton, BidStatus } from '../bid/BidButton';
 import { useBid } from '../bid/useBid';
 import { selectionStore, useSelection } from './useSelection';
@@ -15,18 +14,10 @@ const eth = (wei: bigint) => `${formatEther(wei)} ETH`;
 const count = (n: number, word: string) => `${n.toLocaleString('en-US')} ${word}${n === 1 ? '' : 's'}`;
 const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
 
-const Limits = ({ rules }: { rules: AuctionRules }) => (
-  <p className="bid-limits">
-    A shape has {rules.minShapeSquares.toLocaleString('en-US')} to {rules.maxShapeSquares.toLocaleString('en-US')}{' '}
-    squares. The longer side is at most {rules.maxShapeAspectRatio} times the shorter side.
-  </p>
-);
-
 export const SelectionPanel = () => {
   const { priceMode, priceText, pricePerSquare } = useSelection(state => state);
   const placing = useBid();
   const bid = placing.input;
-  const rules = useAuction().data?.rules;
   const { address } = useAccount();
   const { priced } = bid;
 
@@ -67,8 +58,6 @@ export const SelectionPanel = () => {
           {extent !== undefined && ` (${count(extent.rows, 'row')}, ${count(extent.columns, 'column')})`}
         </p>
       )}
-
-      {rules !== undefined && <Limits rules={rules} />}
 
       <fieldset className="bid-price">
         <legend>Price</legend>
