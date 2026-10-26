@@ -161,16 +161,16 @@ See the map with live bids on Anvil:
 
 ### Shape selection
 
-The bid panel has a tool picker, as in an image editor: "Pan" (key H) pans the map with a drag, "Rectangle" (key R) selects squares with a drag. With the rectangle tool the map does not pan; the wheel zoom and the right-drag rotation still work. Each drag adds all squares inside the rectangle to the selection, also across the antimeridian. With both tools, a click on a square selects it, and a click on a selected square removes it. "Clear" removes all selected squares. The app keeps at most 10,000 selected squares.
+The map has a tool picker at the top left, as in an image editor: "Pointer" (key H) and "Rectangle" (key R). With both tools a drag pans the map. With the pointer, a click on a square selects it, and a click on a selected square removes it. With the rectangle, the first click starts a rectangle that follows the pointer, and the second click adds all squares inside it to the selection, also across the antimeridian; Escape drops it. A rectangle of one square works like a pointer click. "Clear" in the bid panel removes all selected squares. The app keeps at most 10,000 selected squares.
 
-The price has two options: "Minimum bid" (each square gets its minimum next bid) or "My price per square" (one price in ETH for each square, at least the highest minimum next bid of the selection). The squares of the connected wallet cost 0. The panel shows the total, the new, outbid and own squares, the shapes that the selection takes squares from, and the shape limits of the auction as information. The client does not check the shape rules: the simulation of the bid gives the contract error before the wallet opens. The map colours each selected square by its cost (own squares green), and the readout shows the price of the square under the pointer.
+The price has two options: "Minimum bid" (each square gets its minimum next bid) or "Set price per square" (one price in ETH for each square, at least the highest minimum next bid of the selection). The squares of the connected wallet cost 0. The panel shows the total, the new, outbid and own squares, the shapes that the selection takes squares from, and the shape limits of the auction as information. The client does not check the shape rules: the simulation of the bid gives the contract error before the wallet opens. The map colours each selected square by its cost (own squares green), and the readout shows the price of the square under the pointer.
 
 Try it on Anvil (after the steps of the map above):
 
-1. Near Oxford, press R and drag over seed bids and empty squares. The panel shows the squares, the total and the shapes that the selection cuts into. Drag again: the squares are added. Click a selected square: it is removed.
-2. Choose "My price per square", then "Use minimum". The total is the price times the number of squares.
-3. Near Fiji, drag across 180°: the selection has the columns on both sides.
-4. Drag a very large rectangle at a low zoom: the map says "Too many squares" and the selection does not change.
+1. Near Oxford, press R, click, move over seed bids and empty squares and click again. The panel shows the squares, the total and the shapes that the selection cuts into. Draw another rectangle: the squares are added. Press H and click a selected square: it is removed.
+2. Choose "Set price per square", then "Use minimum". The total is the price times the number of squares.
+3. Near Fiji, draw a rectangle across 180°: the selection has the columns on both sides.
+4. Draw a very large rectangle at a low zoom: the map says "Too many squares" and the selection does not change.
 
 ### Bid and withdraw
 

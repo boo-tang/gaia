@@ -1,4 +1,4 @@
-// The bid panel: the tools, the selected squares, the price, the total and the Bid button (the
+// The bid panel: the selected squares, the price, the total and the Bid button (the
 // bid flow is in src/bid/).
 import { type AuctionRules, rectangleSize, selectionExtent } from '@gaia/core';
 
@@ -9,7 +9,6 @@ import { useAccount } from 'wagmi';
 import { useAuction } from '../api/queries';
 import { BidButton, BidStatus } from '../bid/BidButton';
 import { useBid } from '../bid/useBid';
-import { ToolPicker } from './ToolPicker';
 import { selectionStore, useSelection } from './useSelection';
 
 const eth = (wei: bigint) => `${formatEther(wei)} ETH`;
@@ -56,12 +55,11 @@ export const SelectionPanel = () => {
   return (
     <section className="bid-panel" aria-label="Bid">
       <h2 className="panel-title">Bid</h2>
-      <ToolPicker />
 
       {bid.squareCount === 0 ? (
         <p className="bid-summary">
-          Select squares on the map: click a square, or drag with the rectangle tool (R). A click on a selected square
-          removes it.
+          Select squares on the map: click a square, or click two corners with the rectangle tool (R). A click on a
+          selected square removes it.
         </p>
       ) : (
         <p className="bid-summary">
@@ -90,7 +88,7 @@ export const SelectionPanel = () => {
             checked={priceMode === 'perSquare'}
             onChange={() => selectionStore.setPriceMode('perSquare')}
           />{' '}
-          My price per square
+          Set price per square
         </label>
         {priceMode === 'perSquare' && (
           <div className="bid-price-input">

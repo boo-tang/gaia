@@ -1,4 +1,4 @@
-// The deck.gl layers of the map: bids, grid, selection, drag preview and hover square. deck.gl draws them in
+// The deck.gl layers of the map: bids, grid, selection, drawing preview and hover square. deck.gl draws them in
 // MapLibre's canvas (interleaved), under the place names (`beforeId`).
 import { type Bounds, type Square, gridLines, squareBounds, unpackSquare } from '@gaia/core';
 
@@ -124,7 +124,7 @@ export interface LayerInput {
   grid: Ring[];
   zoom: number;
   selection: readonly SelectionCell[];
-  /** The outline of the drag of a selection tool, in degrees. */
+  /** The outline of the drawing of a selection tool, in degrees. */
   preview?: [number, number][][];
   hover?: Square;
   /** A square with an outline as the hover square (on a phone: the tapped square). */

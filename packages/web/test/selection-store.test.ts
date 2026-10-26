@@ -2,7 +2,7 @@ import { packSquare, rectangleSquares } from '@gaia/core';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { rectangleSession } from '../src/selection/drag';
+import { rectangleSession } from '../src/selection/draw';
 import { MAX_SELECTION_SQUARES, createSelectionStore, parsePrice } from '../src/selection/selection-store';
 
 describe('createSelectionStore', () => {
@@ -15,7 +15,7 @@ describe('createSelectionStore', () => {
     expect(state.pricePerSquare).toBeUndefined();
   });
 
-  it('adds the squares of each drag, with no duplicates', () => {
+  it('adds the squares of each drawing, with no duplicates', () => {
     const store = createSelectionStore();
     const listener = vi.fn();
     store.subscribe(listener);

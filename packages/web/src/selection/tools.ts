@@ -5,9 +5,9 @@ import type { Square } from '@gaia/core';
 
 import type { ComponentType } from 'react';
 
-import { type DragSession, rectangleSession } from './drag';
+import { type DrawSession, rectangleSession } from './draw';
 import type { ToolId } from './selection-store';
-import { HandIcon, RectangleIcon } from './tool-icons';
+import { PointerIcon, RectangleIcon } from './tool-icons';
 
 export interface SelectionTool {
   id: ToolId;
@@ -17,21 +17,21 @@ export interface SelectionTool {
   Icon: ComponentType;
   /** The map cursor. Undefined: the cursor of MapLibre (grab, grabbing). */
   cursor?: string;
-  /** True: a drag pans the map. False: a drag selects squares (`begin`). */
-  panOnDrag: boolean;
-  /** Starts a drag at the square under the pointer. Only for `panOnDrag = false`. */
-  begin?: (start: Square) => DragSession;
+  /**
+   * Starts drawing at the clicked square; the next click ends it. Undefined: a click selects or
+   * deselects one square. With every tool a drag pans the map.
+   */
+  begin?: (start: Square) => DrawSession;
 }
 
 export const TOOLS: readonly SelectionTool[] = [
-  { id: 'pan', label: 'Pan', key: 'h', Icon: HandIcon, panOnDrag: true },
+  { id: 'pan', label: 'Pointer', key: 'h', Icon: PointerIcon },
   {
     id: 'rectangle',
     label: 'Rectangle',
     key: 'r',
     Icon: RectangleIcon,
     cursor: 'crosshair',
-    panOnDrag: false,
     begin: rectangleSession,
   },
 ];

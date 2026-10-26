@@ -175,6 +175,50 @@ body {
   justify-content: center;
 }
 
+/* The tool picker: a column at the top left, in the size and look of the MapLibre controls. */
+.tool-picker {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 4px;
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 0.1);
+  overflow: hidden;
+}
+
+.tool-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 29px;
+  height: 29px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #333333;
+  cursor: pointer;
+}
+
+.tool-button + .tool-button {
+  border-top: 1px solid #dddddd;
+}
+
+.tool-button:hover {
+  background: rgb(0 0 0 / 0.05);
+}
+
+.tool-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.tool-button[aria-checked='true'] {
+  background: var(--color-accent);
+  color: #ffffff;
+}
+
 .map-notices {
   position: absolute;
   top: var(--gap);
@@ -227,31 +271,6 @@ body {
 .panel-title {
   margin: 0;
   font-size: 1rem;
-}
-
-.tool-picker {
-  display: flex;
-  gap: 4px;
-}
-
-.tool-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text);
-  cursor: pointer;
-}
-
-.tool-button[aria-checked='true'] {
-  border-color: var(--color-accent);
-  background: var(--color-accent);
-  color: #ffffff;
 }
 
 .bid-limits,

@@ -1,4 +1,4 @@
-// The tool buttons of the bid panel, as in an image editor. The keys of the tools work in the
+// The tool buttons on the map, as in an image editor. The keys of the tools work in the
 // whole page, but not in an input.
 import { useEffect } from 'react';
 
