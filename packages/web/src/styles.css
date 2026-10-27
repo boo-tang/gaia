@@ -55,8 +55,38 @@ body {
   font-size: 1.25rem;
 }
 
-.app-wallet {
+.app-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
+}
+
+.help-button {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.help-button:hover,
+.help-button:focus-visible {
+  border-color: var(--color-accent);
+}
+
+.testnet-badge {
+  padding: 2px 8px;
+  border: 1px solid var(--color-warning-border);
+  border-radius: 999px;
+  background: var(--color-warning-bg);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .auction-status {
@@ -209,6 +239,7 @@ body {
 
 /* The map (src/map/). MapLibre fills .map-view; the notices and the readout lie over it. */
 .map-view {
+  --legend-width: 190px;
   position: relative;
   flex: 1;
   min-width: 0;
@@ -297,7 +328,8 @@ body {
   position: absolute;
   left: var(--gap);
   bottom: 28px;
-  max-width: calc(100% - 2 * var(--gap));
+  /* Room for the legend at the bottom right. */
+  max-width: calc(100% - 3 * var(--gap) - var(--legend-width));
   margin: 0;
   padding: 6px 8px;
   border-radius: 6px;
@@ -306,6 +338,215 @@ body {
   font-variant-numeric: tabular-nums;
   pointer-events: none;
   overflow-wrap: anywhere;
+}
+
+/* The legend at the bottom right, above the MapLibre attribution. */
+.map-legend {
+  position: absolute;
+  right: 10px;
+  bottom: 40px;
+  max-width: var(--legend-width);
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.9);
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 0.1);
+  font-size: 0.8rem;
+}
+
+.map-legend summary {
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.map-legend ul {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.map-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-swatches {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.legend-swatch {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border: 1px solid rgb(0 0 0 / 0.15);
+  border-radius: 2px;
+}
+
+.legend-swatches .legend-swatch {
+  width: 8px;
+}
+
+.legend-swatch-wide {
+  width: 32px;
+}
+
+/* Phone: the legend starts closed (a small "Legend" button), so the readout gets more room. */
+@media (max-width: 767.98px) {
+  .map-view {
+    --legend-width: 160px;
+  }
+
+  /* Above the attribution, which starts open on two lines on a narrow map. */
+  .map-legend {
+    bottom: 64px;
+  }
+
+  .map-readout {
+    max-width: calc(100% - 3 * var(--gap) - 80px);
+  }
+}
+
+/* The dialogs "How it works" and "Auction rules" (src/help/). The dialog has no padding: a click on
+   the dialog element itself is a click on the backdrop. */
+.info-dialog {
+  width: min(34rem, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+.info-dialog::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+
+.info-dialog-content {
+  padding: 16px;
+}
+
+.info-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap);
+}
+
+.info-dialog-header h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.info-dialog-close {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--color-muted);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.info-dialog-close:hover {
+  background: var(--color-bg);
+}
+
+.help-text {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.help-text p,
+.help-text ol,
+.help-text ul {
+  margin: 8px 0;
+}
+
+.help-text ol,
+.help-text ul {
+  padding-left: 20px;
+}
+
+.help-text li + li {
+  margin-top: 4px;
+}
+
+.help-text h3 {
+  margin: 16px 0 4px;
+  font-size: 1rem;
+}
+
+/* The shape examples of "Auction rules". */
+.diagram-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.diagram {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 100%;
+  margin: 0;
+}
+
+.diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.diagram figcaption {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+.diagram-valid .diagram-mark {
+  color: #15803d;
+}
+
+.diagram-invalid .diagram-mark {
+  color: var(--color-error);
+}
+
+.diagram-bid {
+  fill: var(--color-accent);
+  background: var(--color-accent);
+}
+
+.diagram-other {
+  fill: #9ca3af;
+  background: #9ca3af;
+}
+
+.diagram-empty {
+  fill: none;
+  stroke: var(--color-border);
+}
+
+.help-text .diagram-key {
+  margin: 4px 0 12px;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+}
+
+.diagram-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 4px;
+  border-radius: 2px;
+  vertical-align: baseline;
 }
 
 /* The bid panel (src/selection/). */
@@ -324,6 +565,13 @@ body {
 .panel-title {
   margin: 0;
   font-size: 1rem;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .bid-limits,

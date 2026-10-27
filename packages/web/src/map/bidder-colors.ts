@@ -4,7 +4,7 @@
 export type Rgb = readonly [number, number, number];
 
 // Tableau 10 without its orange (the own colour).
-const BIDDER_COLORS: readonly Rgb[] = [
+export const BIDDER_COLORS: readonly Rgb[] = [
   [78, 121, 167],
   [225, 87, 89],
   [118, 183, 178],

@@ -23,8 +23,12 @@ export const LAYER_IDS = {
   hover: 'hover',
 } as const;
 
-const SELECTION_RED = [220, 38, 38] as const;
-const OWN_GREEN = [22, 163, 74] as const;
+/** The alpha of a bid square on the flat map. The legend uses the colours and alphas of this file. */
+export const BID_ALPHA = 140;
+export const SELECTION_RED = [220, 38, 38] as const;
+export const OWN_GREEN = [22, 163, 74] as const;
+/** The alphas of the selection fill: lowest and highest cost, no price, own square. */
+export const SELECTION_ALPHA = { low: 40, high: 160, noPrice: 100, own: 90 } as const;
 
 /**
  * The fill of each selected square: green for own squares, else red with an alpha from 40 (the
@@ -42,12 +46,13 @@ export const selectionFill = (cells: readonly SelectionCell[]) => {
   }
   return ({ cost, own }: SelectionCell): [number, number, number, number] => {
     if (own) {
-      return [...OWN_GREEN, 90];
+      return [...OWN_GREEN, SELECTION_ALPHA.own];
     }
     if (cost === undefined || low === undefined || high === undefined || high === low) {
-      return [...SELECTION_RED, 100];
+      return [...SELECTION_RED, SELECTION_ALPHA.noPrice];
     }
-    return [...SELECTION_RED, 40 + Math.round((Number(cost - low) / Number(high - low)) * 120)];
+    const share = Number(cost - low) / Number(high - low);
+    return [...SELECTION_RED, SELECTION_ALPHA.low + Math.round(share * (SELECTION_ALPHA.high - SELECTION_ALPHA.low))];
   };
 };
 
@@ -158,7 +163,7 @@ export const buildLayers = ({
       id: LAYER_IDS.bids,
       data: rows,
       getPolygon: ([squareId]) => ring(unpackSquare(squareId)),
-      getFillColor: ([, bid]) => [...bidderColor(bid.bidder, ownAddress), extruded ? 230 : 140],
+      getFillColor: ([, bid]) => [...bidderColor(bid.bidder, ownAddress), extruded ? 230 : BID_ALPHA],
       extruded,
       getElevation: ([, bid]) => (extruded ? (Number(bid.amount) / 1e18) * metersPerEth : 0),
       pickable: extruded,

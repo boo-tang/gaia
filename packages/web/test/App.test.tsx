@@ -48,6 +48,13 @@ const snapshot: ViewportSnapshot = {
 beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.stubGlobal('EventSource', FakeEventSource);
+  // jsdom has no modal dialogs. The help dialog opens at the first visit.
+  HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+    this.open = false;
+  };
   // jsdom has no matchMedia: a desktop screen.
   vi.stubGlobal(
     'matchMedia',

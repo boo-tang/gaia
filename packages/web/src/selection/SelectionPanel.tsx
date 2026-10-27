@@ -2,12 +2,14 @@
 // bid flow is in src/bid/).
 import { rectangleSize, selectionExtent } from '@gaia/core';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { formatEther } from 'viem';
 import { useAccount } from 'wagmi';
 
 import { BidButton, BidStatus } from '../bid/BidButton';
 import { useBid } from '../bid/useBid';
+import { AuctionRules } from '../help/AuctionRules';
+import { InfoDialog } from '../help/InfoDialog';
 import { selectionStore, useSelection } from './useSelection';
 
 const eth = (wei: bigint) => `${formatEther(wei)} ETH`;
@@ -20,6 +22,7 @@ export const SelectionPanel = () => {
   const bid = placing.input;
   const { address } = useAccount();
   const { priced } = bid;
+  const [rulesOpen, setRulesOpen] = useState(false);
 
   const extent = useMemo(() => {
     const area = priced === undefined ? undefined : selectionExtent(priced.sorted);
@@ -45,12 +48,20 @@ export const SelectionPanel = () => {
 
   return (
     <section className="bid-panel" aria-label="Bid">
-      <h2 className="panel-title">Bid</h2>
+      <div className="panel-heading">
+        <h2 className="panel-title">Bid</h2>
+        <button type="button" className="link-button" onClick={() => setRulesOpen(true)}>
+          Auction rules
+        </button>
+      </div>
+      <InfoDialog open={rulesOpen} onClose={() => setRulesOpen(false)} title="Auction rules">
+        <AuctionRules />
+      </InfoDialog>
 
       {bid.squareCount === 0 ? (
         <p className="bid-summary">
-          Select squares on the map: click a square, or click two corners with the rectangle tool (R). A click on a
-          selected square removes it.
+          Select squares on the map with the drawing tools at the top left of the map. A click on a selected square
+          removes it.
         </p>
       ) : (
         <p className="bid-summary">

@@ -24,6 +24,7 @@ import type { SelectionCell } from '../selection/selection-cells';
 import { MAX_SELECTION_SQUARES } from '../selection/selection-store';
 import type { SelectionTool } from '../selection/tools';
 import { DeckOverlay } from './DeckOverlay';
+import { MapLegend } from './MapLegend';
 import { cameraRequests } from './camera-request';
 import { type CameraView, browserTimeZone, firstView, readSavedView, saveView } from './first-view';
 import { type GaiaStyle, loadGaiaStyle } from './gaia-style';
@@ -341,6 +342,7 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
         <p className="map-status">{styleError ? 'Cannot load the map.' : 'Loading the map…'}</p>
       )}
       {gaiaStyle !== undefined && selectionEnabled && <ToolPicker />}
+      {gaiaStyle !== undefined && <MapLegend showSelection={selectionEnabled} />}
       <div className="map-notices" role="status">
         {stream === 'down' && <p className="map-notice">Live updates failed. Please refresh the page.</p>}
         {tooMany && <p className="map-notice">Zoom in to load the bids.</p>}
