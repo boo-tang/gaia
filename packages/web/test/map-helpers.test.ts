@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { boundsToViewport, padBounds } from '../src/map/viewport';
+import { boundsToViewport, cameraForBounds, padBounds, viewportToBounds } from '../src/map/viewport';
 
 describe('boundsToViewport', () => {
   it('converts an area to rows and columns', () => {
@@ -41,5 +41,45 @@ describe('padBounds', () => {
       east: 60,
     });
     expect(padBounds({ south: 80, north: 89, west: 170, east: 190 })).toMatchObject({ north: 90, east: 200 });
+  });
+});
+
+describe('viewportToBounds', () => {
+  it('gives the outer edges of the squares in degrees', () => {
+    const bounds = viewportToBounds({ south: 14150, north: 14159, west: 17990, east: 18009 });
+    expect(bounds.south).toBeCloseTo(51.5);
+    expect(bounds.north).toBeCloseTo(51.6);
+    expect(bounds.west).toBeCloseTo(-0.1);
+    expect(bounds.east).toBeCloseTo(0.1);
+  });
+
+  it('puts the east edge above 180° across the antimeridian', () => {
+    const bounds = viewportToBounds({ south: 9000, north: 9009, west: 35990, east: 9 });
+    expect(bounds.west).toBeCloseTo(179.9);
+    expect(bounds.east).toBeCloseTo(180.1);
+  });
+});
+
+describe('cameraForBounds', () => {
+  const size = { width: 664, height: 600 };
+
+  it('centres the area and zooms until its wider side fits', () => {
+    // 0.2° wide at zoom z: 0.2 / 360 * 512 * 2^z pixels, here 568.
+    const camera = cameraForBounds({ south: 51.9, north: 52, west: -0.2, east: 0 }, size, 48, 12);
+    expect(camera.center[0]).toBeCloseTo(-0.1);
+    expect(camera.center[1]).toBeCloseTo(51.95);
+    expect(camera.zoom).toBeCloseTo(Math.log2((568 * 360) / (512 * 0.2)));
+  });
+
+  it('keeps a centre near a pole and the east edge above 180°', () => {
+    const camera = cameraForBounds({ south: 86, north: 86.1, west: 179.9, east: 180.1 }, size, 48, 12);
+    expect(camera.center[0]).toBeCloseTo(180);
+    expect(camera.center[1]).toBeCloseTo(86.05);
+    // Near the pole a row is high on the map: the rows set the zoom.
+    expect(camera.zoom).toBeLessThan(Math.log2((568 * 360) / (512 * 0.2)));
+  });
+
+  it('stops at the zoom limit for a small area', () => {
+    expect(cameraForBounds({ south: 0, north: 0.01, west: 0, east: 0.01 }, size, 48, 12).zoom).toBe(12);
   });
 });

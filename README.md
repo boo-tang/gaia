@@ -176,7 +176,7 @@ Try it on Anvil (after the steps of the map above):
 
 "Bid" sends `bidOnShape` with exactly the total of the panel as the value. Just before the wallet opens, the app simulates the bid on the RPC node: a contract error (for example "The prices changed. The bid now costs X ETH.") shows below the button and the wallet does not open. A rejection in the wallet is not an error: the panel goes back to the selection. While the transaction waits, the button says so. After the receipt the panel shows "Bid placed: X ETH" (with a link to the block explorer; Anvil has none), the map shows the bid, and the selection clears. A bid that fails keeps the selection. Bid is disabled before the start, while the auction is paused, after a cancel and after the end time, with no wallet, and with a wallet on a different chain.
 
-"Your bids" (also on a phone) shows the refund of the wallet: the outbid amounts and, after a cancel, all bids (`refund` of `GET /bidder/:address`). It loads again after each bid and withdraw, and when the live stream sends a bid that takes squares of the wallet. Until the server has the user's last bid, it says "Bid confirmed. Updating your bids…". "Withdraw" sends the refund to the wallet.
+"Your bids" (also on a phone) shows the refund of the wallet: the outbid amounts and, after a cancel, all bids (`refund` of `GET /bidder/:address`). Below "Withdraw" it lists the shapes of the wallet, newest first: the time of the bid, the squares where the bid is still the winning bid (of all squares of the bid), the sum of their amounts and what the bid paid. A line above the list gives the totals of the winning squares. A click on a shape moves the map to it. The view loads again after each bid and withdraw, and when the live stream sends a bid that takes squares of the wallet. Until the server has the user's last bid, it says "Bid confirmed. Updating your bids…". "Withdraw" sends the refund to the wallet.
 
 Wallet setup on Anvil: in a browser wallet (for example MetaMask or Rabby), add the network RPC URL `http://127.0.0.1:8545`, chain ID 31337, currency ETH. Import the private key of an Anvil account (`anvil` prints the keys at the start). Accounts 3 to 9 place the seed bids; account 1 is the admin. Use a different account in a second browser profile to bid against the first. After a restart of Anvil, reset the account in the wallet (the nonce starts at 0 again).
 
@@ -184,7 +184,7 @@ Try it on Anvil (after `yarn chain:local`, `yarn deploy:local`, `yarn seed:local
 
 1. Connect with account 6. Select squares over a seed bid near London and click "Bid". The panel shows "Bid placed: X ETH" and the map shows the squares in the colour of the wallet.
 2. Select squares again and wait for the total. In a second profile with account 7, bid on one of these squares. The first panel shows the new total within a few seconds. To see the simulation stop a bid with an old total, stop the server before the second bid and click "Bid" in the first panel: it shows "The prices changed. The bid now costs X ETH."
-3. In the second profile, "Your bids" shows the refund of account 7 after the bid of account 6. Click "Withdraw": the panel shows "Withdrawn: X ETH" and the refund goes to 0.
+3. In the second profile, "Your bids" shows the refund of account 7 after the bid of account 6, and the shape of account 7 has fewer winning squares. Click the shape: the map moves to it. Click "Withdraw": the panel shows "Withdrawn: X ETH" and the refund goes to 0.
 4. Pause and cancel as the admin (account 1, which Anvil unlocks):
 
 ```

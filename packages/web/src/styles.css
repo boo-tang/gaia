@@ -32,6 +32,13 @@ body {
   min-height: 100dvh;
 }
 
+/* Desktop: the page has the window height, and the side panel scrolls. */
+@media (min-width: 768px) {
+  .app {
+    height: 100dvh;
+  }
+}
+
 .app-header {
   display: flex;
   flex-wrap: wrap;
@@ -124,6 +131,48 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* The shapes of the wallet in "Your bids". A click on a shape moves the map to it. */
+.shape-totals {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.shape-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-self: stretch;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shape-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.shape-item:hover,
+.shape-item:focus-visible {
+  border-color: var(--color-accent);
+}
+
+.shape-item-time,
+.shape-item-amounts {
+  color: var(--color-muted);
+}
+
 .phone-note {
   margin: 0;
   color: var(--color-muted);
@@ -150,6 +199,10 @@ body {
 
   .withdraw-button {
     align-self: stretch;
+    min-height: 44px;
+  }
+
+  .shape-item {
     min-height: 44px;
   }
 }

@@ -5,7 +5,7 @@ import { type Bounds, type Square, describeSquare, packSquare, squareAt } from '
 import type { Map as MapLibreMap, TransformConstrainFunction } from 'maplibre-gl';
 // eslint-disable-next-line no-restricted-imports -- the CSS file of the package, not our build
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   GeolocateControl,
   Map as MapGL,
@@ -24,11 +24,12 @@ import type { SelectionCell } from '../selection/selection-cells';
 import { MAX_SELECTION_SQUARES } from '../selection/selection-store';
 import type { SelectionTool } from '../selection/tools';
 import { DeckOverlay } from './DeckOverlay';
+import { cameraRequests } from './camera-request';
 import { type CameraView, browserTimeZone, firstView, readSavedView, saveView } from './first-view';
 import { type GaiaStyle, loadGaiaStyle } from './gaia-style';
 import { bidRows, buildLayers, gridPaths } from './layers';
 import './maplibre-worker';
-import { boundsToViewport, padBounds } from './viewport';
+import { boundsToViewport, cameraForBounds, padBounds, viewportToBounds } from './viewport';
 
 export interface MapViewProps {
   /** The selected squares, with their prices when they are known (useSelectionCells). */
@@ -63,6 +64,10 @@ interface DrawPreview {
 const REQUEST_DELAY_MS = 250;
 // How long the map shows that a drawing selected too many squares.
 const TOO_LARGE_NOTICE_MS = 4_000;
+// A move to an area (camera request): the space around it in pixels, at most 1/8 of the map, and
+// the zoom limit for a small area.
+const FIT_PADDING = 48;
+const FIT_MAX_ZOOM = 12;
 // Near a pole, MapLibre draws Web Mercator from zoom 12 and the view breaks.
 const POLE_MAX_ZOOM = 11.5;
 
@@ -100,6 +105,9 @@ const sameSquare = (a: Square | undefined, b: Square) => a !== undefined && a.la
 
 const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapViewProps) => {
   const mapRef = useRef<MapRef>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [loaded, setLoaded] = useState(false);
+  const cameraRequest = useSyncExternalStore(cameraRequests.subscribe, cameraRequests.getState);
   const requestTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [gaiaStyle, setGaiaStyle] = useState<GaiaStyle>();
   const [styleError, setStyleError] = useState(false);
@@ -159,6 +167,29 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
     clearTimeout(requestTimer.current);
     requestTimer.current = setTimeout(() => bidsStore.requestArea(viewport), REQUEST_DELAY_MS);
   }, []);
+
+  const onLoad = useCallback(() => {
+    setLoaded(true);
+    updateView();
+  }, [updateView]);
+
+  // A camera request moves the map once, after the load. On a phone the panel is below the map:
+  // when the page is scrolled down, it scrolls back up so that the map shows.
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!loaded || cameraRequest === undefined || map === undefined) {
+      return;
+    }
+    cameraRequests.done(cameraRequest.id);
+    const canvas = map.getCanvas();
+    const size = { width: canvas.clientWidth, height: canvas.clientHeight };
+    const padding = Math.min(FIT_PADDING, size.width / 8, size.height / 8);
+    map.flyTo(cameraForBounds(viewportToBounds(cameraRequest.area), size, padding, FIT_MAX_ZOOM));
+    const container = containerRef.current;
+    if (container !== null && container.getBoundingClientRect().top < 0) {
+      container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [loaded, cameraRequest]);
 
   const selectedCount = selection.length;
   const showDraw = useCallback(
@@ -282,7 +313,7 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
   const shownCell = shown === undefined ? undefined : selection[cellIndex.get(packSquare(shown)) ?? -1];
 
   return (
-    <div className="map-view">
+    <div className="map-view" ref={containerRef}>
       {gaiaStyle !== undefined && (
         <MapGL
           ref={mapRef}
@@ -290,7 +321,7 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
           mapStyle={gaiaStyle.style}
           projection="globe"
           maxPitch={70}
-          onLoad={updateView}
+          onLoad={onLoad}
           transformConstrain={constrainNearPoles}
           onMoveEnd={updateView}
           onMouseMove={onMouseMove}

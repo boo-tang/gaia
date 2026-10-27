@@ -20,7 +20,8 @@ export const formatDuration = (seconds: number) => {
   return `${rest} s`;
 };
 
-const formatTime = (unixSeconds: number) =>
+/** A date and time in the format of the browser, for example "27 Oct 2026, 14:05". */
+export const formatTime = (unixSeconds: number) =>
   new Date(unixSeconds * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 export type AuctionPhase = 'cancelled' | 'paused' | 'notStarted' | 'open' | 'ended';

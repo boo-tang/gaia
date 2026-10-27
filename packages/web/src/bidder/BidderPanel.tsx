@@ -1,19 +1,52 @@
-// The bidder view (desktop and phone): the refund of the connected wallet and "Withdraw".
-import { gaiaAuctionAbi, isBefore } from '@gaia/core';
+// The bidder view (desktop and phone): the refund of the connected wallet, "Withdraw" and the
+// shapes of the wallet. A click on a shape moves the map to it.
+import { gaiaAuctionAbi, isBefore, selectionExtent, unpackSquare } from '@gaia/core';
 
 import { useQueryClient } from '@tanstack/react-query';
-import { useSyncExternalStore } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import { formatEther, isAddressEqual } from 'viem';
 import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
 
 import { bidderKey, useAuction, useBidder } from '../api/queries';
 import { bidFlow } from '../bid/bid-flow';
+import { formatTime } from '../components/auction-status';
 import { deployment, gaiaChain } from '../config/app-config';
+import { cameraRequests } from '../map/camera-request';
 import { TxLink } from '../tx/TxLink';
 import { runTx } from '../tx/tx-flow';
+import { type ShapeSummary, summarizeShapes } from './shape-summary';
 import { withdrawFlow, withdrawSteps } from './withdraw-flow';
 
 const eth = (wei: bigint) => `${formatEther(wei)} ETH`;
+
+const count = (n: number, word: string) => `${n.toLocaleString('en-US')} ${word}${n === 1 ? '' : 's'}`;
+
+const showShape = (shape: ShapeSummary) => {
+  const area = selectionExtent(shape.bidSquareIds.map(unpackSquare));
+  if (area !== undefined) {
+    cameraRequests.request(area);
+  }
+};
+
+const ShapeItem = ({ shape }: { shape: ShapeSummary }) => (
+  <li>
+    <button type="button" className="shape-item" onClick={() => showShape(shape)}>
+      <span className="shape-item-title">
+        <strong>Shape {shape.shapeId}</strong> <span className="shape-item-time">{formatTime(shape.timestamp)}</span>
+      </span>
+      <span>
+        {shape.heldCount === 0
+          ? 'Outbid on all squares'
+          : `Winning bid on ${shape.heldCount.toLocaleString('en-US')} of ${count(shape.bidCount, 'square')}`}
+      </span>
+      <span className="shape-item-amounts">
+        {shape.heldAmount === undefined || shape.paid === undefined
+          ? 'Amount not known'
+          : `${shape.heldCount > 0 ? `Winning: ${eth(shape.heldAmount)} · ` : ''}Paid: ${eth(shape.paid)}`}
+      </span>
+    </button>
+  </li>
+);
 
 const BUTTON_TEXT: Record<string, string> = {
   signing: 'Confirm in your wallet…',
@@ -31,6 +64,7 @@ export const BidderPanel = () => {
   const queryClient = useQueryClient();
 
   const refund = bidder.data === undefined ? undefined : BigInt(bidder.data.refund);
+  const summary = useMemo(() => (bidder.data === undefined ? undefined : summarizeShapes(bidder.data)), [bidder.data]);
   // The receipt of the last bid came before the server had its event: the view is not current yet.
   const lastBid = bidState.status === 'done' ? bidState.result.bid : undefined;
   const updating =
@@ -74,11 +108,11 @@ export const BidderPanel = () => {
     <section className="bidder-view" aria-label="Your bids">
       <h2 className="panel-title">Your bids</h2>
       {cancelled && <p className="bid-error">The auction is cancelled. Withdraw your bids.</p>}
-      {address === undefined && <p className="bid-hint">Connect a wallet to see your refund.</p>}
-      {address !== undefined && bidder.isPending && <p className="bid-hint">Loading your refund…</p>}
+      {address === undefined && <p className="bid-hint">Connect your wallet.</p>}
+      {address !== undefined && bidder.isPending && <p className="bid-hint">Loading…</p>}
       {address !== undefined && bidder.isError && (
         <p className="bid-error">
-          Cannot load your refund.{' '}
+          Failed to load.{' '}
           <button type="button" className="link-button" onClick={() => void bidder.refetch()}>
             Try again
           </button>
@@ -109,6 +143,21 @@ export const BidderPanel = () => {
           <p className="bid-hint">Switch your wallet to {gaiaChain.chain.name}.</p>
         )}
       </div>
+      {summary !== undefined && summary.shapes.length === 0 && <p className="bid-hint">You have no bids yet.</p>}
+      {summary !== undefined && summary.shapes.length > 0 && (
+        <>
+          <p className="shape-totals">
+            Winning bids on {count(summary.totals.heldSquares, 'square')} in{' '}
+            {count(summary.totals.winningShapes, 'shape')}
+            {summary.totals.amountKnown && `: ${eth(summary.totals.heldAmount)}`}
+          </p>
+          <ul className="shape-list" aria-label="Your shapes">
+            {summary.shapes.map(shape => (
+              <ShapeItem key={shape.shapeId} shape={shape} />
+            ))}
+          </ul>
+        </>
+      )}
     </section>
   );
 };
