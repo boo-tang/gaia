@@ -1,9 +1,10 @@
-// A small drawing of squares for the auction rules. It shows fixed examples only: the app does not
+// A small drawing of squares for the help texts. It shows fixed examples only: the app does not
 // check shapes (the bid simulation gives the contract error).
 
 /**
  * One string for each row, north first. `#`: a square of the bid. `o`: a square of another
- * bidder's shape. `x`: a square that the bid takes from that shape. `.`: no square.
+ * bidder's shape, or of a country. `x`: a square that the bid takes from that shape, or that
+ * leaves the country. `.`: no square.
  */
 export type DiagramRows = readonly string[];
 
