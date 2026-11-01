@@ -240,6 +240,7 @@ body {
 /* The map (src/map/). MapLibre fills .map-view; the notices and the readout lie over it. */
 .map-view {
   --legend-width: 190px;
+  container: map-view / inline-size;
   position: relative;
   flex: 1;
   min-width: 0;
@@ -338,6 +339,21 @@ body {
   font-variant-numeric: tabular-nums;
   pointer-events: none;
   overflow-wrap: anywhere;
+}
+
+/* The readout shows the whole bidder address when the map has room for it on one line. */
+.map-readout .address-full {
+  display: none;
+}
+
+@container map-view (min-width: 720px) {
+  .map-readout .address-full {
+    display: inline;
+  }
+
+  .map-readout .address-short {
+    display: none;
+  }
 }
 
 /* The legend at the bottom right, above the MapLibre attribution. */

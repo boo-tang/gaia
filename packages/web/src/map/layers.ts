@@ -29,6 +29,8 @@ export const LAYER_IDS = {
 
 /** The alpha of a bid square on the flat map. The legend uses the colours and alphas of this file. */
 export const BID_ALPHA = 140;
+/** The alpha of the squares of the shape under the pointer. */
+export const BID_HIGHLIGHT_ALPHA = 200;
 export const SELECTION_RED = [220, 38, 38] as const;
 export const OWN_GREEN = [22, 163, 74] as const;
 /** The alphas of the selection fill: lowest and highest cost, no price, own square. */
@@ -136,6 +138,12 @@ export const gridPaths = (view: Bounds | undefined, globe: boolean): Ring[] => {
   return paths;
 };
 
+/**
+ * From this zoom the squares are large enough to see: the map outlines the hover square and the
+ * squares of the selection, and the readout shows the square. Below it, only shapes show.
+ */
+export const SQUARE_DETAIL_ZOOM = 10;
+
 /** The grid fades in from zoom 9 (alpha 0) to zoom 14 (alpha 0.35 of 255). */
 export const gridAlpha = (zoom: number) => Math.round(255 * Math.max(0, Math.min(0.35, ((zoom - 9) / 5) * 0.35)));
 
@@ -152,6 +160,8 @@ export interface LayerInput {
   bidsVersion: number;
   /** The connected wallet, for its own colour. */
   ownAddress?: string;
+  /** The shape under the pointer: its squares get `BID_HIGHLIGHT_ALPHA`. */
+  highlightShapeId?: number;
   grid: Ring[];
   /** The outline of each own shape (`ownShapeOutline`). */
   ownOutline: Edge[];
@@ -175,6 +185,7 @@ export const buildLayers = ({
   rows,
   bidsVersion,
   ownAddress,
+  highlightShapeId,
   grid,
   ownOutline,
   zoom,
@@ -189,17 +200,24 @@ export const buildLayers = ({
 }: LayerInput) => {
   const extruded = metersPerEth !== undefined;
   const alpha = gridAlpha(zoom);
+  const squareDetail = zoom >= SQUARE_DETAIL_ZOOM;
   const shown = (square: Square) => globe || onFlatMap(square);
   return [
     new SolidPolygonLayer<BidRow, OverlayProps>({
       id: LAYER_IDS.bids,
       data: rows,
       getPolygon: ([squareId]) => ring(unpackSquare(squareId)),
-      getFillColor: ([, bid]) => [...bidderColor(bid.bidder, ownAddress), extruded ? 230 : BID_ALPHA],
+      getFillColor: ([, bid]) => [
+        ...bidderColor(bid.bidder, ownAddress),
+        extruded ? 230 : bid.shapeId === highlightShapeId ? BID_HIGHLIGHT_ALPHA : BID_ALPHA,
+      ],
       extruded,
       getElevation: ([, bid]) => (extruded ? (Number(bid.amount) / 1e18) * metersPerEth : 0),
       pickable: extruded,
-      updateTriggers: { getFillColor: [bidsVersion, ownAddress, extruded], getElevation: [bidsVersion, metersPerEth] },
+      updateTriggers: {
+        getFillColor: [bidsVersion, ownAddress, highlightShapeId, extruded],
+        getElevation: [bidsVersion, metersPerEth],
+      },
       // Columns need the depth test, so that near columns hide far ones.
       parameters: extruded ? {} : FLAT,
       beforeId,
@@ -238,7 +256,7 @@ export const buildLayers = ({
       getLineColor: [...SELECTION_RED, 110],
       getLineWidth: 1,
       lineWidthUnits: 'pixels',
-      stroked: true,
+      stroked: squareDetail,
       parameters: FLAT,
       beforeId,
     }),
@@ -264,6 +282,7 @@ export const buildLayers = ({
     }),
     new PolygonLayer<Square, OverlayProps>({
       id: LAYER_IDS.hover,
+      visible: squareDetail,
       data: [hover, marked].filter((square): square is Square => square !== undefined && shown(square)),
       getPolygon: ring,
       filled: false,

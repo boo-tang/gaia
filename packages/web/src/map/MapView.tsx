@@ -1,6 +1,6 @@
 // The map: MapLibre GL (globe, our own style) with the deck.gl layers of layers.ts, on the data of
 // the bids store. Loaded lazily (LazyMap.tsx), because MapLibre and deck.gl are large.
-import { type Bounds, type Square, describeSquare, packSquare, squareAt } from '@gaia/core';
+import { type Bounds, type Square, packSquare, squareAt } from '@gaia/core';
 
 import type { Map as MapLibreMap, TransformConstrainFunction } from 'maplibre-gl';
 // eslint-disable-next-line no-restricted-imports -- the CSS file of the package, not our build
@@ -13,7 +13,6 @@ import {
   type MapRef,
   NavigationControl,
 } from 'react-map-gl/maplibre';
-import { formatEther } from 'viem';
 import { useAccount } from 'wagmi';
 
 import { bidsStore, useBids } from '../bids/useBids';
@@ -25,10 +24,11 @@ import { MAX_SELECTION_SQUARES } from '../selection/selection-store';
 import type { SelectionTool } from '../selection/tools';
 import { DeckOverlay } from './DeckOverlay';
 import { MapLegend } from './MapLegend';
+import { MapReadout, shapeTotals } from './MapReadout';
 import { cameraRequests } from './camera-request';
 import { type CameraView, browserTimeZone, firstView, readSavedView, saveView } from './first-view';
 import { type GaiaStyle, loadGaiaStyle } from './gaia-style';
-import { bidRows, buildLayers, gridPaths, ownShapeOutline, selectionOutline } from './layers';
+import { SQUARE_DETAIL_ZOOM, bidRows, buildLayers, gridPaths, ownShapeOutline, selectionOutline } from './layers';
 import './maplibre-worker';
 import { boundsToViewport, cameraForBounds, padBounds, viewportToBounds } from './viewport';
 
@@ -44,17 +44,6 @@ export interface MapViewProps {
   /** A click on a square: removes it when it is selected, else adds it. */
   onToggle: (square: Square) => void;
 }
-
-/** The readout line of a selected square. */
-const cellText = ({ own, cost }: SelectionCell) => {
-  if (own) {
-    return 'Your square: 0 ETH';
-  }
-  if (cost === undefined) {
-    return 'Selected';
-  }
-  return `You bid ${formatEther(cost)} ETH on this square`;
-};
 
 interface DrawPreview {
   outline: [number, number][][];
@@ -101,7 +90,6 @@ const poleInView = (map: MapLibreMap) => {
   });
 };
 
-const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
 const sameSquare = (a: Square | undefined, b: Square) => a !== undefined && a.lat === b.lat && a.lng === b.lng;
 
 const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapViewProps) => {
@@ -289,16 +277,31 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
   // `data.bids` changes in place: `data.bidsVersion` tells when.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const rows = useMemo(() => bidRows(data.bids, globe), [data.bids, data.bidsVersion, globe]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const shapes = useMemo(() => shapeTotals(data.bids), [data.bids, data.bidsVersion]);
+  const squareDetail = zoom >= SQUARE_DETAIL_ZOOM;
   const grid = useMemo(() => gridPaths(view, globe), [view, globe]);
   // `rows` is a new array at each change of the bids.
   const ownOutline = useMemo(() => ownShapeOutline(rows, address), [rows, address]);
   const selectionEdges = useMemo(() => selectionOutline(selection, globe), [selection, globe]);
+  // The square under the pointer; on a touch screen (no pointer) the tapped square.
+  const shown = hover ?? marked;
+  const shownBid = shown === undefined ? undefined : data.bids.get(packSquare(shown));
+  const shownCell = shown === undefined ? undefined : selection[cellIndex.get(packSquare(shown)) ?? -1];
+  // `data.bids` changes in place: `data.bidsVersion` tells when.
+  const shownShapeId = useMemo(
+    () => (shown === undefined ? undefined : data.bids.get(packSquare(shown))?.shapeId),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [shown, data.bids, data.bidsVersion],
+  );
+
   const layers = useMemo(
     () =>
       buildLayers({
         rows,
         bidsVersion: data.bidsVersion,
         ownAddress: address,
+        highlightShapeId: shownShapeId,
         grid,
         ownOutline,
         zoom,
@@ -314,6 +317,7 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
       rows,
       data.bidsVersion,
       address,
+      shownShapeId,
       grid,
       ownOutline,
       zoom,
@@ -326,11 +330,6 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
       globe,
     ],
   );
-
-  // The square under the pointer; on a touch screen (no pointer) the tapped square.
-  const shown = hover ?? marked;
-  const shownBid = shown === undefined ? undefined : data.bids.get(packSquare(shown));
-  const shownCell = shown === undefined ? undefined : selection[cellIndex.get(packSquare(shown)) ?? -1];
 
   return (
     <div className="map-view" ref={containerRef}>
@@ -374,21 +373,15 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
       </div>
       {preview !== undefined && <p className="map-readout">{preview.text}</p>}
       {preview === undefined && shown !== undefined && (
-        <p className="map-readout">
-          {describeSquare(shown)}
-          <br />
-          {shownBid === undefined
-            ? 'No bid'
-            : `${formatEther(shownBid.amount)} ETH · ${shortAddress(shownBid.bidder)}${
-                address !== undefined && shownBid.bidder.toLowerCase() === address.toLowerCase() ? ' (you)' : ''
-              }`}
-          {shownCell !== undefined && (
-            <>
-              <br />
-              {cellText(shownCell)}
-            </>
-          )}
-        </p>
+        <MapReadout
+          square={shown}
+          bid={shownBid}
+          shape={shownBid === undefined ? undefined : shapes.get(shownBid.shapeId)}
+          cell={shownCell}
+          selection={selection}
+          ownAddress={address}
+          squareDetail={squareDetail}
+        />
       )}
     </div>
   );
