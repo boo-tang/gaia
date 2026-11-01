@@ -1,5 +1,5 @@
-// The text of the "Auction rules" panel: the shape rules of the contract, with the values of this
-// auction and examples.
+// The "Auction rules" part of "How it works": the shape rules of the contract, with the values of
+// this auction and examples. A shape error of a bid links to it (`AUCTION_RULES_ID`).
 import { useAuction } from '../api/queries';
 import { type DiagramRows, ShapeDiagram } from './ShapeDiagram';
 
@@ -20,19 +20,28 @@ const NOT_VALID: readonly Example[] = [
   { rows: ['#.', '.#'], label: 'Corners only' },
 ];
 
+/** The ID of the "Auction rules" heading, so that the dialog can scroll to it. */
+export const AUCTION_RULES_ID = 'auction-rules';
+
 // The longest bar that this page draws for the aspect ratio.
 const MAX_BAR = 20;
 
 export const AuctionRules = () => {
   const auction = useAuction();
   if (auction.data === undefined) {
-    return <p>Loading the rules…</p>;
+    return (
+      <>
+        <h4 id={AUCTION_RULES_ID}>Auction rules</h4>
+        <p>Loading the rules…</p>
+      </>
+    );
   }
   const { minShapeSquares, maxShapeSquares, maxShapeAspectRatio } = auction.data.rules;
   const bar = maxShapeAspectRatio + 1;
 
   return (
-    <div className="help-text">
+    <>
+      <h4 id={AUCTION_RULES_ID}>Auction rules</h4>
       <p>
         Each bid is one shape. The contract checks the shape. When it is not valid, the app shows the error before your
         wallet opens.
@@ -52,14 +61,14 @@ export const AuctionRules = () => {
         </li>
       </ul>
 
-      <h3>Valid</h3>
+      <h5>Valid</h5>
       <div className="diagram-row">
         {VALID.map(example => (
           <ShapeDiagram key={example.label} rows={example.rows} valid label={example.label} />
         ))}
       </div>
 
-      <h3>Not valid</h3>
+      <h5>Not valid</h5>
       <div className="diagram-row">
         {NOT_VALID.map(example => (
           <ShapeDiagram key={example.label} rows={example.rows} valid={false} label={example.label} />
@@ -67,7 +76,7 @@ export const AuctionRules = () => {
         {bar <= MAX_BAR && <ShapeDiagram rows={['#'.repeat(bar)]} valid={false} label={`1 × ${bar}: too long`} />}
       </div>
 
-      <h3>Taking squares from another shape</h3>
+      <h5>Taking squares from another shape</h5>
       <p>
         The squares that stay in the other shape must still be a valid shape. A bid that leaves a gap, a hole or two
         pieces in it is not valid, also when your own squares are a valid shape.
@@ -81,6 +90,6 @@ export const AuctionRules = () => {
         <ShapeDiagram rows={['oooo', 'ooox', 'oooo']} valid={false} label="Leaves a gap in a column" />
         <ShapeDiagram rows={['oxoo', 'oxoo', 'oxoo']} valid={false} label="Cuts the shape in two" />
       </div>
-    </div>
+    </>
   );
 };

@@ -13,7 +13,8 @@ import {
 export type ErrorTexts = Record<string, (args: readonly unknown[]) => string>;
 
 /** A wallet rejection is not an error: the flow goes back to its start. */
-export type TxErrorText = { rejected: true } | { rejected: false; text: string; detail?: string };
+/** `errorName`: the name of the contract error, when the simulation reverts with one. */
+export type TxErrorText = { rejected: true } | { rejected: false; text: string; detail?: string; errorName?: string };
 
 const firstLine = (text: string) => text.split('\n')[0];
 
@@ -48,6 +49,7 @@ export const describeTxError = (error: unknown, failed: string, texts: ErrorText
         rejected: false,
         text: text === undefined ? `${failed}: ${name}.` : text(reverted.data?.args ?? []),
         detail,
+        errorName: name,
       };
     }
     if (reverted.reason !== undefined) {

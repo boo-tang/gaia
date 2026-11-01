@@ -500,7 +500,24 @@ body {
   font-size: 1rem;
 }
 
-/* The shape examples of "Auction rules". */
+/* "The auction": it holds the rules and the sale after it, so its heading is larger. */
+.help-text h3.help-major {
+  margin-top: 24px;
+  font-size: 1.25rem;
+}
+
+.help-text h4,
+.help-text h5 {
+  margin: 12px 0 4px;
+  font-size: 0.9375rem;
+}
+
+.help-text h5 {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+/* The shape examples of "How it works". */
 .diagram-row {
   display: flex;
   flex-wrap: wrap;
@@ -581,13 +598,6 @@ body {
 .panel-title {
   margin: 0;
   font-size: 1rem;
-}
-
-.panel-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
 }
 
 .bid-limits,

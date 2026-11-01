@@ -1,8 +1,9 @@
 // The Bid button of the bid panel and the line below it: why the bid is disabled, the state of
-// the transaction, the receipt or the error.
+// the transaction, the receipt or the error. A shape error links to the auction rules.
 import { formatEther } from 'viem';
 
 import { TxLink } from '../tx/TxLink';
+import { SHAPE_RULE_ERRORS } from './bid-flow';
 import type { Bid } from './useBid';
 
 const eth = (wei: bigint) => `${formatEther(wei)} ETH`;
@@ -14,7 +15,7 @@ const BUTTON_TEXT: Record<string, string> = {
 };
 
 /** The line below the button. */
-const BidLine = ({ bid }: { bid: Bid }) => {
+const BidLine = ({ bid, onShowRules }: { bid: Bid; onShowRules: () => void }) => {
   const { state, input, reason } = bid;
   if (state.status === 'signing' || state.status === 'confirming') {
     // The live data can change the total while the wallet is open.
@@ -45,6 +46,14 @@ const BidLine = ({ bid }: { bid: Bid }) => {
     return (
       <p className="bid-error" role="alert" title={state.detail}>
         {state.text}
+        {state.errorName !== undefined && SHAPE_RULE_ERRORS.has(state.errorName) && (
+          <>
+            {' '}
+            <button type="button" className="link-button" onClick={onShowRules}>
+              See the auction rules
+            </button>
+          </>
+        )}
       </p>
     );
   }
@@ -60,8 +69,8 @@ export const BidButton = ({ bid }: { bid: Bid }) => (
   </button>
 );
 
-export const BidStatus = ({ bid }: { bid: Bid }) => (
+export const BidStatus = ({ bid, onShowRules }: { bid: Bid; onShowRules: () => void }) => (
   <div className="bid-status" aria-live="polite">
-    <BidLine bid={bid} />
+    <BidLine bid={bid} onShowRules={onShowRules} />
   </div>
 );

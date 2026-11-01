@@ -1,5 +1,5 @@
-// The text of the "How it works" panel: what Gaia is (countries, their shape), then the auction and the
-// sale after it and, on a testnet, how to get test ETH.
+// The text of the "How it works" panel: what Gaia is (countries, their shape), then the auction with
+// its rules and the sale after it and, on a testnet, how to get test ETH.
 import type { AuctionResponse } from '@gaia/core';
 
 import { useAuction } from '../api/queries';
@@ -8,6 +8,7 @@ import { gaiaChain } from '../config/app-config';
 import { isTestnet } from '../config/chain';
 import { useIsPhone } from '../hooks/useIsPhone';
 import { useNowSeconds } from '../hooks/useNowSeconds';
+import { AuctionRules } from './AuctionRules';
 import { ShapeDiagram } from './ShapeDiagram';
 
 // "15 minutes" for 900 s; other durations as "2 h 10 min".
@@ -83,7 +84,7 @@ export const HowItWorks = () => {
         When the last square leaves a country, the country NFT is burned. Anything that is still in its account is
         locked forever.
       </p>
-      <h3>The auction</h3>
+      <h3 className="help-major">The auction</h3>
       <p>
         The land is first sold in an auction. You bid on shapes: a shape is a group of squares that touch edge to edge,
         with no holes.
@@ -91,8 +92,7 @@ export const HowItWorks = () => {
       <ol>
         <li>
           Select squares with the drawing tools at the top left of the map. The bid panel shows the total. Click
-          &quot;Bid&quot;.
-          {!isPhone && ' "Auction rules" in the bid panel shows which shapes are valid.'}
+          &quot;Bid&quot;. The auction rules below show which shapes are valid.
         </li>
         <li>
           A higher bid takes squares from the earlier bidder. The outbid ETH goes to your refund. &quot;Withdraw&quot;
@@ -110,6 +110,8 @@ export const HowItWorks = () => {
           shape, size and length do not apply after the auction.
         </li>
       </ol>
+      <AuctionRules />
+      <h4>After the auction</h4>
       <p>
         Squares that nobody won go on sale after the auction. Their price falls with time. You can buy them as a new
         country or add them to a country that you own.

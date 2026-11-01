@@ -28,9 +28,29 @@ export const BID_ERROR_TEXTS: ErrorTexts = {
   OverlapWouldInvalidateShape: ([shapeId]) =>
     `The rest of shape ${String(shapeId)} would break the shape rules. Change the selection where it meets shape ${String(shapeId)}, or take all of its squares.`,
   ShapeTooSmall: ([, minimum]) => `Too few squares: a shape has at least ${String(minimum)} squares.`,
+  ShapeTooLarge: ([, maximum]) => `Too many squares: a shape has at most ${String(maximum)} squares.`,
+  AspectRatioExceeded: () => 'The shape is too long for its width.',
+  NonConsecutiveLatitudes: () => 'The shape has a gap between its rows.',
+  NoLatAdjacency: () => 'Two rows of the shape do not touch.',
+  GapBetweenLongitudes: () => 'A row of the shape has a gap.',
+  NotConvexStart: () => 'A column of the shape has a gap or a hole.',
+  NotConvexEnd: () => 'A column of the shape has a gap or a hole.',
   AuctionIsPaused: () => 'The auction is paused. You cannot bid now.',
   AuctionAlreadyEnded: () => 'The auction has ended.',
 };
+
+/** The contract errors of the shape rules: the bid panel links them to the auction rules. */
+export const SHAPE_RULE_ERRORS: ReadonlySet<string> = new Set([
+  'ShapeTooSmall',
+  'ShapeTooLarge',
+  'AspectRatioExceeded',
+  'NonConsecutiveLatitudes',
+  'NoLatAdjacency',
+  'GapBetweenLongitudes',
+  'NotConvexStart',
+  'NotConvexEnd',
+  'OverlapWouldInvalidateShape',
+]);
 
 /** What the Bid button knows about the auction: its phase, or the state of `GET /auction`. */
 export type BidAuctionState = AuctionPhase | 'loading' | 'unavailable';

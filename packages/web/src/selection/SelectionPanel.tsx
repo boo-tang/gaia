@@ -2,27 +2,25 @@
 // bid flow is in src/bid/).
 import { rectangleSize, selectionExtent } from '@gaia/core';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { formatEther } from 'viem';
 import { useAccount } from 'wagmi';
 
 import { BidButton, BidStatus } from '../bid/BidButton';
 import { useBid } from '../bid/useBid';
-import { AuctionRules } from '../help/AuctionRules';
-import { InfoDialog } from '../help/InfoDialog';
 import { selectionStore, useSelection } from './useSelection';
 
 const eth = (wei: bigint) => `${formatEther(wei)} ETH`;
 const count = (n: number, word: string) => `${n.toLocaleString('en-US')} ${word}${n === 1 ? '' : 's'}`;
 const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
 
-export const SelectionPanel = () => {
+/** `onShowRules` opens "How it works" at the auction rules. */
+export const SelectionPanel = ({ onShowRules }: { onShowRules: () => void }) => {
   const { priceMode, priceText, pricePerSquare } = useSelection(state => state);
   const placing = useBid();
   const bid = placing.input;
   const { address } = useAccount();
   const { priced } = bid;
-  const [rulesOpen, setRulesOpen] = useState(false);
 
   const extent = useMemo(() => {
     const area = priced === undefined ? undefined : selectionExtent(priced.sorted);
@@ -48,15 +46,7 @@ export const SelectionPanel = () => {
 
   return (
     <section className="bid-panel" aria-label="Bid">
-      <div className="panel-heading">
-        <h2 className="panel-title">Bid</h2>
-        <button type="button" className="link-button" onClick={() => setRulesOpen(true)}>
-          Auction rules
-        </button>
-      </div>
-      <InfoDialog open={rulesOpen} onClose={() => setRulesOpen(false)} title="Auction rules">
-        <AuctionRules />
-      </InfoDialog>
+      <h2 className="panel-title">Bid</h2>
 
       {bid.squareCount === 0 ? (
         <p className="bid-summary">
@@ -175,7 +165,7 @@ export const SelectionPanel = () => {
         </button>
         <BidButton bid={placing} />
       </div>
-      <BidStatus bid={placing} />
+      <BidStatus bid={placing} onShowRules={onShowRules} />
     </section>
   );
 };

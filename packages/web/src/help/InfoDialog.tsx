@@ -1,16 +1,18 @@
 // A modal dialog with a title, a close button and text. The browser keeps the focus in it, Escape
 // closes it, and the focus goes back to the button that opened it. A click on the backdrop also
-// closes it.
+// closes it. With `scrollTo`, it opens at the element with that ID.
 import { type ReactNode, useEffect, useRef } from 'react';
 
 interface InfoDialogProps {
   open: boolean;
   onClose: () => void;
   title: string;
+  /** The ID of an element in `children`: the dialog opens scrolled to it. */
+  scrollTo?: string;
   children: ReactNode;
 }
 
-export const InfoDialog = ({ open, onClose, title, children }: InfoDialogProps) => {
+export const InfoDialog = ({ open, onClose, title, scrollTo, children }: InfoDialogProps) => {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -20,11 +22,16 @@ export const InfoDialog = ({ open, onClose, title, children }: InfoDialogProps) 
     }
     if (open && !dialog.open) {
       dialog.showModal();
+      if (scrollTo === undefined) {
+        dialog.scrollTop = 0;
+      } else {
+        dialog.querySelector(`#${scrollTo}`)?.scrollIntoView({ block: 'start' });
+      }
     }
     if (!open && dialog.open) {
       dialog.close();
     }
-  }, [open]);
+  }, [open, scrollTo]);
 
   return (
     <dialog

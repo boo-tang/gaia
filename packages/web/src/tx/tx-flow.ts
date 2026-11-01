@@ -11,7 +11,7 @@ export type TxState<R> =
   | { status: 'signing'; value: bigint }
   | { status: 'confirming'; hash: Hash; value: bigint }
   | { status: 'done'; hash: Hash; result: R }
-  | { status: 'failed'; text: string; detail?: string };
+  | { status: 'failed'; text: string; detail?: string; errorName?: string };
 
 export type TxStatus = TxState<unknown>['status'];
 
@@ -86,7 +86,9 @@ export const runTx = async <R>(flow: TxFlow<R>, steps: TxSteps<R>): Promise<void
   const fail = (error: unknown) => {
     const described = describeTxError(error, steps.failed, steps.texts);
     flow.set(
-      described.rejected ? { status: 'idle' } : { status: 'failed', text: described.text, detail: described.detail },
+      described.rejected
+        ? { status: 'idle' }
+        : { status: 'failed', text: described.text, detail: described.detail, errorName: described.errorName },
     );
   };
 

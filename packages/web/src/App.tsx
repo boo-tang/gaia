@@ -7,6 +7,7 @@ import { BidderPanel } from './bidder/BidderPanel';
 import { AuctionStatusBar } from './components/AuctionStatusBar';
 import { NetworkGuard } from './components/NetworkGuard';
 import { TestnetBadge } from './components/TestnetBadge';
+import { AUCTION_RULES_ID } from './help/AuctionRules';
 import { HowItWorks } from './help/HowItWorks';
 import { InfoDialog } from './help/InfoDialog';
 import { useIsPhone } from './hooks/useIsPhone';
@@ -23,8 +24,10 @@ export const App = () => {
   const selection = useSelectionCells();
   const onSelect = useCallback((squares: Square[]) => selectionStore.addSquares(squares), []);
   const onToggle = useCallback((square: Square) => selectionStore.toggle(square), []);
-  const [helpOpen, setHelpOpen] = useState(false);
-  const closeHelp = useCallback(() => setHelpOpen(false), []);
+  // Where "How it works" opens: at the top, or at the auction rules (from a shape error of a bid).
+  const [help, setHelp] = useState<'top' | 'rules' | undefined>(undefined);
+  const closeHelp = useCallback(() => setHelp(undefined), []);
+  const showRules = useCallback(() => setHelp('rules'), []);
 
   return (
     <AppLayout
@@ -34,12 +37,17 @@ export const App = () => {
           <TestnetBadge />
           <AuctionStatusBar />
           <div className="app-actions">
-            <button type="button" className="help-button" aria-label="How it works" onClick={() => setHelpOpen(true)}>
+            <button type="button" className="help-button" aria-label="How it works" onClick={() => setHelp('top')}>
               {isPhone ? '?' : 'How it works'}
             </button>
             <WalletButton />
           </div>
-          <InfoDialog open={helpOpen} onClose={closeHelp} title="How it works">
+          <InfoDialog
+            open={help !== undefined}
+            onClose={closeHelp}
+            title="How it works"
+            scrollTo={help === 'rules' ? AUCTION_RULES_ID : undefined}
+          >
             <HowItWorks />
           </InfoDialog>
         </>
@@ -54,7 +62,7 @@ export const App = () => {
           onToggle={onToggle}
         />
       }
-      bidPanel={<SelectionPanel />}
+      bidPanel={<SelectionPanel onShowRules={showRules} />}
       bidderView={<BidderPanel />}
     />
   );
