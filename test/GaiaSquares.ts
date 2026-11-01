@@ -1,9 +1,17 @@
 import { expect } from 'chai';
 import { encodeFunctionData, getAddress, parseEther, zeroAddress } from 'viem';
 
-import { accountTransferSquare, deployAccount, deployLand, squareId } from './helpers/land';
+import {
+  accountMoveSquares,
+  accountTransferSquare,
+  deployAccount,
+  deployLand,
+  executeAs,
+  squareId,
+} from './helpers/land';
+import { greedyOrder } from './helpers/order';
 import { loadFixture, viem } from './helpers/setup';
-import { row } from './helpers/shapes';
+import { rect, row } from './helpers/shapes';
 
 // Three checks of GaiaSquares have no test on purpose, because no path through the public
 // functions reaches them. They are a second line of defence:
@@ -415,6 +423,155 @@ describe('GaiaSquares', function () {
       const asAlice = await squaresAs(alice);
       await asAlice.write.transferFrom([alice.account.address, bob.account.address, squareId(10, 12)]);
       expect(getAddress(await land.squares.read.controllerOf([10, 12]))).to.equal(getAddress(bob.account.address));
+    });
+  });
+
+  describe('moveSquares', function () {
+    // Alice: country 1 is a 2 x 4 block (rows 10-11, columns 10-13) and country 2 a 2 x 1 column
+    // next to it (column 14). Bob: country 3 (row 20). The accounts of 1 and 2 are deployed.
+    const one = rect(10, 10, 2, 4);
+    const two = rect(10, 14, 2, 1);
+    // Columns 12 and 13 of country 1.
+    const east = one.filter(l => l.lng >= 12);
+
+    async function withCountries() {
+      const f = await deploy();
+      await f.asIssuer.write.createCountry([f.alice.account.address, one]);
+      await f.asIssuer.write.createCountry([f.alice.account.address, two]);
+      await f.asIssuer.write.createCountry([f.bob.account.address, row(20, 10, 11)]);
+      const account1 = await deployAccount(f.land, 1n);
+      const account2 = await deployAccount(f.land, 2n);
+      const account3 = await f.land.countries.read.accountOf([3n]);
+      const stateOf = async (account: `0x${string}`) =>
+        (await viem.getContractAt('GaiaCountryAccount', account)).read.state();
+      return { ...f, account1, account2, account3, stateOf };
+    }
+
+    async function landState(f: Awaited<ReturnType<typeof withCountries>>) {
+      const out: unknown[] = [];
+      for (const id of [1n, 2n, 3n]) {
+        out.push(await f.land.countries.read.squareCount([id]), await f.land.countries.read.compositionVersion([id]));
+      }
+      for (const l of [...one, ...two]) out.push(await f.land.squares.read.countryOf([l.lat, l.lng]));
+      return out;
+    }
+
+    it('moves many squares to another country of the same owner with one execute', async function () {
+      const f = await loadFixture(withCountries);
+      const order = greedyOrder(east, two, one)!;
+      const state1 = await f.stateOf(f.account1);
+      const version1 = await f.land.countries.read.compositionVersion([1n]);
+      const version2 = await f.land.countries.read.compositionVersion([2n]);
+
+      await accountMoveSquares(f.land, f.alice, f.account1, f.account2, order);
+
+      for (const l of east) {
+        expect(await f.land.squares.read.countryOf([l.lat, l.lng])).to.equal(2n);
+        expect(getAddress(await f.land.squares.read.ownerOf([squareId(l.lat, l.lng)]))).to.equal(
+          getAddress(f.account2),
+        );
+      }
+      expect(await f.land.countries.read.squareCount([1n])).to.equal(4n);
+      expect(await f.land.countries.read.squareCount([2n])).to.equal(6n);
+      // One version for each square, on each side. One state change for the one execute.
+      expect(await f.land.countries.read.compositionVersion([1n])).to.equal(version1 + 4n);
+      expect(await f.land.countries.read.compositionVersion([2n])).to.equal(version2 + 4n);
+      expect(await f.stateOf(f.account1)).to.equal(state1 + 1n);
+    });
+
+    it('splits many squares to a wallet, and merges them back from the wallet', async function () {
+      const f = await loadFixture(withCountries);
+      const alice = f.alice.account.address;
+      await accountMoveSquares(f.land, f.alice, f.account2, alice, two);
+      for (const l of two) {
+        expect(await f.land.squares.read.countryOf([l.lat, l.lng])).to.equal(0n);
+        expect(getAddress(await f.land.squares.read.ownerOf([squareId(l.lat, l.lng)]))).to.equal(getAddress(alice));
+      }
+      // The split of the last square burned country 2.
+      await expect(f.land.countries.read.ownerOf([2n])).to.be.rejectedWith('ERC721NonexistentToken');
+
+      const asAlice = await f.squaresAs(f.alice);
+      await asAlice.write.moveSquares([f.account1, two.map(l => squareId(l.lat, l.lng))]);
+      for (const l of two) expect(await f.land.squares.read.countryOf([l.lat, l.lng])).to.equal(1n);
+      expect(await f.land.countries.read.squareCount([1n])).to.equal(10n);
+    });
+
+    it('burns the source country when its last square moves to another country of the same owner', async function () {
+      const f = await loadFixture(withCountries);
+      await accountMoveSquares(f.land, f.alice, f.account2, f.account1, two);
+      expect(await f.land.countries.read.squareCount([2n])).to.equal(0n);
+      await expect(f.land.countries.read.ownerOf([2n])).to.be.rejectedWith('ERC721NonexistentToken');
+      expect(await f.land.countries.read.squareCount([1n])).to.equal(10n);
+    });
+
+    it('rejects a move into a country of another owner (NoConsent) and changes nothing', async function () {
+      const f = await loadFixture(withCountries);
+      const before = await landState(f);
+      // Row 10 of country 1, from the east. Squares that touch Bob's country do not matter: the
+      // consent check comes first.
+      await expect(
+        accountMoveSquares(f.land, f.alice, f.account1, f.account3, [
+          { lat: 11, lng: 13 },
+          { lat: 10, lng: 13 },
+        ]),
+      ).to.be.rejectedWith('NoConsent');
+      expect(await landState(f)).to.deep.equal(before);
+    });
+
+    it('rejects a bad order (ShapeBroken) and changes nothing', async function () {
+      const f = await loadFixture(withCountries);
+      const before = await landState(f);
+      // (10, 12) first: it does not touch country 2.
+      const bad = [{ lat: 10, lng: 12 }, ...east.filter(l => l.lng === 13), { lat: 11, lng: 12 }];
+      await expect(accountMoveSquares(f.land, f.alice, f.account1, f.account2, bad)).to.be.rejectedWith('ShapeBroken');
+      expect(await landState(f)).to.deep.equal(before);
+    });
+
+    it('moves only squares of the caller, also for an operator', async function () {
+      const f = await loadFixture(withCountries);
+      // Alice owns country 1, but its account owns the squares.
+      const asAlice = await f.squaresAs(f.alice);
+      await expect(asAlice.write.moveSquares([f.alice.account.address, [squareId(10, 10)]])).to.be.rejectedWith(
+        'ERC721InsufficientApproval',
+      );
+      // Carol is an operator of Bob's standalone square, but moveSquares moves only her own.
+      const bobAccount = await deployAccount(f.land, 3n);
+      await accountTransferSquare(f.land, f.bob, bobAccount, f.bob.account.address, 20, 11);
+      await (await f.squaresAs(f.bob)).write.setApprovalForAll([f.carol.account.address, true]);
+      const asCarol = await f.squaresAs(f.carol);
+      await expect(asCarol.write.moveSquares([f.carol.account.address, [squareId(20, 11)]])).to.be.rejectedWith(
+        'ERC721IncorrectOwner',
+      );
+    });
+
+    it('rejects a move to address(0)', async function () {
+      const f = await loadFixture(withCountries);
+      await expect(
+        accountMoveSquares(f.land, f.alice, f.account2, zeroAddress, [{ lat: 11, lng: 14 }]),
+      ).to.be.rejectedWith('ERC721InvalidReceiver');
+    });
+
+    it('does nothing for an empty list', async function () {
+      const f = await loadFixture(withCountries);
+      const before = await landState(f);
+      const publicClient = await viem.getPublicClient();
+      const hash = await (await f.squaresAs(f.alice)).write.moveSquares([f.account1, []]);
+      expect((await publicClient.waitForTransactionReceipt({ hash })).logs).to.deep.equal([]);
+      expect(await landState(f)).to.deep.equal(before);
+    });
+
+    it('keeps the approval block of the account after a move', async function () {
+      const f = await loadFixture(withCountries);
+      await accountMoveSquares(f.land, f.alice, f.account1, f.account2, greedyOrder(east, two, one)!);
+      const data = encodeFunctionData({
+        abi: f.land.squares.abi,
+        functionName: 'setApprovalForAll',
+        args: [f.alice.account.address, true],
+      });
+      await expect(executeAs(f.land, f.alice, f.account2, f.land.squares, data)).to.be.rejectedWith(
+        'ApprovalNotAllowed',
+      );
+      expect(await f.land.squares.read.isApprovedForAll([f.account2, f.alice.account.address])).to.equal(false);
     });
   });
 

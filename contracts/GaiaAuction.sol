@@ -27,8 +27,24 @@ import {IGaiaAuction} from "./interfaces/IGaiaAuction.sol";
  * Partial takeover: when a different bidder takes some squares of a shape, the first bidder gets
  * back the bid on each lost square through `withdraw`. The first bidder cannot cancel. They pay
  * for, and get, the squares that stay. There are no maximum (proxy) bids: a bidder defends a shape
- * by bidding again. To grow a shape, a bidder bids on a second shape next to it and moves the
- * squares into the first country after settlement.
+ * by bidding again. To grow a shape, a bidder bids on a second shape next to it. After the
+ * auction, the winner adds the second shape to the country of the first shape with
+ * `settleShapeInto`.
+ *
+ * Settlement (after `endTime`):
+ *   - `settleShape` makes a new country for a shape, owned by the winner. It can settle a large
+ *     shape in more than one call (whole rows only). Until `endTime + settleWindow`, only the
+ *     winner can call it. After that, anyone can call it, so each shape becomes a country of its
+ *     winner also when the winner does nothing.
+ *   - `settleShapeInto` adds a whole shape to a country that the winner owns, in one call. Only
+ *     the winner can call it, also after the window. The squares go in the order of the call, and
+ *     GaiaSquares checks the country after each square. If the shape cannot join the country (for
+ *     example, it would close a ring around land of another bidder), the call reverts and nothing
+ *     changes; the winner then settles the shape as a new country with `settleShape`.
+ *   - A shape never joins a country in parts. A part that joined could not always be completed
+ *     later, and the shape would stay half settled.
+ *   - Each call of `settleShapeInto` costs about 64,000 gas for each square, so a shape of
+ *     `maxShapeSquares` must fit in one call below the per-transaction gas cap.
  *
  * Coordinates: a square's `(lat, lng)` is its south-west corner, in 1/100 degree. `lat` 0 is 90°S,
  * `lat` 17999 ends at 90°N. All squares have the same price, but a square near a pole is smaller
@@ -109,6 +125,8 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     uint64 public endTime;
     uint64 public immutable maxEndTime;
     uint64 public immutable extensionWindow;
+    // Seconds after `endTime` in which only the winner of a shape can settle it.
+    uint64 public immutable settleWindow;
     // First bid on a square, and the minimum absolute increase of each later bid.
     uint256 public immutable minBidPerSquareWei;
     // Minimum relative increase of a bid, in basis points (500 = 5%).
@@ -274,6 +292,9 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
     error AuctionIsPaused();
     error AuctionNotPaused();
     error AuctionIsCancelled();
+    error NotWinner();
+    error WrongSquareCount(uint256 count, uint256 live);
+    error NotShapeSquare(uint16 lat, uint16 lng);
 
     // --- Modifiers ---
     modifier onlyDuringAuction() {
@@ -301,6 +322,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         uint64 endTime_,
         uint64 maxEndTime_,
         uint64 extensionWindow_,
+        uint64 settleWindow_,
         uint256 minBidPerSquareWei_,
         uint256 minBidIncrementBps_,
         uint256 minShapeSquares_,
@@ -331,6 +353,7 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         endTime = endTime_;
         maxEndTime = maxEndTime_;
         extensionWindow = extensionWindow_;
+        settleWindow = settleWindow_;
         minBidPerSquareWei = minBidPerSquareWei_;
         minBidIncrementBps = minBidIncrementBps_;
         minShapeSquares = minShapeSquares_;
@@ -450,6 +473,11 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
         Shape memory shape = _shapes[shapeId];
         address winner = shape.bidder;
         if (winner == address(0)) revert UnknownShape();
+        // `endTime` is read again here: the soft close moves it, and the window moves with it.
+        if (
+            msg.sender != winner &&
+            block.timestamp <= uint256(endTime) + settleWindow
+        ) revert NotWinner();
 
         uint256 hi = shape.hiRow;
         uint256 from = shapeSettleCursor[shapeId];
@@ -507,6 +535,32 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
                 );
             }
         }
+    }
+
+    /// @inheritdoc IGaiaAuction
+    function settleShapeInto(
+        uint256 shapeId,
+        uint256 countryId,
+        uint32[] calldata squares
+    ) external override onlyAfterAuction {
+        Shape memory shape = _shapes[shapeId];
+        if (shape.bidder == address(0)) revert UnknownShape();
+        if (msg.sender != shape.bidder) revert NotWinner();
+        if (shapeSettleCursor[shapeId] != 0) revert ShapeAlreadySettled();
+        uint256 live = shape.liveSquares;
+        if (live == 0) revert EmptyShape();
+        if (squares.length != live) revert WrongSquareCount(squares.length, live);
+        Loc[] memory locs = _shapeLocs(shapeId, squares);
+
+        // Settled before the external call. GaiaSquares checks the shape after each square, so
+        // a bad order or a shape that cannot join the country reverts all of this.
+        shapeSettleCursor[shapeId] = uint256(shape.hiRow) + 1;
+        shapeSettledSquares[shapeId] = live;
+        shapeCountryId[shapeId] = countryId;
+        // addSquares checks that the winner owns the country.
+        countries.addSquares(countryId, msg.sender, locs);
+        emit ShapeSquaresSettled(shapeId, countryId, live);
+        emit ShapeSettled(shapeId, countryId, msg.sender, live);
     }
 
     /// @inheritdoc IGaiaAuction
@@ -607,6 +661,26 @@ contract GaiaAuction is ReentrancyGuard, IGaiaAuction {
                 (start << 32) | (anchor << 16) | end,
                 shape.refLng
             );
+        }
+    }
+
+    /// Unpacks `squares` in the same order. Reverts with NotShapeSquare for a square that the shape
+    /// does not hold. A square outside the map never has a bid, so this also checks the bounds.
+    function _shapeLocs(
+        uint256 shapeId,
+        uint32[] calldata squares
+    ) internal view returns (Loc[] memory locs) {
+        uint256 len = squares.length;
+        locs = new Loc[](len);
+        for (uint256 i = 0; i < len; ) {
+            uint32 square = squares[i];
+            uint16 lat = uint16(square >> 16);
+            uint16 lng = uint16(square);
+            if (_squares[square].shapeId != shapeId) revert NotShapeSquare(lat, lng);
+            locs[i] = Loc(lat, lng);
+            unchecked {
+                i++;
+            }
         }
     }
 

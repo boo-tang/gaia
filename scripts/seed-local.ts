@@ -1,7 +1,7 @@
 import { network } from 'hardhat';
 import fs from 'node:fs';
 import path from 'node:path';
-import { zeroAddress } from 'viem';
+import { getAddress, zeroAddress } from 'viem';
 
 /*
  * Puts a small amount of data on the local deployment of `yarn deploy:local`, for app work:
@@ -153,7 +153,12 @@ if (process.env.SEED_END === '1') {
     console.log(`Moved the chain clock past endTime (${endTime}).`);
   }
   if ((await auction.read.shapeCountryId([1n])) === 0n) {
-    const hash = await auction.write.settleShape([1n, 0n]);
+    // In the settle window, only the winner can settle the shape.
+    const winner = getAddress(await auction.read.shapeBidder([1n]));
+    const wallet = wallets.find(w => getAddress(w.account.address) === winner);
+    if (wallet === undefined) throw new Error(`The winner of shape 1 (${winner}) is not a local account.`);
+    const asWinner = await viem.getContractAt('GaiaAuction', auctionAddress, { client: { wallet } });
+    const hash = await asWinner.write.settleShape([1n, 0n]);
     await publicClient.waitForTransactionReceipt({ hash });
   }
   console.log(`Shape 1 is settled: country ${await auction.read.shapeCountryId([1n])}.`);

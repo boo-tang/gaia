@@ -16,6 +16,17 @@ interface IGaiaSquares is IERC721 {
     /// @notice Mints `squares`, in order, to the account of `countryId`. Only GaiaCountries.
     function mintToCountry(uint256 countryId, Loc[] calldata squares) external;
 
+    /// @notice Moves the caller's squares `ids` to `to`, one at a time, in the order of `ids`. Each
+    ///         move is a `transferFrom(msg.sender, to, id)`, so all transfer rules apply to each
+    ///         square: only the account moves a square out of its country, the owner of the
+    ///         destination country must consent (`NoConsent`), and each square must keep both
+    ///         countries connected and without holes (`ShapeBroken`). A country account calls it
+    ///         through `execute`. A wallet calls it directly. If one square fails, nothing moves.
+    ///         A move of the last square of a country burns the country. An empty list does
+    ///         nothing.
+    /// @param ids ERC-721 token IDs (`lat * 36000 + lng`).
+    function moveSquares(address to, uint256[] calldata ids) external;
+
     /// @notice Returns true if the square was ever claimed (it is never burned).
     function exists(uint16 lat, uint16 lng) external view returns (bool);
 

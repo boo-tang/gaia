@@ -192,7 +192,7 @@ describe('GaiaLandSale', function () {
 
       await expect(f.buy(f.buyer, [{ lat: 10, lng: 11 }], startPrice)).to.be.rejectedWith('SquareReserved');
 
-      await f.auction.write.settleShape([1n, 0n]);
+      await (await f.auctionAs(f.bidder)).write.settleShape([1n, 0n]);
       expect(await f.squares.read.exists([10, 11])).to.equal(true);
       // The auction keeps the reservation after settlement, so GaiaCountries rejects the square
       // before GaiaSquares can (SquareAlreadyExists).

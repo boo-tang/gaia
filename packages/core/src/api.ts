@@ -51,6 +51,8 @@ export interface AuctionRules {
   maxEndTime: number;
   /** Seconds. */
   extensionWindow: number;
+  /** Seconds after `endTime` in which only the winner of a shape can settle it. */
+  settleWindow: number;
   /** Wei, as a decimal string. */
   minBidPerSquareWei: string;
   minBidIncrementBps: number;

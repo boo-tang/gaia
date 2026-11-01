@@ -19,6 +19,7 @@ const RULES: AuctionRules = {
   startTime: 0,
   maxEndTime: 2000,
   extensionWindow: 900,
+  settleWindow: 604800,
   minBidPerSquareWei: '1000',
   minBidIncrementBps: 500,
   minShapeSquares: 1,

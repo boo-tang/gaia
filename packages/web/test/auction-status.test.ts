@@ -11,6 +11,7 @@ const response = (status: Partial<AuctionResponse['status']> = {}): AuctionRespo
     startTime: 1000,
     maxEndTime: 9000,
     extensionWindow: 900,
+    settleWindow: 604800,
     minBidPerSquareWei: '1',
     minBidIncrementBps: 500,
     minShapeSquares: 1,

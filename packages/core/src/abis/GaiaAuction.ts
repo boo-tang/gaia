@@ -34,6 +34,11 @@ export const gaiaAuctionAbi = [
         "type": "uint64"
       },
       {
+        "internalType": "uint64",
+        "name": "settleWindow_",
+        "type": "uint64"
+      },
+      {
         "internalType": "uint256",
         "name": "minBidPerSquareWei_",
         "type": "uint256"
@@ -161,6 +166,27 @@ export const gaiaAuctionAbi = [
   {
     "inputs": [
       {
+        "internalType": "uint16",
+        "name": "lat",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "lng",
+        "type": "uint16"
+      }
+    ],
+    "name": "NotShapeSquare",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotWinner",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "uint256",
         "name": "shapeId",
         "type": "uint256"
@@ -224,6 +250,22 @@ export const gaiaAuctionAbi = [
   {
     "inputs": [],
     "name": "Unsorted",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "count",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "live",
+        "type": "uint256"
+      }
+    ],
+    "name": "WrongSquareCount",
     "type": "error"
   },
   {
@@ -671,6 +713,42 @@ export const gaiaAuctionAbi = [
     "name": "settleShape",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "shapeId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "countryId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint32[]",
+        "name": "squares",
+        "type": "uint32[]"
+      }
+    ],
+    "name": "settleShapeInto",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "settleWindow",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {

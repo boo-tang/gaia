@@ -14,8 +14,10 @@ const loadFixture = networkHelpers.loadFixture.bind(networkHelpers);
 const time = networkHelpers.time;
 
 // Gas of the worst cases of a bid and of settlement, measured from transaction receipts.
-// GAS_REPORT=1 prints each measurement. The tests check no gas bounds: the requirement is the Base
-// per-transaction cap, and the values that must fit under it (BOO-44, BOO-45) are not chosen yet.
+// GAS_REPORT=1 prints each measurement. The requirement is the Base per-transaction cap
+// (16,777,216, EIP-7825), and most values that must fit under it are not chosen yet. Thus only
+// settleShapeInto of a shape at the default `maxShapeSquares` (180) checks a bound: the cap. 12M
+// is a target, not a limit; the report shows how far a call is from it.
 describe('GaiaAuction: gas', function () {
   const minBid = 1000n;
   const report = process.env.GAS_REPORT === '1';
@@ -248,6 +250,36 @@ describe('GaiaAuction: gas', function () {
         expect(await f.countries.read.squareCount([countryId])).to.equal(BigInt(n * n));
       });
     }
+
+    it('settleShapeInto of a shape of 180 squares (maxShapeSquares) into a 10 x 10 country', async function () {
+      const [owner] = await viem.getWalletClients();
+      const { countries } = await deployLand(owner.account.address, viem);
+      const { auction, endTime } = await deployAuction(
+        { countries },
+        { minBidPerSquareWei: minBid, maxShapeSquares: 180n },
+        { v: viem },
+      );
+      const [, alice] = await viem.getWalletClients();
+      const publicClient = await viem.getPublicClient();
+      const asAlice = await auctionAs(auction.address, alice, viem);
+      // Shape 1: 10 x 10. Shape 2: 12 x 15, east of it. The bid order of shape 2 is a valid join
+      // order: each row starts next to the squares below it or next to shape 1.
+      const first = rect(100, 100, 10, 10);
+      const second = rect(100, 110, 12, 15);
+      await asAlice.write.bidOnShape([pack(first), 0n, false], { value: minBid * 100n });
+      await asAlice.write.bidOnShape([pack(second), 0n, false], { value: minBid * 180n, gas: 900_000_000n });
+      await time.increaseTo(endTime + 1n);
+      await asAlice.write.settleShape([1n, 0n], { gas: 200_000_000n });
+      const countryId = await auction.read.shapeCountryId([1n]);
+
+      const hash = await asAlice.write.settleShapeInto([2n, countryId, pack(second)], { gas: 200_000_000n });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      expect(receipt.status).to.equal('success');
+      log('settleShapeInto 180', receipt.gasUsed);
+      expect(await countries.read.squareCount([countryId])).to.equal(280n);
+      expect(receipt.gasUsed < 16_777_216n, `gas ${receipt.gasUsed} is above the Base cap`).to.equal(true);
+      if (report && receipt.gasUsed > 12_000_000n) console.log('      (above the 12M target)');
+    });
 
     it('400 squares in one call', async function () {
       const f = await loadFixture(deployGas);

@@ -62,6 +62,20 @@ contract GaiaSquares is ERC721, IGaiaSquares {
         }
     }
 
+    // -------- Owners --------
+
+    /// @inheritdoc IGaiaSquares
+    function moveSquares(address to, uint256[] calldata ids) external override {
+        uint256 len = ids.length;
+        for (uint256 i = 0; i < len; ) {
+            // `msg.sender` stays the caller, so all transfer rules of _update apply to each square.
+            transferFrom(msg.sender, to, ids[i]);
+            unchecked {
+                i++;
+            }
+        }
+    }
+
     // -------- Views --------
 
     function exists(

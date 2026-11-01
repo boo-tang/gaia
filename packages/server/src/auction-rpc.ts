@@ -20,6 +20,7 @@ export const readAuctionRules = async (client: PublicClient, deployment: Deploym
       | 'startTime'
       | 'maxEndTime'
       | 'extensionWindow'
+      | 'settleWindow'
       | 'minBidPerSquareWei'
       | 'minBidIncrementBps'
       | 'minShapeSquares'
@@ -28,11 +29,12 @@ export const readAuctionRules = async (client: PublicClient, deployment: Deploym
   >(
     functionName: F,
   ) => client.readContract({ address, abi: gaiaAuctionAbi, functionName });
-  const [startTime, maxEndTime, extensionWindow, minBid, incrementBps, minSquares, maxSquares, aspect] =
+  const [startTime, maxEndTime, extensionWindow, settleWindow, minBid, incrementBps, minSquares, maxSquares, aspect] =
     await Promise.all([
       read('startTime'),
       read('maxEndTime'),
       read('extensionWindow'),
+      read('settleWindow'),
       read('minBidPerSquareWei'),
       read('minBidIncrementBps'),
       read('minShapeSquares'),
@@ -45,6 +47,7 @@ export const readAuctionRules = async (client: PublicClient, deployment: Deploym
     startTime: Number(startTime),
     maxEndTime: Number(maxEndTime),
     extensionWindow: Number(extensionWindow),
+    settleWindow: Number(settleWindow),
     minBidPerSquareWei: minBid.toString(),
     minBidIncrementBps: Number(incrementBps),
     minShapeSquares: Number(minSquares),

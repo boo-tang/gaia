@@ -75,10 +75,16 @@ describe('Journey: how land works', function () {
       });
     }
 
-    // Settlement: anybody settles. Each shape becomes a country of its bidder; the squares are in
-    // the country's account, not in the bidder's wallet.
+    // Settlement: in the settle window, each winner settles their own shape. Each shape becomes a
+    // country of its bidder; the squares are in the country's account, not in the bidder's wallet.
     await time.increaseTo(endTime + 1n);
-    for (const shapeId of [1n, 2n, 3n]) await auction.write.settleShape([shapeId, 0n]);
+    for (const [shapeId, wallet] of [
+      [1n, aliceW],
+      [2n, bobW],
+      [3n, carolW],
+    ] as const) {
+      await (await auctionAs(auction.address, wallet)).write.settleShape([shapeId, 0n]);
+    }
     const [aliceC, bobC, carolC] = await Promise.all([1n, 2n, 3n].map(id => auction.read.shapeCountryId([id])));
     expect(getAddress(await countries.read.ownerOf([aliceC]))).to.equal(addr(aliceW));
     expect(getAddress(await countries.read.ownerOf([bobC]))).to.equal(addr(bobW));

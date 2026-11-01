@@ -3,7 +3,8 @@ import { network } from 'hardhat';
 import { encodeFunctionData, getAddress } from 'viem';
 
 import { deployAuction, deploySale, pack } from './helpers/auction';
-import { deployAccount, deployLand, executeAs, squareId } from './helpers/land';
+import { accountMoveSquares, deployAccount, deployLand, executeAs, squareId } from './helpers/land';
+import { greedyOrder } from './helpers/order';
 import { coverage } from './helpers/setup';
 import { type Loc, rect } from './helpers/shapes';
 
@@ -15,7 +16,8 @@ const loadFixture = networkHelpers.loadFixture.bind(networkHelpers);
 const time = networkHelpers.time;
 
 // Gas of the land operations after the auction, measured from transaction receipts: a split of
-// one square out of a country, a merge of one square into a country, a country transfer (plain
+// one square out of a country, a merge of one square into a country, moves of 100 squares with
+// moveSquares, a country transfer (plain
 // ERC-721 and through GaiaCountryMarket), and purchases from GaiaLandSale. GAS_REPORT=1 prints
 // each measurement. Each test checks an upper bound of two times its measurement, except under
 // --coverage, because the instrumented contracts use more gas. These operations are far below the
@@ -99,7 +101,7 @@ describe('Land: gas', function () {
     return receipt.gasUsed;
   }
 
-  // `measured` is the gas at 45889d1 (GAS_REPORT=1).
+  // `measured` is the gas that GAS_REPORT=1 printed when the bound was set.
   function expectBelowTwice(gas: bigint, measured: bigint) {
     expect(gas < 2n * measured, `gas ${gas} is more than 2 x ${measured}`).to.equal(true);
   }
@@ -176,6 +178,60 @@ describe('Land: gas', function () {
       expect(await f.land.countries.read.squareCount([1n])).to.equal(101n);
       if (coverage) this.skip();
       expectBelowTwice(gas, 107_679n);
+    });
+  });
+
+  describe('moveSquares of 100 squares', function () {
+    // Alice also owns country 3, 10 x 20 at (400, 400), and country 4, a 10 x 1 column east of
+    // it. The account of country 3 is deployed. The test moves the east half of country 3.
+    const three = rect(400, 400, 10, 20);
+    const four = rect(400, 420, 10, 1);
+    const half = three.filter(l => l.lng >= 410);
+
+    async function withLargeCountries() {
+      const f = await deployGas();
+      const [admin] = await viem.getWalletClients();
+      const asAdmin = await viem.getContractAt('GaiaCountries', f.land.countries.address, {
+        client: { wallet: admin },
+      });
+      await asAdmin.write.createCountry([f.aliceAddress, three]);
+      await asAdmin.write.createCountry([f.aliceAddress, four]);
+      const account3 = await deployAccount(f.land, 3n);
+      const account4 = await f.land.countries.read.accountOf([4n]);
+      return { ...f, account3, account4 };
+    }
+
+    it('moves 100 squares to another country of the same owner with one execute', async function () {
+      const f = await loadFixture(withLargeCountries);
+      const order = greedyOrder(half, four, three)!;
+      const gas = await gasOf(f, await accountMoveSquares(f.land, f.alice, f.account3, f.account4, order));
+      log('moveSquares 100 (country to country)', gas);
+      expect(await f.land.countries.read.squareCount([4n])).to.equal(110n);
+      if (coverage) this.skip();
+      expectBelowTwice(gas, 4_346_191n);
+    });
+
+    it('splits 100 squares to a wallet with one execute', async function () {
+      const f = await loadFixture(withLargeCountries);
+      const order = greedyOrder(half, [], three)!;
+      const gas = await gasOf(f, await accountMoveSquares(f.land, f.alice, f.account3, f.aliceAddress, order));
+      log('moveSquares 100 (split to a wallet)', gas);
+      expect(await f.land.countries.read.squareCount([3n])).to.equal(100n);
+      if (coverage) this.skip();
+      expectBelowTwice(gas, 2_554_263n);
+    });
+
+    it('merges 100 squares from a wallet', async function () {
+      const f = await loadFixture(withLargeCountries);
+      await accountMoveSquares(f.land, f.alice, f.account3, f.aliceAddress, greedyOrder(half, [], three)!);
+      const order = greedyOrder(half, four)!;
+      const squares = await f.asAlice.squares;
+      const hash = await squares.write.moveSquares([f.account4, order.map(l => squareId(l.lat, l.lng))]);
+      const gas = await gasOf(f, hash);
+      log('moveSquares 100 (merge from a wallet)', gas);
+      expect(await f.land.countries.read.squareCount([4n])).to.equal(110n);
+      if (coverage) this.skip();
+      expectBelowTwice(gas, 4_802_300n);
     });
   });
 

@@ -4,6 +4,7 @@ import { SHAPE_ERRORS, auctionAs, deployAuction, deploySale } from './helpers/au
 import { revertMessage } from './helpers/errors';
 import { balanceChange } from './helpers/eth';
 import { deployLand } from './helpers/land';
+import { firstBadAdd, greedyOrder } from './helpers/order';
 import { Rng } from './helpers/random';
 import { loadFixture, networkHelpers, time, viem } from './helpers/setup';
 
@@ -946,7 +947,10 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
   // -------- Settlement --------
 
   /// Settles every shape: random callers, random chunk sizes (0 is the whole rest), and shapes in
-  /// a random mix. A shape is done when settleShape reverts with ShapeAlreadySettled. The test
+  /// a random mix. Until `endTime + settleWindow`, a call from an address that is not the winner
+  /// reverts with NotWinner; at a random point the clock passes the window, and then any caller
+  /// can settle. Between these calls, the test tries settleShapeInto (see `tryJoin`). A shape is
+  /// done when settleShape reverts with ShapeAlreadySettled, or after a settleShapeInto. The test
   /// does not model the settle cursor; it checks public results after each call:
   /// - A call that mints squares emits ShapeSquaresSettled with the country and the number of new
   ///   squares, and squareCount goes up by that number.
@@ -959,12 +963,155 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     const { countries, squares } = fx.land;
     const open = new Set(model.shapes.keys());
     const calls = new Map<number, number>();
+    // Shapes with at least one settleShape call (the cursor is not 0 after it).
+    const started = new Set<number>();
+    // The cells of each country that the winner holds, after its last settleShape call.
+    const done = new Map<bigint, number[]>();
+    // Countries that the auction still holds (the shape is not settled to the end).
+    const held = new Set<bigint>();
+    const countryOwner = new Map<bigint, Address>();
+    const sideNeighbours = (a: number, b: number) => {
+      const p = cellLoc(a);
+      const q = cellLoc(b);
+      const dLng = Math.min((p.lng - q.lng + MAX_LNG) % MAX_LNG, (q.lng - p.lng + MAX_LNG) % MAX_LNG);
+      return (p.lat === q.lat && dLng === 1) || (Math.abs(p.lat - q.lat) === 1 && dLng === 0);
+    };
+    const cellLoc = (k: number) => {
+      const packed = packOf(place, k);
+      return { lat: latOf(packed), lng: lngOf(packed) };
+    };
+
+    /// settleShapeInto of a random open shape into a random country, in a valid or a random
+    /// order. The test predicts the result from the rules: only the winner, only a shape that
+    /// settleShape did not start, only a country of the winner, and each square keeps the
+    /// country valid by the global rule (flood fill). When more than one rule fails, any of
+    /// their errors is correct. A revert changes nothing.
+    async function tryJoin() {
+      const candidates = [...open].filter(i => model.liveCells(i).length > 0);
+      const fresh = candidates.filter(i => !started.has(i));
+      const id = rng.chance(0.8) && fresh.length > 0 ? rng.pick(fresh) : rng.pickOr(candidates);
+      const targets = [...done.keys(), ...held];
+      if (id === undefined || targets.length === 0) return;
+      const shape = model.shapes.get(id)!;
+      const live = model.liveCells(id);
+      const caller = rng.chance(0.9) ? shape.bidder : rng.pick(bidders);
+      const own = [...done.keys()].filter(c => countryOwner.get(c) === shape.bidder);
+      // Mostly a country of the winner that the shape touches at a side.
+      const touching = own.filter(c => done.get(c)!.some(a => live.some(b => sideNeighbours(a, b))));
+      let countryId = rng.chance(0.7) ? rng.pickOr(touching) : undefined;
+      if (countryId === undefined) countryId = rng.chance(0.8) && own.length > 0 ? rng.pick(own) : rng.pick(targets);
+      const destCells = done.get(countryId) ?? [];
+      const dest = destCells.map(cellLoc);
+      const greedy = rng.chance(0.6) ? greedyOrder(live.map(cellLoc), dest) : undefined;
+      const order = greedy ?? rng.shuffle(live).map(cellLoc);
+      const errors: string[] = [];
+      if (caller !== shape.bidder) errors.push('NotWinner');
+      if (started.has(id)) errors.push('ShapeAlreadySettled');
+      if (countryOwner.get(countryId) !== shape.bidder) errors.push('NotCountryOwner');
+      if (firstBadAdd(order, dest) >= 0) errors.push('ShapeBroken');
+      const packed = order.map(l => l.lat * 65536 + l.lng);
+      log.push(
+        `settleShapeInto(#${id}, ${countryId}, ${greedy === undefined ? 'random' : 'greedy'} order) by ${who(caller)} -> expect ${errors.join(' or ') || 'success'}`,
+      );
+
+      const snapshot = async () => [
+        await auction.read.shapeSettleCursor([BigInt(id)]),
+        await auction.read.shapeCountryId([BigInt(id)]),
+        await countries.read.squareCount([countryId]),
+        await countries.read.compositionVersion([countryId]),
+      ];
+      const before = await snapshot();
+      let receipt;
+      try {
+        const hash = await as.get(caller)!.write.settleShapeInto([BigInt(id), countryId, packed]);
+        receipt = await fx.publicClient.waitForTransactionReceipt({ hash });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        if (errors.length === 0 || !new RegExp(`\\b(${errors.join('|')})\\(`).test(message)) {
+          throw new Divergence(`settleShapeInto(#${id}) reverted with: ${message}`);
+        }
+        const after = await snapshot();
+        if (after.some((v, i) => v !== before[i])) {
+          throw new Divergence(`settleShapeInto(#${id}) reverted but changed ${before} to ${after}`);
+        }
+        counts.reverted++;
+        return;
+      }
+      if (errors.length !== 0) throw new Divergence(`settleShapeInto(#${id}) succeeded, model expects ${errors}`);
+      counts.ok++;
+      open.delete(id);
+      done.set(countryId, [...destCells, ...live]);
+      const n = BigInt(live.length);
+      if ((await countries.read.squareCount([countryId])) !== (before[2] as bigint) + n) {
+        throw new Divergence(`settleShapeInto(#${id}): squareCount of ${countryId} did not go up by ${n}`);
+      }
+      if ((await countries.read.compositionVersion([countryId])) !== (before[3] as bigint) + n) {
+        throw new Divergence(`settleShapeInto(#${id}): compositionVersion of ${countryId} did not go up by ${n}`);
+      }
+      if ((await auction.read.shapeCountryId([BigInt(id)])) !== countryId) {
+        throw new Divergence(`settleShapeInto(#${id}): shapeCountryId is not ${countryId}`);
+      }
+      if (getAddress(await countries.read.ownerOf([countryId])) !== shape.bidder) {
+        throw new Divergence(`settleShapeInto(#${id}): country ${countryId} changed owner`);
+      }
+      const minted = parseEventLogs({ abi: auction.abi, eventName: 'ShapeSquaresSettled', logs: receipt.logs });
+      const settled = parseEventLogs({ abi: auction.abi, eventName: 'ShapeSettled', logs: receipt.logs });
+      if (
+        minted.length !== 1 ||
+        settled.length !== 1 ||
+        minted[0].args.shapeId !== BigInt(id) ||
+        minted[0].args.countryId !== countryId ||
+        minted[0].args.count !== n ||
+        settled[0].args.shapeId !== BigInt(id) ||
+        settled[0].args.countryId !== countryId ||
+        getAddress(settled[0].args.winner!) !== shape.bidder ||
+        settled[0].args.totalSquares !== n
+      ) {
+        throw new Divergence(`settleShapeInto(#${id}): events with other values than the model`);
+      }
+      // A second call reverts.
+      try {
+        await as.get(shape.bidder)!.write.settleShapeInto([BigInt(id), countryId, packed]);
+      } catch (e) {
+        if (!/\bShapeAlreadySettled\(/.test(e instanceof Error ? e.message : String(e))) {
+          throw new Divergence(`second settleShapeInto(#${id}) did not revert with ShapeAlreadySettled`);
+        }
+        return;
+      }
+      throw new Divergence(`second settleShapeInto(#${id}) succeeded`);
+    }
+
+    const windowEnd = (await auction.read.endTime()) + (await auction.read.settleWindow());
+    let inWindow = true;
     while (open.size > 0) {
+      if (rng.chance(0.3)) {
+        await tryJoin();
+        continue;
+      }
+      if (inWindow && rng.chance(0.1)) {
+        await time.increaseTo(windowEnd + 1n);
+        inWindow = false;
+        log.push('time passes endTime + settleWindow');
+      }
       const id = rng.pick([...open]);
       const shape = model.shapes.get(id)!;
       const live = model.liveCells(id);
       const chunk = rng.chance(0.3) ? 0n : BigInt(1 + rng.int(6));
       const caller = rng.pick(bidders);
+      if (inWindow && caller !== shape.bidder) {
+        log.push(`settleShape(#${id}, ${chunk}) by ${who(caller)} in the window`);
+        try {
+          await as.get(caller)!.write.settleShape([BigInt(id), chunk]);
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          if (!/\bNotWinner\(/.test(message)) {
+            throw new Divergence(`settleShape(#${id}) by another address in the window reverted with: ${message}`);
+          }
+          counts.reverted++;
+          continue;
+        }
+        throw new Divergence(`settleShape(#${id}) by another address in the window did not revert`);
+      }
       const n = (calls.get(id) ?? 0) + 1;
       calls.set(id, n);
       // Each call settles at least one stored square, so a shape needs at most one call for
@@ -986,10 +1133,11 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
           throw new Divergence(`settleShape(#${id}) reverted with: ${message}`);
         }
         open.delete(id);
-        await checkSettled(id, live);
+        await checkSettled(id, live, done);
         continue;
       }
       counts.ok++;
+      started.add(id);
       const countryId = await auction.read.shapeCountryId([BigInt(id)]);
       if (live.length === 0) {
         if (countryId !== 0n) throw new Divergence(`shape #${id} has no live squares but country ${countryId}`);
@@ -1034,6 +1182,14 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         throw new Divergence(`shape #${id}: country ${countryId} sent with ${count} of ${live.length} squares`);
       }
       const transferred = owner === shape.bidder && ownerBefore !== shape.bidder;
+      if (transferred) {
+        held.delete(countryId);
+        done.set(countryId, [...live]);
+        countryOwner.set(countryId, shape.bidder);
+      } else if (owner !== shape.bidder) {
+        held.add(countryId);
+        countryOwner.set(countryId, owner);
+      }
       const settled = parseEventLogs({ abi: auction.abi, eventName: 'ShapeSettled', logs: receipt.logs });
       if (settled.length !== (transferred ? 1 : 0)) {
         throw new Divergence(`shape #${id}: ${settled.length} ShapeSettled, country sent: ${transferred}`);
@@ -1050,6 +1206,18 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         }
       }
     }
+    // Each country holds exactly the cells of its shapes, also after joins.
+    for (const [countryId, cells] of done) {
+      const count = await countries.read.squareCount([countryId]);
+      if (count !== BigInt(cells.length)) {
+        throw new Divergence(`country ${countryId} has ${count} squares, model ${cells.length}`);
+      }
+      for (const k of cells) {
+        const packed = packOf(place, k);
+        const c = await squares.read.countryOf([latOf(packed), lngOf(packed)]);
+        if (c !== countryId) throw new Divergence(`countryOf${fmtSquares([packed])} is ${c}, model ${countryId}`);
+      }
+    }
     // The squares that exist in the window are exactly the squares of the model.
     const rows = validRows(place);
     for (const k of ALL_CELLS) {
@@ -1063,8 +1231,9 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     log.push('all shapes settled');
   }
 
-  /// After the last settleShape of shape `id`: its country, if any, holds exactly `live`.
-  async function checkSettled(id: number, live: number[]) {
+  /// After the last settleShape of shape `id`: its country, if any, holds `live`, and exactly the
+  /// cells of `done` for that country (the shape, and the shapes that joined it later).
+  async function checkSettled(id: number, live: number[], done: Map<bigint, number[]>) {
     const { countries, squares } = fx.land;
     const countryId = await auction.read.shapeCountryId([BigInt(id)]);
     if (live.length === 0) {
@@ -1077,8 +1246,9 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     if (owner !== bidder)
       throw new Divergence(`country ${countryId} of shape #${id} is at ${owner}, not ${who(bidder)}`);
     const count = await countries.read.squareCount([countryId]);
-    if (count !== BigInt(live.length)) {
-      throw new Divergence(`country ${countryId} of shape #${id} has ${count} squares, model ${live.length}`);
+    const expected = done.get(countryId)?.length ?? live.length;
+    if (count !== BigInt(expected)) {
+      throw new Divergence(`country ${countryId} of shape #${id} has ${count} squares, model ${expected}`);
     }
     for (const k of live) {
       const packed = packOf(place, k);

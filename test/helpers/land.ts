@@ -72,3 +72,20 @@ export async function accountTransferSquare(
   });
   return executeAs(land, wallet, account, land.squares, data);
 }
+
+/// Makes a country account (controlled by `wallet`) call moveSquares on GaiaSquares with the
+/// squares `locs`, in this order.
+export async function accountMoveSquares(
+  land: Land,
+  wallet: Wallet,
+  account: `0x${string}`,
+  to: `0x${string}`,
+  locs: readonly { lat: number; lng: number }[],
+) {
+  const data = encodeFunctionData({
+    abi: land.squares.abi,
+    functionName: 'moveSquares',
+    args: [to, locs.map(l => squareId(l.lat, l.lng))],
+  });
+  return executeAs(land, wallet, account, land.squares, data);
+}

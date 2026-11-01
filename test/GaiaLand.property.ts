@@ -1,6 +1,6 @@
 import { encodeFunctionData, getAddress, zeroAddress } from 'viem';
 
-import { accountTransferSquare, deployAccount, deployLand, squareId } from './helpers/land';
+import { accountMoveSquares, accountTransferSquare, deployAccount, deployLand, squareId } from './helpers/land';
 import { Rng } from './helpers/random';
 import { loadFixture, provider, viem } from './helpers/setup';
 
@@ -588,6 +588,28 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
     }
   }
 
+  /// An order of `cells` in which each square keeps the destination `to` and the rest of the
+  /// source `from` valid, by the global rule. Greedy; it can stop early, so the result can be
+  /// shorter than `cells`.
+  function validOrder(cells: number[], from: Set<number>, to: Set<number>): number[] {
+    const rest = [...cells];
+    const src = new Set(from);
+    const dst = new Set(to);
+    const out: number[] = [];
+    for (;;) {
+      const i = rest.findIndex(k => {
+        const s2 = new Set(src);
+        s2.delete(k);
+        return (s2.size === 0 || isValidShape(place, s2)) && isValidShape(place, new Set([...dst, k]));
+      });
+      if (i < 0) return out;
+      const [k] = rest.splice(i, 1);
+      src.delete(k);
+      dst.add(k);
+      out.push(k);
+    }
+  }
+
   /// Squares of live countries whose removal keeps the shape valid.
   function removable(): { id: bigint; k: number }[] {
     const out: { id: bigint; k: number }[] = [];
@@ -754,6 +776,106 @@ async function runHistory(seed: number, place: Place, fx: Fixture) {
         if (toId === undefined) toId = rng.pickOr(others);
         if (toId === undefined) return;
         await split(fromId, k, owner, accountOf(toId), 'move');
+      },
+    },
+    {
+      weight: 4,
+      name: 'moveSquares',
+      run: async () => {
+        // The source: a live country, through its account, or a wallet with standalone squares.
+        const wallets = users.filter(u => [...model.squares.values()].some(s => s.country === 0n && s.holder === u));
+        const live = model.liveIds();
+        const fromCountry = live.length > 0 && (wallets.length === 0 || rng.chance(0.7));
+        let fromId = 0n;
+        let source: Address;
+        let caller: Address;
+        let cells: Set<number>;
+        if (fromCountry) {
+          fromId = rng.pick(live);
+          source = accountOf(fromId);
+          const owner = model.ownerOf(fromId)!;
+          caller = rng.chance(0.9) ? owner : rng.pick(users);
+          cells = model.cellsOf(fromId);
+        } else {
+          const holder = rng.pickOr(wallets);
+          if (holder === undefined) return;
+          source = holder;
+          caller = holder;
+          cells = new Set(
+            [...model.squares.entries()].filter(([, s]) => s.country === 0n && s.holder === holder).map(([k]) => k),
+          );
+        }
+        const owner = fromCountry ? model.ownerOf(fromId)! : source;
+
+        // The destination: a country of the same owner (mostly), a country of another owner, or a
+        // wallet.
+        const others = [...model.countries.keys()].filter(id => id !== fromId);
+        // A burned country has no owner, so it is never in `same`.
+        const same = others.filter(id => model.ownerOf(id) === owner);
+        let to: Address;
+        let toCells = new Set<number>();
+        const r = rng.float();
+        if (r < 0.6 && same.length > 0) {
+          const id = rng.pick(same);
+          to = accountOf(id);
+          toCells = model.cellsOf(id);
+        } else if (r < 0.75 && others.length > 0) {
+          const id = rng.pick(others);
+          to = accountOf(id);
+          toCells = model.cellsOf(id);
+        } else {
+          to = rng.pick(users);
+        }
+        const toWallet = users.includes(to);
+
+        // The squares, in a valid order or in a random order. Sometimes all, sometimes none.
+        let ks: number[];
+        let note: string;
+        const all = [...cells];
+        const pickSome = () =>
+          rng.shuffle(all).slice(0, rng.chance(0.2) ? all.length : 1 + rng.int(Math.min(6, all.length)));
+        if (rng.chance(0.05)) {
+          ks = [];
+          note = 'empty';
+        } else if (rng.chance(0.6)) {
+          // A wallet has no shape rule, so any order is valid there.
+          ks =
+            toWallet && !fromCountry
+              ? pickSome()
+              : validOrder(pickSome(), fromCountry ? cells : new Set(), toWallet ? new Set() : toCells);
+          note = 'valid order';
+        } else {
+          ks = pickSome();
+          note = 'random order';
+        }
+        // The greedy order found no first square: try another operation.
+        if (ks.length === 0 && note !== 'empty') return;
+
+        const ids = ks.map(k => squareId(locOf(k).lat, locOf(k).lng));
+        const label = `moveSquares ${ks.map(fmt).join(' ') || '(none)'} from ${who(source)} to ${who(to)} by ${who(caller)} (${note})`;
+        if (fromCountry) await ensureDeployed(source);
+        const ok = await attempt(
+          label,
+          m => {
+            if (fromCountry) {
+              const err = m.execute(caller, source);
+              if (err !== undefined) return err;
+            }
+            for (const k of ks) {
+              const err = m.transferSquare(source, source, to, k);
+              if (err !== undefined) return err;
+            }
+            return undefined;
+          },
+          () =>
+            fromCountry
+              ? accountMoveSquares(land, walletOf(caller), source, to, ks.map(locOf))
+              : fx.squaresAs.get(source)!.write.moveSquares([to, ids]),
+        );
+        if (ok && fromCountry && model.ownerOf(fromId) === undefined) {
+          log.push(`  #${fromId} burned`);
+          await checkBurned(fromId);
+        }
       },
     },
     {

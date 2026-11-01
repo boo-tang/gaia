@@ -81,9 +81,37 @@ The auction does not give squares to the winner's wallet.
 For Alice's block:
 
 1. Alice bids on the four cells.
-2. Settlement calls `createCountry(Alice)`. That mints **Country NFT 1** to Alice and creates the account at `accountOf(1)`.
+2. After the auction, Alice calls `settleShape`. It calls `createCountry`, which mints **Country NFT 1** and creates the account at `accountOf(1)`.
 3. Settlement mints the four **square NFTs** into `accountOf(1)`, not to Alice.
 4. The auction keeps Country 1 until the last mint chunk finishes, then sends Country 1 to Alice.
+
+### Who settles, and when
+
+Winners settle their own shapes. There is no operator script.
+
+- **Settle window.** Until `endTime + settleWindow`, only the winner of a shape can call `settleShape` for it. Another address gets `NotWinner`. `settleWindow` is a constructor parameter in seconds (7 days in the local and Base Sepolia parameters). The window starts at the current `endTime`, so it moves with the soft close.
+- **After the window**, anyone can call `settleShape`. Each shape then becomes its own country, owned by the winner. Thus land never stays in the auction when a winner does nothing.
+
+### Join a shape to a country: `settleShapeInto`
+
+A winner can join shapes that touch into one country at settlement:
+
+1. Settle the first shape as a new country with `settleShape`.
+2. For each next shape, call `settleShapeInto(shapeId, countryId, squares)`.
+
+The rules of `settleShapeInto`:
+
+- Only the winner of the shape can call it, also after the settle window (`NotWinner`). The country must belong to the winner (`NotCountryOwner`).
+- The shape must not be settled, also not in part, with `settleShape` (`ShapeAlreadySettled`). After `settleShapeInto`, `settleShape` reverts with `ShapeAlreadySettled` for that shape.
+- `squares` holds all squares that the shape still holds (`shapeLiveSquares`), packed as for `bidOnShape`, in the order to add them. A different count reverts with `WrongSquareCount(count, live)`. A square of another shape, or with no bid, reverts with `NotShapeSquare(lat, lng)`. A repeated square reverts at its second mint (`SquareAlreadyExists`). A shape that later bids took completely has no squares to settle (`EmptyShape`).
+- GaiaSquares adds the squares one at a time and checks the country after each one. Each square must keep the country connected and without holes. If the order is bad, or if the shape cannot join the country, the call reverts with `ShapeBroken` and nothing changes. Then the winner settles the shape as a new country with `settleShape`.
+- The call emits `ShapeSquaresSettled` and `ShapeSettled`, with the ID of the country that the shape joined.
+
+Example: Alice wins four shapes in a ring around Bob's square. The bottom shape settles as a country, and the west and east shapes join it. The top shape would close the ring around Bob's square (a hole), so each order reverts. Alice settles the top shape as its own country.
+
+**One whole shape for each call.** A shape joins a country in one call, or not at all. If part of a shape could join in one call and the rest later, the rest could get stuck: for example, when the last squares would close a ring around land of another bidder, no valid order exists, and the shape would stay half settled for ever. Thus a shape must fit in one `settleShapeInto` call below the gas cap (see "Bid gas"). A larger shape settles as its own country, and then joins with `moveSquares` (see "Move many squares").
+
+The order of the squares is the input of the call, as for the land sale. The app computes it (`packages/core`). The contract only checks it.
 
 ### Bid rules
 
@@ -102,7 +130,7 @@ All of these values are constructor parameters. Nobody can change them after dep
 
 Why one end for the whole auction: when Bob takes some of Alice's squares near the end, Alice can still bid on other squares that suit her. If each square closed at its own time, she could lose a square after the squares she wants as a replacement have closed.
 
-Settlement and `withdrawProceeds` wait for the current `endTime`. Read `endTime()` from the auction every time. Do not keep a copy. The leftover-square sale also reads it on each purchase (see below).
+Settlement and `withdrawProceeds` wait for the current `endTime`, and the settle window starts at it. Read `endTime()` from the auction every time. Do not keep a copy. The leftover-square sale also reads it on each purchase (see below).
 
 ### Bid gas
 
@@ -113,8 +141,9 @@ Base does not accept a transaction above 16,777,216 gas (EIP-7825). Measured cos
 - For each shape that the bid cuts into and that keeps squares, the auction checks the remaining squares. They must be a valid shape of at least `minShapeSquares` squares. If not, the bid reverts with `OverlapWouldInvalidateShape(shapeId)`, with the ID of that shape. The other shape errors (for example `GapBetweenLongitudes`) are only for the squares of the bid itself. The check reads one slot for each eight rows that the shape still holds. It does not read the squares that the shape lost before. When a bid takes all remaining squares of a shape, there is no check.
 - The worst bid: each square of the bid comes from a different shape, and each shape has a different bidder. This costs about 56,000 gas for each square of the bid. About 27,000 of it is the refund to a bidder who had no refund before. The cost does not depend on the size of the shapes that the bid cuts.
 - Settlement costs about 63,000 to 65,000 gas for each square. A settlement chunk always continues to the end of its row, so the widest row of a shape must settle in one call. One row of 250 squares costs 16.6M gas to settle. A row of about 250 squares or less settles below 16,777,216 gas, and about 180 or less below 12M.
+- `settleShapeInto` costs about 64,000 gas for each square, plus about 190,000 for each call. The whole shape goes in one call: a shape of 180 squares costs about 11.7M gas, and about 259 squares fit below 16,777,216 gas. The default `maxShapeSquares` (180 in the local and Base Sepolia parameters) keeps each shape inside one call.
 
-`maxShapeSquares` and `maxShapeAspectRatio` must keep each bid and each settlement chunk below the cap. With the worst bid above, `maxShapeSquares` of about 300 or less keeps each bid below 16,777,216 gas (300 squares: 16.6M), and about 215 or less keeps it below 12M. A limit on the number of shapes that one bid can cut into is not necessary. These values are not chosen yet.
+`maxShapeSquares` and `maxShapeAspectRatio` must keep each bid, each settlement chunk and each `settleShapeInto` call below the cap. With the worst bid above, `maxShapeSquares` of about 300 or less keeps each bid below 16,777,216 gas (300 squares: 16.6M), and about 215 or less keeps it below 12M. A limit on the number of shapes that one bid can cut into is not necessary. These values are not chosen yet.
 
 How the auction stores bids:
 
@@ -122,7 +151,7 @@ How the auction stores bids:
 - One slot for each shape: the bidder, the number of squares that the shape still holds (`shapeLiveSquares`), the first latitude and the reference longitude of the shape, and the first and last row that still hold squares.
 - One range for each row of each shape: the first and the last longitude of the squares that the shape holds in that row. A valid shape has exactly one range in each row. Eight ranges go in one slot. When a later bid takes squares at the west or east end of a range, the range gets shorter. When it takes all squares of the row, the range is empty. A bid that takes squares from the middle of a range reverts with `OverlapWouldInvalidateShape`, because the shape would have two ranges in that row.
 - Example: Alice's shape has the squares from longitude 501 to 508 in latitude 102. Bob's bid takes 501 to 503. The range of that row is then 504 to 508.
-- Settlement goes through the rows from south to north and adds the squares of each range to the country.
+- `settleShape` goes through the rows from south to north and adds the squares of each range to the country. `settleShapeInto` takes the squares in the order of the call.
 
 ### Pause and cancel
 
@@ -201,6 +230,19 @@ These moves revert:
 - A square is burned (`BurnNotAllowed`).
 
 To send a square out of a country, Alice calls `execute` on `accountOf(1)`. The account then calls `transferFrom` on the square. Only the current holder of Country 1 can call `execute`.
+
+## Move many squares: `moveSquares`
+
+`GaiaSquares.moveSquares(to, ids)` moves many squares in one call. `ids` are ERC-721 token IDs (`lat * 36000 + lng`).
+
+- A country account calls it through one `execute` (split, or a move to another country of the same owner). A wallet calls it directly (merge).
+- Each square is a normal `transferFrom(msg.sender, to, id)`, in the order of `ids`. So all the rules of the table above apply to each square: the account rule, the consent (`NoConsent` between two owners) and the shape check. The order must keep the source and the destination valid after each square. If one square fails, nothing moves.
+- The caller moves only its own squares. An operator approval does not let another address use it.
+- One `execute` changes the account `state()` once. `compositionVersion` goes up once for each square, in the source and in the destination.
+- A move of all squares of a country burns that country, as a split of the last square does. Empty the account first.
+- An empty list does nothing.
+
+Gas, through `execute`: about 42,000 for each square plus about 165,000 for each call (100 squares: about 4.3M). A move of more squares than fit in one call goes in parts. Each first part of a valid order is a valid order, so the app sends the order in consecutive parts.
 
 ## Split: take land out of a country
 
@@ -335,6 +377,10 @@ lat 21  A       A       A       A
 All those cells now report `countryOf = 1`. `compositionVersion(1)` goes up once per received square.
 
 If a square did not touch the country, or if the result had a hole, the merge would revert. The order matters: Dana cannot merge `(14,21)` first, because it does not touch Country 1 yet.
+
+Each step above can move many squares in one call with `moveSquares`: Carol's account splits the three squares with one `execute`, and Dana merges them from her wallet with one call, `(13,21)` first.
+
+At settlement, a winner joins shapes that touch with `settleShapeInto` (see "Join a shape to a country"). That costs less than settling each shape as its own country and then moving the squares.
 
 ## OwnershipLoop
 

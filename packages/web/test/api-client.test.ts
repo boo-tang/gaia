@@ -13,6 +13,7 @@ const auction: AuctionResponse = {
     startTime: 1792246554,
     maxEndTime: 1792336554,
     extensionWindow: 900,
+    settleWindow: 604800,
     minBidPerSquareWei: '1000000000000000',
     minBidIncrementBps: 500,
     minShapeSquares: 1,

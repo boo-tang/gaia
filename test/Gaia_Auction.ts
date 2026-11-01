@@ -799,7 +799,8 @@ describe('GaiaAuction: settleShape', function () {
       value: minBid * BigInt(shape.length),
     });
 
-    await time.increaseTo(end + 1n);
+    // The winner contract cannot call settleShape, so another address settles after the window.
+    await time.increaseTo(end + (await auction.read.settleWindow()) + 1n);
 
     await expect(auctionAs1.write.settleShape([1n, 0n])).to.be.fulfilled;
     const countryId = await auction.read.shapeCountryId([1n]);
@@ -1019,6 +1020,347 @@ describe('GaiaAuction: settleShape', function () {
     const countryId = await auction.read.shapeCountryId([shapeId]);
     expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(getAddress(bidder1.account.address));
     expect(await countries.read.squareCount([countryId])).to.equal(BigInt(shape.length));
+  });
+});
+
+describe('GaiaAuction: settle window', function () {
+  const WINDOW = 7n * 86400n;
+  const minBid = 1000n;
+
+  // bidder1 holds shape 1 (2 x 2). bidder2 is another address.
+  async function deployWithWindow(params: { settleWindow?: bigint; extensionWindow?: bigint }) {
+    const [owner, bidder1, bidder2] = await viem.getWalletClients();
+    const land = await deployLand(owner.account.address);
+    const now = BigInt(await time.latest());
+    const endTime = now + 3600n;
+    const { auction } = await deployAuction(land, {
+      endTime,
+      maxEndTime: endTime + 3600n,
+      extensionWindow: params.extensionWindow ?? 0n,
+      settleWindow: params.settleWindow ?? WINDOW,
+    });
+    const as1 = await auctionAs(auction.address, bidder1);
+    const as2 = await auctionAs(auction.address, bidder2);
+    await as1.write.bidOnShape([pack(rect(10, 10, 2, 2)), 0n, false], { value: 4n * minBid });
+    const bidders = [bidder1.account.address, bidder2.account.address];
+    return { land, auction, as1, as2, bidder1, bidders };
+  }
+  const deployWindow = () => deployWithWindow({});
+  const deployWindowWithSoftClose = () => deployWithWindow({ extensionWindow: 600n });
+  const deployNoWindow = () => deployWithWindow({ settleWindow: 0n });
+
+  it('lets only the winner settle until endTime + settleWindow, and anyone after it', async function () {
+    const { land, auction, as2, bidder1, bidders } = await loadFixture(deployWindow);
+    const end = await auction.read.endTime();
+    expect(await auction.read.settleWindow()).to.equal(WINDOW);
+
+    await time.setNextBlockTimestamp(end + 1n);
+    await expect(as2.write.settleShape([1n, 0n])).to.be.rejectedWith('NotWinner');
+    await time.setNextBlockTimestamp(end + WINDOW);
+    await expect(as2.write.settleShape([1n, 0n])).to.be.rejectedWith('NotWinner');
+
+    await time.setNextBlockTimestamp(end + WINDOW + 1n);
+    await as2.write.settleShape([1n, 0n]);
+    const countryId = await auction.read.shapeCountryId([1n]);
+    expect(getAddress(await land.countries.read.ownerOf([countryId]))).to.equal(getAddress(bidder1.account.address));
+    expect(await land.countries.read.squareCount([countryId])).to.equal(4n);
+    await expectActiveBidsEqualProceeds(auction, bidders);
+  });
+
+  it('lets the winner settle in the window', async function () {
+    const { land, auction, as1, bidder1, bidders } = await loadFixture(deployWindow);
+    await time.increaseTo((await auction.read.endTime()) + 1n);
+    await as1.write.settleShape([1n, 0n]);
+    const countryId = await auction.read.shapeCountryId([1n]);
+    expect(getAddress(await land.countries.read.ownerOf([countryId]))).to.equal(getAddress(bidder1.account.address));
+    await expectActiveBidsEqualProceeds(auction, bidders);
+  });
+
+  it('starts the window at the current endTime, after the soft close moved it', async function () {
+    const { land, auction, as2, bidder1, bidders } = await loadFixture(deployWindowWithSoftClose);
+    const oldEnd = await auction.read.endTime();
+    // A raise 10 s before the end moves endTime by about 590 s.
+    await time.setNextBlockTimestamp(oldEnd - 10n);
+    await as2.write.bidOnShape([pack(rect(20, 10, 1, 1)), 0n, false], { value: minBid });
+    const newEnd = await auction.read.endTime();
+    expect(newEnd > oldEnd).to.equal(true);
+
+    await time.setNextBlockTimestamp(oldEnd + WINDOW + 1n);
+    await expect(as2.write.settleShape([1n, 0n])).to.be.rejectedWith('NotWinner');
+    await time.setNextBlockTimestamp(newEnd + WINDOW + 1n);
+    await as2.write.settleShape([1n, 0n]);
+    const countryId = await auction.read.shapeCountryId([1n]);
+    expect(getAddress(await land.countries.read.ownerOf([countryId]))).to.equal(getAddress(bidder1.account.address));
+    await expectActiveBidsEqualProceeds(auction, bidders);
+  });
+
+  it('lets anyone settle right after endTime when settleWindow is 0', async function () {
+    const { land, auction, as2, bidder1, bidders } = await loadFixture(deployNoWindow);
+    await time.setNextBlockTimestamp((await auction.read.endTime()) + 1n);
+    await as2.write.settleShape([1n, 0n]);
+    const countryId = await auction.read.shapeCountryId([1n]);
+    expect(getAddress(await land.countries.read.ownerOf([countryId]))).to.equal(getAddress(bidder1.account.address));
+    await expectActiveBidsEqualProceeds(auction, bidders);
+  });
+
+  it('lets another address finish after the window a settlement that the winner started in it', async function () {
+    const { land, auction, as1, as2, bidder1, bidders } = await loadFixture(deployWindow);
+    const end = await auction.read.endTime();
+    await time.increaseTo(end + 1n);
+    // One row of the two.
+    await as1.write.settleShape([1n, 1n]);
+    const countryId = await auction.read.shapeCountryId([1n]);
+    expect(getAddress(await land.countries.read.ownerOf([countryId]))).to.equal(getAddress(auction.address));
+    await expect(as2.write.settleShape([1n, 0n])).to.be.rejectedWith('NotWinner');
+
+    await time.increaseTo(end + WINDOW + 1n);
+    await as2.write.settleShape([1n, 0n]);
+    expect(getAddress(await land.countries.read.ownerOf([countryId]))).to.equal(getAddress(bidder1.account.address));
+    expect(await land.countries.read.squareCount([countryId])).to.equal(4n);
+    await expectActiveBidsEqualProceeds(auction, bidders);
+  });
+});
+
+describe('GaiaAuction: settleShapeInto', function () {
+  const minBid = 1000n;
+  type Loc = { lat: number; lng: number };
+
+  // Alice's shapes: 1 = B, 2 = E (north of B), 3 = C (far away), 4 = F (Bob takes all of it with
+  // shape 5). Bob's shape 6 = D (east of B). Country 1 is Alice's, made by an issuer at (9, 12),
+  // just south of B.
+  const B = rect(10, 12, 2, 2);
+  const E = rect(12, 12, 3, 2);
+  const C = rect(30, 30, 1, 1);
+  const F = rect(40, 40, 1, 1);
+  const D = rect(10, 14, 2, 1);
+  const issued: Loc[] = [{ lat: 9, lng: 12 }];
+
+  async function deployInto() {
+    const [owner, alice, bob] = await viem.getWalletClients();
+    const publicClient = await viem.getPublicClient();
+    const land = await deployLand(owner.account.address);
+    const { countries, squares } = land;
+    const { auction, endTime } = await deployAuction(land, { minBidPerSquareWei: minBid });
+    const asAlice = await auctionAs(auction.address, alice);
+    const asBob = await auctionAs(auction.address, bob);
+    const asAdmin = await auctionAs(auction.address, owner);
+    for (const shape of [B, E, C, F]) {
+      await asAlice.write.bidOnShape([pack(shape), 0n, false], { value: minBid * BigInt(shape.length) });
+    }
+    for (const shape of [F, D]) {
+      await asBob.write.bidOnShape([pack(shape), 0n, false], { value: 2n * minBid * BigInt(shape.length) });
+    }
+    await countries.write.grantRole([await countries.read.ISSUER_ROLE(), owner.account.address]);
+    await countries.write.createCountry([alice.account.address, issued]);
+    const bidders = [alice.account.address, bob.account.address];
+    return { land, countries, squares, auction, asAlice, asBob, asAdmin, alice, bob, endTime, publicClient, bidders };
+  }
+
+  async function deployEnded() {
+    const f = await deployInto();
+    await time.increaseTo(f.endTime + 1n);
+    return f;
+  }
+
+  /// The state that a failed settleShapeInto of `shapeId` into `countryId` must not change.
+  async function snapshot(f: Awaited<ReturnType<typeof deployInto>>, shapeId: bigint, countryId: bigint) {
+    return {
+      cursor: await f.auction.read.shapeSettleCursor([shapeId]),
+      settled: await f.auction.read.shapeSettledSquares([shapeId]),
+      country: await f.auction.read.shapeCountryId([shapeId]),
+      count: await f.countries.read.squareCount([countryId]),
+      version: await f.countries.read.compositionVersion([countryId]),
+    };
+  }
+
+  it('adds all squares of a shape to a country of the winner, in one call', async function () {
+    const f = await loadFixture(deployEnded);
+    const versionBefore = await f.countries.read.compositionVersion([1n]);
+    const hash = await f.asAlice.write.settleShapeInto([1n, 1n, pack(B)]);
+
+    expect(await f.countries.read.squareCount([1n])).to.equal(5n);
+    expect(await f.countries.read.compositionVersion([1n])).to.equal(versionBefore + 4n);
+    for (const loc of B) expect(await f.squares.read.countryOf([loc.lat, loc.lng])).to.equal(1n);
+    expect(getAddress(await f.countries.read.ownerOf([1n]))).to.equal(getAddress(f.alice.account.address));
+    // The cursor is past the last row (B has 2 rows).
+    expect(await f.auction.read.shapeSettleCursor([1n])).to.equal(2n);
+    expect(await f.auction.read.shapeSettledSquares([1n])).to.equal(4n);
+    expect(await f.auction.read.shapeCountryId([1n])).to.equal(1n);
+    expect(await eventsIn(hash, f.auction.abi, 'ShapeSquaresSettled')).to.deep.equal([
+      { shapeId: 1n, countryId: 1n, count: 4n },
+    ]);
+    expect(await eventsIn(hash, f.auction.abi, 'ShapeSettled')).to.deep.equal([
+      { shapeId: 1n, countryId: 1n, winner: getAddress(f.alice.account.address), totalSquares: 4n },
+    ]);
+    await expectActiveBidsEqualProceeds(f.auction, f.bidders);
+  });
+
+  it('joins a shape as a country, then a second shape into it', async function () {
+    const f = await loadFixture(deployEnded);
+    await f.asAlice.write.settleShape([1n, 0n]);
+    const countryId = await f.auction.read.shapeCountryId([1n]);
+    await f.asAlice.write.settleShapeInto([2n, countryId, pack(E)]);
+    expect(await f.countries.read.squareCount([countryId])).to.equal(BigInt(B.length + E.length));
+    for (const loc of [...B, ...E]) expect(await f.squares.read.countryOf([loc.lat, loc.lng])).to.equal(countryId);
+    expect(await f.auction.read.shapeCountryId([2n])).to.equal(countryId);
+    expect(getAddress(await f.countries.read.ownerOf([countryId]))).to.equal(getAddress(f.alice.account.address));
+  });
+
+  it('makes settleShape and a second settleShapeInto revert with ShapeAlreadySettled', async function () {
+    const f = await loadFixture(deployEnded);
+    await f.asAlice.write.settleShapeInto([1n, 1n, pack(B)]);
+    await expect(f.asAlice.write.settleShape([1n, 0n])).to.be.rejectedWith('ShapeAlreadySettled');
+    await expect(f.asAlice.write.settleShapeInto([1n, 1n, pack(B)])).to.be.rejectedWith('ShapeAlreadySettled');
+  });
+
+  it('rejects a shape that settleShape settled, in full or in part', async function () {
+    const f = await loadFixture(deployEnded);
+    await f.asAlice.write.settleShape([1n, 0n]);
+    await expect(f.asAlice.write.settleShapeInto([1n, 1n, pack(B)])).to.be.rejectedWith('ShapeAlreadySettled');
+    // One row of the three rows of E.
+    await f.asAlice.write.settleShape([2n, 1n]);
+    await expect(f.asAlice.write.settleShapeInto([2n, 1n, pack(E)])).to.be.rejectedWith('ShapeAlreadySettled');
+  });
+
+  it('lets only the winner call it, also after the settle window', async function () {
+    const f = await loadFixture(deployEnded);
+    await f.asBob.write.settleShape([6n, 0n]);
+    const bobCountry = await f.auction.read.shapeCountryId([6n]);
+    // From the east, so that each square touches Bob's country.
+    const fromEast = [B[1], B[3], B[0], B[2]];
+    await expect(f.asBob.write.settleShapeInto([1n, bobCountry, pack(fromEast)])).to.be.rejectedWith('NotWinner');
+    await time.increaseTo(f.endTime + (await f.auction.read.settleWindow()) + 1n);
+    await expect(f.asBob.write.settleShapeInto([1n, bobCountry, pack(fromEast)])).to.be.rejectedWith('NotWinner');
+  });
+
+  it('rejects a list with too few squares (WrongSquareCount)', async function () {
+    const f = await loadFixture(deployEnded);
+    await expect(f.asAlice.write.settleShapeInto([1n, 1n, pack(B.slice(0, 3))])).to.be.rejectedWith('WrongSquareCount');
+  });
+
+  it('rejects a list with too many squares', async function () {
+    const f = await loadFixture(deployEnded);
+    // More squares than the shape holds also means a square that is not in the shape or a repeat.
+    await expectRevertWithOneOf(f.asAlice.write.settleShapeInto([1n, 1n, pack([...B, B[0]])]), [
+      'WrongSquareCount',
+      'SquareAlreadyExists',
+    ]);
+    await expectRevertWithOneOf(f.asAlice.write.settleShapeInto([1n, 1n, pack([...B, { lat: 10, lng: 11 }])]), [
+      'WrongSquareCount',
+      'NotShapeSquare',
+    ]);
+  });
+
+  it('rejects a square that the shape does not hold (NotShapeSquare)', async function () {
+    const f = await loadFixture(deployEnded);
+    const withLast = (loc: Loc) => pack([...B.slice(0, 3), loc]);
+    // A square of another shape of the winner, a square with no bid, a square of the other
+    // bidder, and a square outside the map.
+    await expect(f.asAlice.write.settleShapeInto([1n, 1n, withLast(C[0])])).to.be.rejectedWith('NotShapeSquare');
+    await expect(f.asAlice.write.settleShapeInto([1n, 1n, withLast({ lat: 50, lng: 50 })])).to.be.rejectedWith(
+      'NotShapeSquare',
+    );
+    await expect(f.asAlice.write.settleShapeInto([1n, 1n, withLast(D[0])])).to.be.rejectedWith('NotShapeSquare');
+    await expect(
+      f.asAlice.write.settleShapeInto([1n, 1n, [...pack(B.slice(0, 3)), 18000 * 65536 + 12]]),
+    ).to.be.rejectedWith('NotShapeSquare');
+  });
+
+  it('rejects a repeated square at its second mint (SquareAlreadyExists)', async function () {
+    const f = await loadFixture(deployEnded);
+    await expect(f.asAlice.write.settleShapeInto([1n, 1n, pack([...B.slice(0, 3), B[0]])])).to.be.rejectedWith(
+      'SquareAlreadyExists',
+    );
+  });
+
+  it('rejects a bad order with ShapeBroken and changes nothing; the right order then works', async function () {
+    const f = await loadFixture(deployEnded);
+    const before = await snapshot(f, 1n, 1n);
+    // (11, 13) does not touch country 1.
+    const bad = [B[3], B[0], B[1], B[2]];
+    await expect(f.asAlice.write.settleShapeInto([1n, 1n, pack(bad)])).to.be.rejectedWith('ShapeBroken');
+    expect(await snapshot(f, 1n, 1n)).to.deep.equal(before);
+    await f.asAlice.write.settleShapeInto([1n, 1n, pack(B)]);
+    expect(await f.countries.read.squareCount([1n])).to.equal(5n);
+  });
+
+  it('rejects a shape that does not touch the country (ShapeBroken)', async function () {
+    const f = await loadFixture(deployEnded);
+    await expect(f.asAlice.write.settleShapeInto([3n, 1n, pack(C)])).to.be.rejectedWith('ShapeBroken');
+  });
+
+  it('rejects a country of another owner, and a country that the auction still holds (NotCountryOwner)', async function () {
+    const f = await loadFixture(deployEnded);
+    await f.asBob.write.settleShape([6n, 0n]);
+    const bobCountry = await f.auction.read.shapeCountryId([6n]);
+    const fromEast = [B[1], B[3], B[0], B[2]];
+    await expect(f.asAlice.write.settleShapeInto([1n, bobCountry, pack(fromEast)])).to.be.rejectedWith(
+      'NotCountryOwner',
+    );
+
+    // The first row of E settles; the auction holds its country until the last row.
+    await f.asAlice.write.settleShape([2n, 1n]);
+    const held = await f.auction.read.shapeCountryId([2n]);
+    expect(getAddress(await f.countries.read.ownerOf([held]))).to.equal(getAddress(f.auction.address));
+    const fromNorth = [B[2], B[3], B[0], B[1]];
+    await expect(f.asAlice.write.settleShapeInto([1n, held, pack(fromNorth)])).to.be.rejectedWith('NotCountryOwner');
+  });
+
+  it('rejects a country that does not exist (UnknownCountry)', async function () {
+    const f = await loadFixture(deployEnded);
+    await expect(f.asAlice.write.settleShapeInto([1n, 999n, pack(B)])).to.be.rejectedWith('UnknownCountry');
+  });
+
+  it('rejects a shape that holds no squares (EmptyShape) and an unknown shape (UnknownShape)', async function () {
+    const f = await loadFixture(deployEnded);
+    expect(await f.auction.read.shapeLiveSquares([4n])).to.equal(0n);
+    await expect(f.asAlice.write.settleShapeInto([4n, 1n, []])).to.be.rejectedWith('EmptyShape');
+    await expect(f.asAlice.write.settleShapeInto([99n, 1n, []])).to.be.rejectedWith('UnknownShape');
+  });
+
+  it('reverts before the end of the auction and after a cancel', async function () {
+    const f = await loadFixture(deployInto);
+    await expect(f.asAlice.write.settleShapeInto([1n, 1n, pack(B)])).to.be.rejectedWith('AuctionNotYetEnded');
+    await f.asAdmin.write.pause();
+    await time.increaseTo(f.endTime + 1n);
+    await f.asAdmin.write.cancel();
+    await expect(f.asAlice.write.settleShapeInto([1n, 1n, pack(B)])).to.be.rejectedWith('AuctionIsCancelled');
+  });
+
+  it('rejects the shape that would close a ring around land of another bidder; it then settles as its own country', async function () {
+    const [owner, alice, bob] = await viem.getWalletClients();
+    const land = await deployLand(owner.account.address);
+    const { auction, endTime } = await deployAuction(land, { minBidPerSquareWei: minBid });
+    const asAlice = await auctionAs(auction.address, alice);
+    const asBob = await auctionAs(auction.address, bob);
+    // Bob holds the centre (50, 51). Alice holds four shapes around it.
+    const bottom = rect(49, 50, 1, 3);
+    const west = rect(50, 50, 1, 1);
+    const east = rect(50, 52, 1, 1);
+    const top = rect(51, 50, 1, 3);
+    for (const shape of [bottom, west, east, top]) {
+      await asAlice.write.bidOnShape([pack(shape), 0n, false], { value: minBid * BigInt(shape.length) });
+    }
+    await asBob.write.bidOnShape([pack(rect(50, 51, 1, 1)), 0n, false], { value: minBid });
+    await time.increaseTo(endTime + 1n);
+
+    await asAlice.write.settleShape([1n, 0n]);
+    const countryId = await auction.read.shapeCountryId([1n]);
+    await asAlice.write.settleShapeInto([2n, countryId, pack(west)]);
+    await asAlice.write.settleShapeInto([3n, countryId, pack(east)]);
+    // Each order of the top row closes the ring: (51, 52) last, or another square last.
+    for (const order of [top, [top[2], top[1], top[0]], [top[0], top[2], top[1]]]) {
+      await expect(asAlice.write.settleShapeInto([4n, countryId, pack(order)])).to.be.rejectedWith('ShapeBroken');
+    }
+    expect(await auction.read.shapeSettleCursor([4n])).to.equal(0n);
+
+    await asAlice.write.settleShape([4n, 0n]);
+    const topCountry = await auction.read.shapeCountryId([4n]);
+    expect(topCountry).to.not.equal(countryId);
+    expect(getAddress(await land.countries.read.ownerOf([topCountry]))).to.equal(getAddress(alice.account.address));
+    expect(await land.countries.read.squareCount([topCountry])).to.equal(3n);
+    expect(await land.countries.read.squareCount([countryId])).to.equal(5n);
+    await expectActiveBidsEqualProceeds(auction, [alice.account.address, bob.account.address]);
   });
 });
 

@@ -38,6 +38,7 @@ export type AuctionParams = {
   endTime: bigint;
   maxEndTime: bigint;
   extensionWindow: bigint;
+  settleWindow: bigint;
   minBidPerSquareWei: bigint;
   minBidIncrementBps: bigint;
   minShapeSquares: bigint;
@@ -47,7 +48,7 @@ export type AuctionParams = {
 
 /// Deploys GaiaAuction for `land`. A test gives only the values that it is about. Defaults: the
 /// default wallet is the treasury; the auction started 10 s ago and ends in 1 h, from the chain
-/// clock; no soft close (`maxEndTime = endTime`, window 0); bids of 1000 wei and a step of 1000
+/// clock; no soft close (`maxEndTime = endTime`, window 0); a settle window of 7 days; bids of 1000 wei and a step of 1000
 /// wei; shapes of 1 to 1000 squares with an aspect ratio of up to 10.
 ///
 /// With `register` (default true), the auction gets ISSUER_ROLE and is registered in
@@ -67,6 +68,7 @@ export async function deployAuction(
     startTime: now - 10n,
     maxEndTime: endTime,
     extensionWindow: 0n,
+    settleWindow: 604800n,
     minBidPerSquareWei: 1000n,
     minBidIncrementBps: 0n,
     minShapeSquares: 1n,
@@ -93,6 +95,7 @@ export function auctionArgs(land: Pick<Land, 'countries'>, p: AuctionParams) {
     p.endTime,
     p.maxEndTime,
     p.extensionWindow,
+    p.settleWindow,
     p.minBidPerSquareWei,
     p.minBidIncrementBps,
     p.minShapeSquares,

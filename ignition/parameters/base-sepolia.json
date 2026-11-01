@@ -2,10 +2,11 @@
   "GaiaModule": {
     "registry": "0x000000006551c19487814612e58FE06813775758",
     "extensionWindow": "900n",
+    "settleWindow": "604800n",
     "minBidPerSquareWei": "10000000000000n",
     "minBidIncrementBps": "500n",
     "minShapeSquares": "1n",
-    "maxShapeSquares": "200n",
+    "maxShapeSquares": "180n",
     "maxShapeAspectRatio": "10n"
   },
   "GaiaLandSaleModule": {

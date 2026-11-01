@@ -70,6 +70,7 @@ describe('Deploy: Ignition modules with the local parameters', function () {
     expect(await auction.read.endTime()).to.equal(p.endTime);
     expect(await auction.read.maxEndTime()).to.equal(p.maxEndTime);
     expect(await auction.read.extensionWindow()).to.equal(p.extensionWindow);
+    expect(await auction.read.settleWindow()).to.equal(p.settleWindow);
     expect(await auction.read.minBidPerSquareWei()).to.equal(p.minBidPerSquareWei);
     expect(await auction.read.minBidIncrementBps()).to.equal(p.minBidIncrementBps);
     expect(await auction.read.minShapeSquares()).to.equal(p.minShapeSquares);
@@ -146,7 +147,7 @@ describe('Deploy: Ignition modules with the local parameters', function () {
 
     await time.increaseTo((await auction.read.endTime()) + 1n);
     expect(await sale.read.isOpen()).to.equal(true);
-    await auction.write.settleShape([1n, 0n]);
+    await asBidder.write.settleShape([1n, 0n]);
     const countryId = await auction.read.shapeCountryId([1n]);
     expect(getAddress(await countries.read.ownerOf([countryId]))).to.equal(getAddress(bidder.account.address));
     expect(await countries.read.squareCount([countryId])).to.equal(2n);
