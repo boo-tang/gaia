@@ -1,14 +1,14 @@
-// The deck.gl layers of the map: bids, grid, outlines of the own shapes, selection, drawing preview and hover
+// The deck.gl layers of the map: bids, grid, shape outlines, selection, drawing preview and hover
 // square. deck.gl draws them in MapLibre's canvas (interleaved), under the place names (`beforeId`).
 import { type Bounds, type Square, gridLines, packSquare, squareBounds, unpackSquare } from '@gaia/core';
 
 import { PathLayer, PolygonLayer, SolidPolygonLayer } from '@deck.gl/layers';
-import { type Address, isAddressEqual } from 'viem';
+import type { Address } from 'viem';
 
 import type { HeldBid } from '../bids/bids-reducer';
 import type { SelectionCell } from '../selection/selection-cells';
 import { bidderColor } from './bidder-colors';
-import { type Edge, outlineEdges } from './outlines';
+import { type Edge, type OutlineEdge, outlineEdges } from './outlines';
 import { MERCATOR_MAX_LAT, clampToMercator } from './viewport';
 
 type Ring = [number, number][];
@@ -20,7 +20,7 @@ export type BidRow = readonly [number, HeldBid];
 export const LAYER_IDS = {
   bids: 'bids',
   grid: 'grid',
-  ownOutline: 'own-outline',
+  shapeOutline: 'shape-outline',
   selection: 'selection',
   selectionOutline: 'selection-outline',
   preview: 'preview',
@@ -35,8 +35,8 @@ export const SELECTION_RED = [220, 38, 38] as const;
 export const OWN_GREEN = [22, 163, 74] as const;
 /** The alphas of the selection fill: lowest and highest cost, no price, own square. */
 export const SELECTION_ALPHA = { low: 40, high: 160, noPrice: 100, own: 90 } as const;
-/** The outline of each own shape: a darker own colour. */
-export const OWN_OUTLINE = [176, 96, 18] as const;
+/** The outline of a shape is its bidder colour times this factor (darker). */
+export const OUTLINE_SHADE = 0.7;
 
 /**
  * The fill of each selected square: green for own squares, else red with an alpha from 40 (the
@@ -92,22 +92,31 @@ export const bidRows = (bids: ReadonlyMap<number, HeldBid>, globe: boolean): Bid
   return rows;
 };
 
-/** The outline of each shape of the connected wallet, so that two touching shapes show as two. */
-export const ownShapeOutline = (rows: readonly BidRow[], ownAddress: Address | undefined): Edge[] => {
-  if (ownAddress === undefined) {
-    return [];
-  }
+/** One outline edge of a shape and the bidder of the shape, for the colour. */
+export interface ShapeEdge {
+  path: Edge;
+  bidder: Address;
+}
+
+/** The outline of each shape, so that two touching shapes show as two. Make it again only when the bids change. */
+export const shapeOutline = (rows: readonly BidRow[]): ShapeEdge[] => {
   const shapes = new Map<number, number>();
+  const bidders = new Map<number, Address>();
   for (const [squareId, bid] of rows) {
-    if (isAddressEqual(bid.bidder, ownAddress)) {
-      shapes.set(squareId, bid.shapeId);
-    }
+    shapes.set(squareId, bid.shapeId);
+    bidders.set(bid.shapeId, bid.bidder);
   }
-  return outlineEdges(shapes);
+  return outlineEdges(shapes).map(({ path, group }) => ({ path, bidder: bidders.get(group) as Address }));
+};
+
+/** The outline colour of a bidder: the bidder colour, darker. */
+export const outlineColor = (bidder: string, own: string | undefined): [number, number, number] => {
+  const [r, g, b] = bidderColor(bidder, own);
+  return [Math.round(r * OUTLINE_SHADE), Math.round(g * OUTLINE_SHADE), Math.round(b * OUTLINE_SHADE)];
 };
 
 /** The outline of the selected squares that the map shows. */
-export const selectionOutline = (selection: readonly SelectionCell[], globe: boolean): Edge[] =>
+export const selectionOutline = (selection: readonly SelectionCell[], globe: boolean): OutlineEdge[] =>
   outlineEdges(
     new Map(selection.filter(cell => globe || onFlatMap(cell.square)).map(cell => [packSquare(cell.square), 0])),
   );
@@ -163,12 +172,12 @@ export interface LayerInput {
   /** The shape under the pointer: its squares get `BID_HIGHLIGHT_ALPHA`. */
   highlightShapeId?: number;
   grid: Ring[];
-  /** The outline of each own shape (`ownShapeOutline`). */
-  ownOutline: Edge[];
+  /** The outline of each shape (`shapeOutline`). */
+  shapeEdges: ShapeEdge[];
   zoom: number;
   selection: readonly SelectionCell[];
   /** The outline of the selection (`selectionOutline`). */
-  selectionOutline: Edge[];
+  selectionOutline: OutlineEdge[];
   /** The outline of the drawing of a selection tool, in degrees. */
   preview?: [number, number][][];
   hover?: Square;
@@ -187,7 +196,7 @@ export const buildLayers = ({
   ownAddress,
   highlightShapeId,
   grid,
-  ownOutline,
+  shapeEdges,
   zoom,
   selection,
   selectionOutline: selectionEdges,
@@ -234,12 +243,13 @@ export const buildLayers = ({
       parameters: FLAT,
       beforeId,
     }),
-    new PathLayer<Edge, OverlayProps>({
-      id: LAYER_IDS.ownOutline,
-      data: ownOutline,
+    new PathLayer<ShapeEdge, OverlayProps>({
+      id: LAYER_IDS.shapeOutline,
+      data: shapeEdges,
       visible: !extruded,
-      getPath: edge => edge,
-      getColor: [...OWN_OUTLINE, 255],
+      getPath: edge => edge.path,
+      getColor: edge => [...outlineColor(edge.bidder, ownAddress), 255],
+      updateTriggers: { getColor: ownAddress },
       getWidth: 2.5,
       widthUnits: 'pixels',
       parameters: FLAT,
@@ -260,10 +270,10 @@ export const buildLayers = ({
       parameters: FLAT,
       beforeId,
     }),
-    new PathLayer<Edge, OverlayProps>({
+    new PathLayer<OutlineEdge, OverlayProps>({
       id: LAYER_IDS.selectionOutline,
       data: selectionEdges,
-      getPath: edge => edge,
+      getPath: edge => edge.path,
       getColor: [...SELECTION_RED, 255],
       getWidth: 3,
       widthUnits: 'pixels',

@@ -28,7 +28,7 @@ import { MapReadout, shapeTotals } from './MapReadout';
 import { cameraRequests } from './camera-request';
 import { type CameraView, browserTimeZone, firstView, readSavedView, saveView } from './first-view';
 import { type GaiaStyle, loadGaiaStyle } from './gaia-style';
-import { SQUARE_DETAIL_ZOOM, bidRows, buildLayers, gridPaths, ownShapeOutline, selectionOutline } from './layers';
+import { SQUARE_DETAIL_ZOOM, bidRows, buildLayers, gridPaths, selectionOutline, shapeOutline } from './layers';
 import './maplibre-worker';
 import { boundsToViewport, cameraForBounds, padBounds, viewportToBounds } from './viewport';
 
@@ -282,12 +282,17 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
   const squareDetail = zoom >= SQUARE_DETAIL_ZOOM;
   const grid = useMemo(() => gridPaths(view, globe), [view, globe]);
   // `rows` is a new array at each change of the bids.
-  const ownOutline = useMemo(() => ownShapeOutline(rows, address), [rows, address]);
+  const shapeEdges = useMemo(() => shapeOutline(rows), [rows]);
   const selectionEdges = useMemo(() => selectionOutline(selection, globe), [selection, globe]);
   // The square under the pointer; on a touch screen (no pointer) the tapped square.
   const shown = hover ?? marked;
   const shownBid = shown === undefined ? undefined : data.bids.get(packSquare(shown));
   const shownCell = shown === undefined ? undefined : selection[cellIndex.get(packSquare(shown)) ?? -1];
+  // deck.gl writes the cursor of the map canvas at each frame, so it is the only writer: the cursor
+  // of the tool, else none, and MapLibre's CSS shows grab and grabbing.
+  const toolCursor = selectionEnabled ? (tool.cursor ?? '') : '';
+  const getCursor = useCallback(() => toolCursor, [toolCursor]);
+
   // `data.bids` changes in place: `data.bidsVersion` tells when.
   const shownShapeId = useMemo(
     () => (shown === undefined ? undefined : data.bids.get(packSquare(shown))?.shapeId),
@@ -303,7 +308,7 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
         ownAddress: address,
         highlightShapeId: shownShapeId,
         grid,
-        ownOutline,
+        shapeEdges,
         zoom,
         selection,
         selectionOutline: selectionEdges,
@@ -319,7 +324,7 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
       address,
       shownShapeId,
       grid,
-      ownOutline,
+      shapeEdges,
       zoom,
       selection,
       selectionEdges,
@@ -348,12 +353,11 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
           onClick={onClick}
           // The two clicks of a drawing must not zoom.
           doubleClickZoom={!selectionEnabled || tool.begin === undefined}
-          cursor={selectionEnabled ? tool.cursor : undefined}
           style={{ width: '100%', height: '100%' }}
         >
           <NavigationControl position="top-right" visualizePitch />
           <GeolocateControl position="top-right" />
-          <DeckOverlay layers={layers} beforeId={gaiaStyle.beforeId} />
+          <DeckOverlay layers={layers} beforeId={gaiaStyle.beforeId} getCursor={getCursor} />
         </MapGL>
       )}
       {gaiaStyle === undefined && (

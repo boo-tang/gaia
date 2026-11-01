@@ -24,7 +24,9 @@ describe('outlineEdges', () => {
       [id(100, 100), 1],
       [id(100, 101), 2],
     ]);
-    expect(outlineEdges(groups)).toHaveLength(8);
+    const edges = outlineEdges(groups);
+    expect(edges).toHaveLength(8);
+    expect(edges.filter(edge => edge.group === 1)).toHaveLength(4);
   });
 
   it('joins the squares on the two sides of the antimeridian', () => {

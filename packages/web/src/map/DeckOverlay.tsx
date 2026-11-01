@@ -15,7 +15,10 @@ export const DeckOverlay = ({ beforeId, ...props }: DeckOverlayProps) => {
   const mapRef = useRef<MapLibreMap | undefined>(undefined);
   const overlay = useControl<MapLibreOverlay>(({ map }) => {
     mapRef.current = map.getMap();
-    return new MapLibreOverlay({ ...props, interleaved: true });
+    // React StrictMode (dev) creates the overlay twice. Both attach a luma.gl device to the map's
+    // WebGL context at the same time, and without `_reuseDevices` the second attach throws
+    // ("WebGL context already attached"): no layers in Safari.
+    return new MapLibreOverlay({ ...props, interleaved: true, deviceProps: { _reuseDevices: true } });
   });
 
   useEffect(() => {
