@@ -28,7 +28,7 @@ import { MapLegend } from './MapLegend';
 import { cameraRequests } from './camera-request';
 import { type CameraView, browserTimeZone, firstView, readSavedView, saveView } from './first-view';
 import { type GaiaStyle, loadGaiaStyle } from './gaia-style';
-import { bidRows, buildLayers, gridPaths } from './layers';
+import { bidRows, buildLayers, gridPaths, ownShapeOutline, selectionOutline } from './layers';
 import './maplibre-worker';
 import { boundsToViewport, cameraForBounds, padBounds, viewportToBounds } from './viewport';
 
@@ -290,6 +290,9 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const rows = useMemo(() => bidRows(data.bids, globe), [data.bids, data.bidsVersion, globe]);
   const grid = useMemo(() => gridPaths(view, globe), [view, globe]);
+  // `rows` is a new array at each change of the bids.
+  const ownOutline = useMemo(() => ownShapeOutline(rows, address), [rows, address]);
+  const selectionEdges = useMemo(() => selectionOutline(selection, globe), [selection, globe]);
   const layers = useMemo(
     () =>
       buildLayers({
@@ -297,15 +300,31 @@ const MapView = ({ selection, tool, selectionEnabled, onSelect, onToggle }: MapV
         bidsVersion: data.bidsVersion,
         ownAddress: address,
         grid,
+        ownOutline,
         zoom,
         selection,
+        selectionOutline: selectionEdges,
         preview: preview?.outline,
         hover,
         marked,
         beforeId: gaiaStyle?.beforeId,
         globe,
       }),
-    [rows, data.bidsVersion, address, grid, zoom, selection, preview, hover, marked, gaiaStyle?.beforeId, globe],
+    [
+      rows,
+      data.bidsVersion,
+      address,
+      grid,
+      ownOutline,
+      zoom,
+      selection,
+      selectionEdges,
+      preview,
+      hover,
+      marked,
+      gaiaStyle?.beforeId,
+      globe,
+    ],
   );
 
   // The square under the pointer; on a touch screen (no pointer) the tapped square.

@@ -1,5 +1,5 @@
-// The text of the "How it works" panel: the auction in short, the countries after the auction and, on
-// a testnet, how to get test ETH.
+// The text of the "How it works" panel: what Gaia is (countries, their shape), then the auction and the
+// sale after it and, on a testnet, how to get test ETH.
 import type { AuctionResponse } from '@gaia/core';
 
 import { useAuction } from '../api/queries';
@@ -39,7 +39,53 @@ export const HowItWorks = () => {
   return (
     <div className="help-text">
       <p>
-        Gaia sells the land of the world as squares on a map. A shape is a group of squares that touch edge to edge,
+        Gaia is a map of the world where you can own land. The land is cut into squares. The squares that you own make
+        up your country.
+      </p>
+      <h3>Your country</h3>
+      <p>A country is two kinds of NFT:</p>
+      <ul>
+        <li>A country NFT. It is in your wallet. The owner of the country NFT controls the country.</li>
+        <li>
+          One NFT for each square. The squares are kept in the account of the country, not in your wallet. Each country
+          has its own account.
+        </li>
+      </ul>
+      <p>
+        You can sell or send a country. It goes with everything in its account. You can have more than one country, and
+        you can move squares from one of your countries into another.
+      </p>
+      <h3>Change the shape of a country</h3>
+      <p>A country must always be one connected area with no holes.</p>
+      <ul>
+        <li>
+          Split: move a square from the country to your wallet. It becomes a single square that is not part of a
+          country. A split that cuts the country in two or makes a hole is not valid.
+        </li>
+        <li>
+          Merge: move a square from your wallet into a country that you own. It must touch the country and must not make
+          a hole.
+        </li>
+        <li>Sell or send a square: split it first. The new owner merges it into their own country.</li>
+      </ul>
+      <p className="diagram-key">
+        <span className="diagram-swatch diagram-other" /> a country <span className="diagram-swatch diagram-bid" /> a
+        square that moves to your wallet
+      </p>
+      <div className="diagram-row">
+        <ShapeDiagram rows={['o.o', 'o.o', 'ooo']} valid label="U shape" />
+        <ShapeDiagram rows={['ooo', 'o..', 'ooo', '..o', 'ooo']} valid label="S shape" />
+        <ShapeDiagram rows={['ooo', 'ooo', 'oox']} valid label="Split a corner" />
+        <ShapeDiagram rows={['ooxoo']} valid={false} label="Cuts the country in two" />
+        <ShapeDiagram rows={['ooo', 'oxo', 'ooo']} valid={false} label="Makes a hole" />
+      </div>
+      <p>
+        When the last square leaves a country, the country NFT is burned. Anything that is still in its account is
+        locked forever.
+      </p>
+      <h3>The auction</h3>
+      <p>
+        The land is first sold in an auction. You bid on shapes: a shape is a group of squares that touch edge to edge,
         with no holes.
       </p>
       <ol>
@@ -59,52 +105,11 @@ export const HowItWorks = () => {
             <EndText auction={auction.data} now={now} />
           )}
         </li>
-        <li>After the end, each winning shape becomes a country. See &quot;After the auction&quot; below.</li>
+        <li>
+          After the end, each winning shape becomes a country, also when two of your shapes touch. The auction rules for
+          shape, size and length do not apply after the auction.
+        </li>
       </ol>
-      <h3>After the auction</h3>
-      <p>Each winning shape is settled into a country. The winner gets two kinds of NFT:</p>
-      <ul>
-        <li>A country NFT. The owner of the country NFT controls the country.</li>
-        <li>
-          One NFT for each square. The squares are kept in the account of the country, not in your wallet. Each country
-          has its own account.
-        </li>
-      </ul>
-      <p>
-        Each winning shape becomes its own country, also when two of your shapes touch. You can move squares from one of
-        your countries into another.
-      </p>
-      <p>
-        A country can change its shape, but it must always be one connected area with no holes. The auction rules for
-        shape, size and length do not apply after the auction.
-      </p>
-      <ul>
-        <li>
-          Split: move a square from the country to your wallet. It becomes a single square that is not part of a
-          country. A split that cuts the country in two or makes a hole is not valid.
-        </li>
-        <li>
-          Merge: move a square from your wallet into a country that you own. It must touch the country and must not make
-          a hole.
-        </li>
-        <li>Sell or send a country: it goes with everything in its account.</li>
-        <li>Sell or send a square: split it first. The new owner merges it into their own country.</li>
-      </ul>
-      <p className="diagram-key">
-        <span className="diagram-swatch diagram-other" /> a country <span className="diagram-swatch diagram-bid" /> a
-        square that moves to your wallet
-      </p>
-      <div className="diagram-row">
-        <ShapeDiagram rows={['o.o', 'o.o', 'ooo']} valid label="U shape" />
-        <ShapeDiagram rows={['ooo', 'o..', 'ooo', '..o', 'ooo']} valid label="S shape" />
-        <ShapeDiagram rows={['ooo', 'ooo', 'oox']} valid label="Split a corner" />
-        <ShapeDiagram rows={['ooxoo']} valid={false} label="Cuts the country in two" />
-        <ShapeDiagram rows={['ooo', 'oxo', 'ooo']} valid={false} label="Makes a hole" />
-      </div>
-      <p>
-        When the last square leaves a country, the country NFT is burned. Anything that is still in its account is
-        locked forever.
-      </p>
       <p>
         Squares that nobody won go on sale after the auction. Their price falls with time. You can buy them as a new
         country or add them to a country that you own.

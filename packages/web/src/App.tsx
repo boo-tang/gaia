@@ -9,7 +9,6 @@ import { NetworkGuard } from './components/NetworkGuard';
 import { TestnetBadge } from './components/TestnetBadge';
 import { HowItWorks } from './help/HowItWorks';
 import { InfoDialog } from './help/InfoDialog';
-import { readHelpSeen, saveHelpSeen } from './help/help-seen';
 import { useIsPhone } from './hooks/useIsPhone';
 import { AppLayout } from './layout/AppLayout';
 import { LazyMap } from './map/LazyMap';
@@ -24,12 +23,8 @@ export const App = () => {
   const selection = useSelectionCells();
   const onSelect = useCallback((squares: Square[]) => selectionStore.addSquares(squares), []);
   const onToggle = useCallback((square: Square) => selectionStore.toggle(square), []);
-  // The help opens by itself at the first visit.
-  const [helpOpen, setHelpOpen] = useState(() => !readHelpSeen());
-  const closeHelp = useCallback(() => {
-    saveHelpSeen();
-    setHelpOpen(false);
-  }, []);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const closeHelp = useCallback(() => setHelpOpen(false), []);
 
   return (
     <AppLayout

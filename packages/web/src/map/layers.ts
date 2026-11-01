@@ -1,12 +1,14 @@
-// The deck.gl layers of the map: bids, grid, selection, drawing preview and hover square. deck.gl draws them in
-// MapLibre's canvas (interleaved), under the place names (`beforeId`).
-import { type Bounds, type Square, gridLines, squareBounds, unpackSquare } from '@gaia/core';
+// The deck.gl layers of the map: bids, grid, outlines of the own shapes, selection, drawing preview and hover
+// square. deck.gl draws them in MapLibre's canvas (interleaved), under the place names (`beforeId`).
+import { type Bounds, type Square, gridLines, packSquare, squareBounds, unpackSquare } from '@gaia/core';
 
 import { PathLayer, PolygonLayer, SolidPolygonLayer } from '@deck.gl/layers';
+import { type Address, isAddressEqual } from 'viem';
 
 import type { HeldBid } from '../bids/bids-reducer';
 import type { SelectionCell } from '../selection/selection-cells';
 import { bidderColor } from './bidder-colors';
+import { type Edge, outlineEdges } from './outlines';
 import { MERCATOR_MAX_LAT, clampToMercator } from './viewport';
 
 type Ring = [number, number][];
@@ -18,7 +20,9 @@ export type BidRow = readonly [number, HeldBid];
 export const LAYER_IDS = {
   bids: 'bids',
   grid: 'grid',
+  ownOutline: 'own-outline',
   selection: 'selection',
+  selectionOutline: 'selection-outline',
   preview: 'preview',
   hover: 'hover',
 } as const;
@@ -29,6 +33,8 @@ export const SELECTION_RED = [220, 38, 38] as const;
 export const OWN_GREEN = [22, 163, 74] as const;
 /** The alphas of the selection fill: lowest and highest cost, no price, own square. */
 export const SELECTION_ALPHA = { low: 40, high: 160, noPrice: 100, own: 90 } as const;
+/** The outline of each own shape: a darker own colour. */
+export const OWN_OUTLINE = [176, 96, 18] as const;
 
 /**
  * The fill of each selected square: green for own squares, else red with an alpha from 40 (the
@@ -84,6 +90,26 @@ export const bidRows = (bids: ReadonlyMap<number, HeldBid>, globe: boolean): Bid
   return rows;
 };
 
+/** The outline of each shape of the connected wallet, so that two touching shapes show as two. */
+export const ownShapeOutline = (rows: readonly BidRow[], ownAddress: Address | undefined): Edge[] => {
+  if (ownAddress === undefined) {
+    return [];
+  }
+  const shapes = new Map<number, number>();
+  for (const [squareId, bid] of rows) {
+    if (isAddressEqual(bid.bidder, ownAddress)) {
+      shapes.set(squareId, bid.shapeId);
+    }
+  }
+  return outlineEdges(shapes);
+};
+
+/** The outline of the selected squares that the map shows. */
+export const selectionOutline = (selection: readonly SelectionCell[], globe: boolean): Edge[] =>
+  outlineEdges(
+    new Map(selection.filter(cell => globe || onFlatMap(cell.square)).map(cell => [packSquare(cell.square), 0])),
+  );
+
 /** The grid lines of `view` (the padded visible area). At most 800 lines in each direction. */
 export const gridPaths = (view: Bounds | undefined, globe: boolean): Ring[] => {
   if (view === undefined) {
@@ -127,8 +153,12 @@ export interface LayerInput {
   /** The connected wallet, for its own colour. */
   ownAddress?: string;
   grid: Ring[];
+  /** The outline of each own shape (`ownShapeOutline`). */
+  ownOutline: Edge[];
   zoom: number;
   selection: readonly SelectionCell[];
+  /** The outline of the selection (`selectionOutline`). */
+  selectionOutline: Edge[];
   /** The outline of the drawing of a selection tool, in degrees. */
   preview?: [number, number][][];
   hover?: Square;
@@ -146,8 +176,10 @@ export const buildLayers = ({
   bidsVersion,
   ownAddress,
   grid,
+  ownOutline,
   zoom,
   selection,
+  selectionOutline: selectionEdges,
   preview = [],
   hover,
   marked,
@@ -184,6 +216,17 @@ export const buildLayers = ({
       parameters: FLAT,
       beforeId,
     }),
+    new PathLayer<Edge, OverlayProps>({
+      id: LAYER_IDS.ownOutline,
+      data: ownOutline,
+      visible: !extruded,
+      getPath: edge => edge,
+      getColor: [...OWN_OUTLINE, 255],
+      getWidth: 2.5,
+      widthUnits: 'pixels',
+      parameters: FLAT,
+      beforeId,
+    }),
     // A new `selection` array at each change of the selection or its prices: deck.gl computes
     // the attributes again (at most MAX_SELECTION_SQUARES squares).
     new PolygonLayer<SelectionCell, OverlayProps>({
@@ -191,10 +234,21 @@ export const buildLayers = ({
       data: selection.filter(cell => shown(cell.square)),
       getPolygon: cell => ring(cell.square),
       getFillColor: selectionFill(selection),
-      getLineColor: [...SELECTION_RED, 255],
-      getLineWidth: 2,
+      // Thin lines between the squares. The outline layer draws the edge of the selection.
+      getLineColor: [...SELECTION_RED, 110],
+      getLineWidth: 1,
       lineWidthUnits: 'pixels',
       stroked: true,
+      parameters: FLAT,
+      beforeId,
+    }),
+    new PathLayer<Edge, OverlayProps>({
+      id: LAYER_IDS.selectionOutline,
+      data: selectionEdges,
+      getPath: edge => edge,
+      getColor: [...SELECTION_RED, 255],
+      getWidth: 3,
+      widthUnits: 'pixels',
       parameters: FLAT,
       beforeId,
     }),
