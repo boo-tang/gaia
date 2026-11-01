@@ -1,5 +1,5 @@
 // The first camera of the map, as Google Maps does it without a permission prompt: the last view
-// of this browser, else the region of the browser time zone, else the whole globe. The precise
+// of this browser, else the city of the browser time zone, else the whole globe. The precise
 // location comes only from the "My location" button (MapLibre GeolocateControl).
 import { TIME_ZONES } from './time-zones';
 
@@ -11,7 +11,8 @@ export interface CameraView {
 
 export const VIEW_STORAGE_KEY = 'gaia.map.view';
 export const WORLD_VIEW: CameraView = { longitude: 0, latitude: 20, zoom: 1.5 };
-const TIME_ZONE_ZOOM = 5;
+// The squares show from this zoom (`SQUARE_DETAIL_ZOOM` of layers.ts).
+const TIME_ZONE_ZOOM = 10;
 
 const isCameraView = (value: unknown): value is CameraView => {
   if (typeof value !== 'object' || value === null) {
